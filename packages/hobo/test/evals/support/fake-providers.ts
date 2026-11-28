@@ -131,6 +131,7 @@ export function fakeVercel(stagedFile?: string) {
 			);
 			if (grant === undefined)
 				return json(response, 400, { error: "invalid_grant" });
+			if (grant.denied) return json(response, 400, { error: "access_denied" });
 			if (!grant.approved)
 				return json(response, 400, { error: "authorization_pending" });
 			const token = `vercel-${randomUUID()}`;

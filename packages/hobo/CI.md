@@ -663,7 +663,10 @@ chooses the config-service binding. Its coordinates and the team live only in
 the owner's own secret store (`HOBO_CI_SECRET_STORE_BINDING`); `hobo ci deploy`
 reads them through the owner store session (HoBo MCP's `choose_secret_store`)
 and fails closed with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` without one.
-They never become Vercel variables: `--build prebuilt` bundles the relay's
+Managed delivery uses the CI-scoped owner channel,
+and every Vercel, GitHub journal and public-health request rejects redirects and combines
+the delivery deadline with the caller's cancellation signal.
+The coordinates never become Vercel variables: `--build prebuilt` bundles the relay's
 coordinates into the build only (a `--dry-run` plans without a session). A
 production deploy with `--build git` carries no coordinates and could never
 qualify, so it is refused, in a dry run too, with

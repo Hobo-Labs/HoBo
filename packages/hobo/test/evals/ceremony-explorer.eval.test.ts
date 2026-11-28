@@ -25,7 +25,11 @@ import {
 	copiedSession,
 	startFakeInfisical,
 } from "./support/fake-infisical-api.js";
-import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
+import {
+	fakeNeon,
+	fakeVercel,
+	fakeVercelCli,
+} from "./support/fake-providers.js";
 import { startTlsWorld } from "./support/tls-world.js";
 
 // EVAL: the remote cd up ceremony explored, not sampled by hand. Every
@@ -92,7 +96,17 @@ function virtualClock() {
 async function runSchedule(schedule: Schedule) {
 	const api = await startFakeInfisical("org-1");
 	api.seedJournalFleet();
-	const vercel = fakeVercel();
+	const vercelCli = fakeVercelCli(
+		mkdtempSync(path.join(tmpdir(), "hobo-explore-vercel-cli-")),
+		path.join(
+			REPO,
+			"packages",
+			"cd-vercel",
+			"deploy",
+			"secret-store.binding.json",
+		),
+	);
+	const vercel = fakeVercel(vercelCli.staged);
 	const neon = fakeNeon();
 	const world = await startTlsWorld({
 		"app.infisical.com": api.handle,
@@ -116,6 +130,8 @@ async function runSchedule(schedule: Schedule) {
 	for (const [name, value] of Object.entries({
 		XDG_CONFIG_HOME: config,
 		CLAUDE_CODE_REMOTE: "true",
+		HOBO_VERCEL_CLI: vercelCli.cli,
+		GITHUB_HEAD_REF: process.env.GITHUB_HEAD_REF || "hobo-explore",
 		HTTPS_PROXY: world.proxyUrl,
 		HTTP_PROXY: world.proxyUrl,
 		NO_PROXY: "",

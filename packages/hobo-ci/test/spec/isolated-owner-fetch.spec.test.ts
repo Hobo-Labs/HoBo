@@ -652,4 +652,43 @@ describe("isolated owner fetch", () => {
 			await new Promise<void>((resolve) => server.close(() => resolve()));
 		}
 	}, 30_000);
+
+	it("refuses a redirect outside the approved origin before connecting", async () => {
+		let destinationRequests = 0;
+		const destination = createServer((_request, response) => {
+			destinationRequests += 1;
+			response.end("unexpected");
+		});
+		const source = createServer((_request, response) => {
+			response.writeHead(307, {
+				location: `http://127.0.0.1:${socketAddress.parse(destination.address()).port}/`,
+			});
+			response.end();
+		});
+		await Promise.all(
+			[source, destination].map(
+				(server) =>
+					new Promise<void>((resolve) =>
+						server.listen(0, "127.0.0.1", resolve),
+					),
+			),
+		);
+		try {
+			await expect(
+				fixtureOwnerFetch({})(
+					`http://127.0.0.1:${socketAddress.parse(source.address()).port}/`,
+					{ headers: { "x-fixture-credential": marker } },
+				),
+			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
+			expect(destinationRequests).toBe(0);
+		} finally {
+			for (const server of [source, destination]) server.closeAllConnections();
+			await Promise.all(
+				[source, destination].map(
+					(server) =>
+						new Promise<void>((resolve) => server.close(() => resolve())),
+				),
+			);
+		}
+	});
 });

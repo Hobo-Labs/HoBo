@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { CommandRunInput, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	OWNER_CAPTURE_LINE_PREFIX,
@@ -84,8 +85,8 @@ describe("EVAL store choice: a handed-off run asks, never assumes", () => {
 		const all = text(shown, outcome);
 		for (const store of ["infisical", "1password", "bitwarden"])
 			expect(all).toContain(`${store}:`);
-		expect(all).toMatch(/INFISICAL_PROJECT_ID/u);
-		expect(all).toMatch(/OP_VAULT_ID/u);
+		expect(all).toMatch(/secure owner form/u);
+		expect(all).not.toMatch(/INFISICAL_PROJECT_ID|OP_VAULT_ID/u);
 		// Each store says HoBo sets up its own access; nothing by hand.
 		expect(all).not.toMatch(/Create Identity|Issue token|create a token/u);
 		expect(all).not.toMatch(LOOPBACK);
@@ -356,18 +357,30 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 describe("EVAL store choice: Bitwarden with only the owner's API key", () => {
 	it("says exactly what to fix when Bitwarden rejects the API key, and never prints it", async () => {
 		const shown: string[] = [];
-		const secret = "Zq8pX1vL0rT5mN3bW7yK2cD9fG4hJ6";
+		const asked: string[] = [];
+		const clientId = `user.${randomUUID()}`;
+		const clientSecret = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+		const owner: OwnerChannel = {
+			openUrl: async () => undefined,
+			captureSecret: async () => undefined,
+			holds: () => false,
+			canConfirm: () => true,
+			confirm: async () => true,
+		};
 		const outcome = await prepareVercelConnection(
 			handOff((l) => shown.push(l)),
 			{
 				env: {
 					HOBO_SECRET_STORE: "bitwarden",
-					BW_CLIENTID: "user.0c7e4c1a-7a0e-4a65-9c2e-2f1b8f0d1e2a",
-					BW_CLIENTSECRET: secret,
+					BW_CLIENTID: clientId,
+					BW_CLIENTSECRET: clientSecret,
 				},
+				ownerChannel: owner,
 				locator: { read: async () => ({}), write: async () => undefined },
-				fetch: async () =>
-					Response.json({ error: "invalid_client" }, { status: 400 }),
+				fetch: async (input) => {
+					asked.push(String(input));
+					return Response.json({ error: "invalid_client" }, { status: 400 });
+				},
 				sleep: async () => undefined,
 				startPage: noPage,
 			},
@@ -376,9 +389,17 @@ describe("EVAL store choice: Bitwarden with only the owner's API key", () => {
 			kind: "refused",
 			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
 		});
+		expect(
+			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
+		).toBe(true);
+		expect(
+			shown.some((l) => l.startsWith(`${OWNER_CAPTURE_LINE_PREFIX} `)),
+		).toBe(false);
 		const all = text(shown, outcome);
-		expect(all).toMatch(/View API key/u);
-		expect(all).not.toContain(secret);
+		expect(all).toMatch(/refused the personal API key/u);
+		expect(all).toMatch(/private owner form/u);
+		expect(all).not.toContain(clientId);
+		expect(all).not.toContain(clientSecret);
 	});
 });
 

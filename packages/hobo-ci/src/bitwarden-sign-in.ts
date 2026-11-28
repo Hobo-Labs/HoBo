@@ -1,4 +1,3 @@
-import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
 
 import {
@@ -15,9 +14,11 @@ import {
 import {
 	captureAll,
 	type OwnerChannel,
+	type OwnerSettingsStore,
 	ownerCaptureLine,
 } from "./owner-channel.js";
 import { parseHttpsOrigin, SettingParseError } from "./parsed-values.js";
+import { uncertainStoreOperationRefusal } from "./store-failure.js";
 
 // public-contract: the capture names of a Bitwarden personal API key handed to a waiting run.
 export const BITWARDEN_API_KEY_CAPTURES = [
@@ -31,6 +32,8 @@ export interface BitwardenSignInRefusal {
 	readonly remediation: readonly string[];
 }
 
+class BitwardenOwnerChannelError extends Error {}
+
 export interface EnsureBitwardenSignInOptions {
 	readonly family: "ci" | "cd";
 	/** The run's vault: the API key in, the access token out. */
@@ -38,7 +41,7 @@ export interface EnsureBitwardenSignInOptions {
 	/** Non-secret settings (BWS_SERVER, BWS_ORGANIZATION_ID, BWS_PROJECT_ID). */
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** The committed locator: ids and this run's device id are kept there. */
-	readonly locator: SettingsStore;
+	readonly locator: OwnerSettingsStore;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
 	readonly handOff: boolean;
@@ -64,6 +67,11 @@ export async function ensureBitwardenSignIn(
 ): Promise<BitwardenSignInRefusal | undefined> {
 	const { vault } = options;
 	const fam = options.family.toUpperCase();
+	let uncertain = false;
+	const markUncertain = () => {
+		uncertain = true;
+		options.locator.markUncertainWrite?.();
+	};
 	const saved = await options.locator.read();
 	const setting = (name: string) =>
 		options.env[name] || saved[name] || undefined;
@@ -77,28 +85,43 @@ export async function ensureBitwardenSignIn(
 		const endpoints = bitwardenEndpoints(region, serverUrl);
 		const clientId = vault.reveal("BW_CLIENTID") ?? setting("BW_CLIENTID");
 		const clientSecret = vault.reveal("BW_CLIENTSECRET");
+		const page = bitwardenApiKeyPage(endpoints);
+		const captureApiKey = async () => {
+			const owner = options.owner;
+			const given =
+				owner === undefined
+					? undefined
+					: await Promise.resolve()
+							.then(() =>
+								captureAll(owner, [
+									{
+										name: "BW_CLIENTID",
+										title: "Bitwarden API key: client_id",
+										instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_id.`,
+									},
+									{
+										name: "BW_CLIENTSECRET",
+										title: "Bitwarden API key: client_secret",
+										instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
+									},
+								]),
+							)
+							.catch(() => {
+								throw new BitwardenOwnerChannelError();
+							});
+			if (given === undefined) return undefined;
+			const parsed = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
+			vault.put("BW_CLIENTID", parsed.clientId);
+			vault.put("BW_CLIENTSECRET", parsed.clientSecret);
+			return parsed;
+		};
 		let apiKey: BitwardenApiKey;
 		if (clientId !== undefined && clientSecret !== undefined)
 			apiKey = parseBitwardenApiKey(clientId, clientSecret);
 		else if (!options.handOff) return undefined;
 		else {
-			const page = bitwardenApiKeyPage(endpoints);
-			const given =
-				options.owner === undefined
-					? undefined
-					: await captureAll(options.owner, [
-							{
-								name: "BW_CLIENTID",
-								title: "Bitwarden API key: client_id",
-								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_id.`,
-							},
-							{
-								name: "BW_CLIENTSECRET",
-								title: "Bitwarden API key: client_secret",
-								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
-							},
-						]);
-			if (given === undefined)
+			const supplied = await captureApiKey();
+			if (supplied === undefined)
 				return {
 					code: `HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
 					message:
@@ -106,31 +129,77 @@ export async function ensureBitwardenSignIn(
 					remediation:
 						options.owner === undefined
 							? [
-									`Run hobo ${options.family} up through the HoBo MCP server (its ci and cd tools): its secret form takes your personal API key (${page}) straight to the run.`,
+									`Run hobo ${options.family} up through the HoBo MCP server to connect using its private owner form.`,
 								]
 							: [
 									...BITWARDEN_API_KEY_CAPTURES.map((name) =>
-										ownerCaptureLine(name, page),
+										ownerCaptureLine(
+											name,
+											serverUrl !== undefined
+												? "https://bitwarden.com/help/personal-api-key/"
+												: page,
+										),
 									),
 									"In your Bitwarden vault: Account settings → Security → Keys → View API key. Hand over client_id and client_secret in the HoBo MCP App's secret form; they go only to this run.",
 									"Then run again: HoBo creates its own access token after the one login request you approve.",
 								],
 				};
-			apiKey = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
-			vault.put("BW_CLIENTID", apiKey.clientId);
-			vault.put("BW_CLIENTSECRET", apiKey.clientSecret);
+			apiKey = supplied;
 		}
 		// Called only when the store did not open: a token in hand was refused
 		// (revoked or expired), so the API key replaces it with a new one.
 		vault.drop("BWS_ACCESS_TOKEN");
 		vault.drop("BITWARDEN_ORG_KEY");
-		if (options.silent)
+		const confirm = options.owner?.confirm;
+		const privateApproval =
+			(options.handOff || options.silent) &&
+			confirm !== undefined &&
+			options.owner?.canConfirm?.() === true;
+		if (options.handOff && !privateApproval)
+			return {
+				code: `HOBO_${fam}_HANDOFF_SILENT`,
+				message:
+					"This session cannot reach the owner through a private approval form.",
+				remediation: [
+					"Run setup when a private owner approval form is available.",
+				],
+			};
+		if (options.silent && !privateApproval)
 			return {
 				code: `HOBO_${fam}_HANDOFF_SILENT`,
 				message:
 					"Approving the Bitwarden login request needs progress output. Omit --json and -q, then retry.",
 				remediation: [`Run hobo ${options.family} up without --json or -q.`],
 			};
+		const fetchCurrent: typeof fetch = async (input, init) => {
+			options.locator.assertCurrent?.();
+			const selection = options.locator.selectionSignal;
+			const signal =
+				selection === undefined
+					? init?.signal
+					: init?.signal
+						? AbortSignal.any([selection, init.signal])
+						: selection;
+			const method = (init?.method ?? "GET").toUpperCase();
+			const mutation = method !== "GET" && method !== "HEAD";
+			const perform = async () => {
+				options.locator.assertCurrent?.();
+				try {
+					const response = await options.fetch(
+						input,
+						signal === undefined ? init : { ...init, signal },
+					);
+					options.locator.assertCurrent?.();
+					return response;
+				} catch (error) {
+					if (mutation) markUncertain();
+					throw error;
+				}
+			};
+			return mutation && options.locator.runStoreWrite
+				? options.locator.runStoreWrite(perform)
+				: perform();
+		};
 		const organization = setting("BWS_ORGANIZATION_ID");
 		const project = setting("BWS_PROJECT_ID");
 		// A stable device id: Bitwarden knows the device after its first
@@ -158,14 +227,44 @@ export async function ensureBitwardenSignIn(
 			...(project !== undefined
 				? { projectId: parseBitwardenId("BWS_PROJECT_ID", project) }
 				: undefined),
-			fetch: options.fetch,
+			fetch: fetchCurrent,
 			emit: options.emit,
+			privateOwner: privateApproval,
+			...(options.locator.runStoreWrite !== undefined
+				? { runMutation: options.locator.runStoreWrite }
+				: undefined),
+			markUncertainMutation: markUncertain,
+			...(privateApproval && confirm !== undefined
+				? {
+						approve: async (request) => {
+							options.locator.assertCurrent?.();
+							const accepted = await confirm(request);
+							options.locator.assertCurrent?.();
+							return accepted;
+						},
+					}
+				: undefined),
+			...(privateApproval && options.owner?.choose !== undefined
+				? {
+						chooseOrganization: async (choices) => {
+							options.locator.assertCurrent?.();
+							const chosen = await options.owner?.choose?.({
+								message: "Choose the Bitwarden organization HoBo should use.",
+								choices,
+							});
+							options.locator.assertCurrent?.();
+							return chosen;
+						},
+					}
+				: undefined),
 			...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
 			...(options.now !== undefined ? { now: options.now } : undefined),
 			...(options.timeoutMs !== undefined
 				? { timeoutMs: options.timeoutMs }
 				: undefined),
 		});
+		if (uncertain) return uncertainStoreOperationRefusal(options.family);
+		options.locator.assertCurrent?.();
 		if (result.kind === "refused") return result;
 		const latest = await options.locator.read();
 		const where = {
@@ -184,9 +283,7 @@ export async function ensureBitwardenSignIn(
 				BITWARDEN_STORAGE: "vault",
 				BITWARDEN_COLLECTION_ID: result.collectionId,
 			});
-			options.emit(
-				`The Bitwarden vault is ready: secure notes in the collection "hobo" of organization ${result.organizationId}; this run holds the organization key in memory only.`,
-			);
+			options.emit("The Bitwarden vault is ready for this session.");
 			return undefined;
 		}
 		vault.put("BWS_ACCESS_TOKEN", result.token);
@@ -196,11 +293,17 @@ export async function ensureBitwardenSignIn(
 			BITWARDEN_STORAGE: "secrets-manager",
 			BWS_PROJECT_ID: result.projectId,
 		});
-		options.emit(
-			`Bitwarden Secrets Manager is ready: project and machine account "hobo" in organization ${result.organizationId}, with a one-day access token held in this run's vault.`,
-		);
+		options.emit("Bitwarden Secrets Manager is ready for this session.");
 		return undefined;
 	} catch (error) {
+		if (uncertain) return uncertainStoreOperationRefusal(options.family);
+		if (error instanceof BitwardenOwnerChannelError)
+			return {
+				code: `HOBO_${fam}_OWNER_CHANNEL_FAILED`,
+				message:
+					"The private owner channel failed before capturing the API key.",
+				remediation: ["Retry with a working private owner channel."],
+			};
 		if (!(error instanceof SettingParseError)) throw error;
 		return {
 			code: `HOBO_${fam}_SETTING_INVALID`,

@@ -7,7 +7,6 @@ import {
 	always,
 	and,
 	atom,
-	eventually,
 	type Formula,
 	implies,
 	not,
@@ -38,6 +37,8 @@ export type CeremonyEvent =
 			readonly id: string;
 			readonly tool: string;
 			readonly code: string | undefined;
+			readonly ok: boolean | undefined;
+			readonly status: string | undefined;
 			readonly lines: readonly string[];
 			readonly text: string;
 			/** A JSON-RPC error, or an error result: never the frontier by itself. */
@@ -90,7 +91,9 @@ const Content = z.object({
 	isError: z.boolean().optional(),
 });
 const Envelope = z.object({
+	ok: z.boolean().optional(),
 	code: z.string().optional(),
+	status: z.string().optional(),
 	message: z.string().optional(),
 	remediation: z.array(z.string()).optional(),
 	/** A capture's refusal: what the agent does next. */
@@ -265,11 +268,14 @@ export function eventsFromWire(wire: readonly WireMessage[]): CeremonyEvent[] {
 				id,
 				tool: call?.tool ?? "",
 				code,
+				ok: said?.ok,
+				status: said?.status,
 				lines,
 				text,
 				failed:
 					message.error !== undefined ||
-					(body.success && body.data.isError === true),
+					(body.success && body.data.isError === true) ||
+					said?.ok === false,
 				raw: line.message,
 			});
 			continue;
@@ -312,11 +318,12 @@ export const CEREMONY = {
 	frontier: (event: CeremonyEvent) =>
 		event.kind === "result" &&
 		(event.tool === "cd" || event.tool === "ci") &&
-		// A crash (a JSON-RPC error, an error result with no code) is never it.
-		(event.code === undefined
-			? !event.failed
-			: !/^HOBO_C[ID]_|^SECRET_CAPTURE_/u.test(event.code) ||
-				/PLAN_REJECTED/u.test(event.code)),
+		!event.failed &&
+		event.ok === true &&
+		((event.code === "HOBO_OK" && event.status === "deployed") ||
+			(event.tool === "ci" &&
+				event.code === "HOBO_CI_MANAGED_PREVIEW" &&
+				event.status === "ok")),
 } as const;
 
 /** The URLs a text carries, bare or as markdown links. */
@@ -487,7 +494,32 @@ export function ceremonyProperties(
 export const REACHES_FRONTIER: Property<CeremonyEvent> = {
 	name: "eventually: nothing more asked of the owner",
 	kind: "trace",
-	formula: eventually(atom((event) => CEREMONY.frontier(event))),
+	formula: (trace) => {
+		const pending = new Set<string>();
+		const outcomes = new Map<string, CeremonyEvent | undefined>();
+		for (const event of trace) {
+			if (
+				event.kind === "call" &&
+				(event.tool === "ci" || event.tool === "cd")
+			) {
+				if (pending.size === 0) outcomes.clear();
+				pending.add(event.id);
+				outcomes.set(event.id, undefined);
+			} else if (
+				event.kind === "result" &&
+				(event.tool === "ci" || event.tool === "cd")
+			) {
+				if (pending.delete(event.id)) outcomes.set(event.id, event);
+			}
+		}
+		return (
+			pending.size === 0 &&
+			outcomes.size > 0 &&
+			[...outcomes.values()].every(
+				(result) => result !== undefined && CEREMONY.frontier(result),
+			)
+		);
+	},
 };
 
 /** Re-exported for spec authors. */

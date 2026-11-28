@@ -133,14 +133,13 @@ describe("secret-capture-mcp-app pact", () => {
 		expect(submitted).toMatchObject(
 			interaction("the form's submit_secret_value").response.body,
 		);
-		// "only": the receipt has exactly these keys.
 		expect(Object.keys(submitted.structuredContent).sort()).toEqual([
 			"name",
-			"ref",
 			"status",
 			"stored",
 			"ticketId",
 		]);
+		expect(JSON.stringify(submitted)).not.toContain("secref://");
 
 		const refused = body(
 			await app({ connected: false }).callTool(

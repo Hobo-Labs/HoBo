@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import type { SettingsStore } from "@hobo/connect-ui";
 import {
+	isOwnerStoreSetting,
+	type OwnerSettingsStore,
 	ownerLocator,
 	parseHttpsOrigin,
 	parseOnePasswordVaultId,
@@ -9,7 +11,12 @@ import {
 } from "@hobo/hobo-ci";
 import { z } from "zod";
 
-import { isJsonObject, type JsonObject, type JsonValue } from "./json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "./json.js";
 import {
 	STORE_OWNER_ENTRIES_DESCRIPTION,
 	STORE_OWNER_ENTRIES_INPUT,
@@ -18,6 +25,7 @@ import {
 	storeOwnerEntries,
 } from "./mcp-owner-entries.js";
 import {
+	type OpenedOwnerPage,
 	OWNER_PAGE_COLLECTION,
 	OWNER_PAGE_SECRET_FIELDS,
 	OwnerPageRefused,
@@ -353,11 +361,7 @@ const entriesDefinition: StoreChoiceToolDefinition = {
 
 const sealedArg = z.object({ sealed: z.string().min(1) });
 
-async function ownerPage(
-	cwd: string,
-	pages: OwnerPages,
-): Promise<CallToolResult> {
-	const opened = await pages.open(cwd);
+function ownerPage(opened: OpenedOwnerPage): CallToolResult {
 	return result(
 		[
 			"This host shows neither MCP forms nor MCP Apps, so HoBo made its own owner page.",
@@ -378,8 +382,12 @@ async function ownerPage(
 }
 
 const UNAVAILABLE = result(
-	"This host renders neither MCP form elicitation nor MCP Apps, so HoBo cannot ask the owner privately. Nothing was collected or saved. Report that this host cannot provide a secure HoBo owner hand-off; do not ask the owner for store settings in chat.",
-	{ status: "secure-form-unavailable", reason: "no-private-owner-form" },
+	"This host renders neither MCP form elicitation nor MCP Apps, so HoBo cannot ask the owner privately. Nothing was collected or saved. Report that this host cannot provide a secure HoBo owner hand-off; do not ask for store coordinates in conversation.",
+	{
+		status: "secure-form-unavailable",
+		reason: "no-private-owner-form",
+		options: STORE_OPTIONS.map((o) => o.label),
+	},
 	true,
 );
 
@@ -392,10 +400,11 @@ const NOT_SAVED = result(
 function sessionResult(
 	state: OwnerSessionState | undefined,
 	label: OwnerStoreLabel,
+	family: "ci" | "cd",
 ): CallToolResult {
 	if (state === undefined)
 		return result(
-			`The owner chose ${label}; it is saved in their own HoBo settings. This server holds no store session.`,
+			`The owner chose ${label}; it is saved in their own HoBo settings. This server holds no store session. Run hobo ${family} up --hand-off again: it asks for the store's sign-in itself.`,
 			{ status: "chosen", store: label },
 		);
 	switch (state.status) {
@@ -457,26 +466,49 @@ const chooseArgs: JsonObject = {
 export function createStoreChoiceApp(
 	options: {
 		readonly cwd?: string;
-		readonly locatorFor?: (cwd: string) => SettingsStore;
+		readonly locatorFor?: (
+			cwd: string,
+			family: "ci" | "cd",
+		) => OwnerSettingsStore;
 		readonly sessions?: OwnerStoreSessions;
 		readonly pages?: OwnerPages;
 		readonly deposit?: (name: string, value: string) => void;
 		readonly relayLogin?: RelayLoginTool;
 	} = {},
 ): StoreChoiceApp {
-	const locatorFor =
+	const locatorFor: (cwd: string, family: "ci" | "cd") => OwnerSettingsStore =
 		options.locatorFor ?? ((cwd: string) => ownerLocator({ cwd }));
-	const awaitingWidget = new Set<string>();
+	type ChoiceTicket = {
+		cwd: string;
+		family: "ci" | "cd";
+		key: string;
+		revision: number;
+		locator: OwnerSettingsStore;
+		expires: number;
+	};
+	const revisions = new Map<string, number>();
+	const tickets = new Map<string, ChoiceTicket>();
+	const pageTickets = new Map<string, ChoiceTicket>();
 	const cwdOf = (args: JsonObject) =>
 		path.resolve(callArgs.parse(args).cwd ?? options.cwd ?? process.cwd());
+	const stale = () =>
+		result(
+			"This store picker is no longer current. Open a new picker for the selected project.",
+			{ status: "stale" },
+			true,
+		);
 
-	const establish = async (cwd: string, label: OwnerStoreLabel) => {
+	const establish = async (
+		cwd: string,
+		label: OwnerStoreLabel,
+		family: "ci" | "cd",
+	) => {
 		const state = await options.sessions?.establish(cwd);
-		return sessionResult(state, label);
+		return sessionResult(state, label, family);
 	};
 
 	const record = async (
-		cwd: string,
+		ticket: ChoiceTicket,
 		answer: JsonValue | undefined,
 	): Promise<CallToolResult> => {
 		let choice: StoreChoice;
@@ -485,49 +517,78 @@ export function createStoreChoiceApp(
 		} catch (error) {
 			if (!(error instanceof StoreChoiceInvalid)) throw error;
 			return result(
-				`Not recorded: ${error.rule} Call choose_secret_store again.`,
+				`Not recorded: ${error.rule} Ask the owner again with ${CHOOSE_SECRET_STORE_TOOL}.`,
 				{ status: "invalid", rule: error.rule },
 				true,
 			);
 		}
+		const settings = locatorSettings(choice);
+		let previous: Readonly<Record<string, string>>;
 		try {
-			const locator = locatorFor(cwd);
-			await locator.write({
-				...(await locator.read()),
-				...locatorSettings(choice),
+			if (
+				(revisions.get(ticket.key) ?? 0) !== ticket.revision ||
+				Date.now() >= ticket.expires
+			)
+				return stale();
+			ticket.locator.assertCurrent?.();
+			previous = await ticket.locator.read();
+			if (
+				(revisions.get(ticket.key) ?? 0) !== ticket.revision ||
+				Date.now() >= ticket.expires
+			)
+				return stale();
+			ticket.locator.assertCurrent?.();
+			ticket.locator.onOwnerChoice?.();
+			revisions.set(ticket.key, ticket.revision + 1);
+		} catch {
+			if (ticket.locator.hasPendingWrites?.())
+				return result(
+					"The selected store is saving a change. Wait until it finishes, then open the picker again.",
+					{ status: "busy" },
+					true,
+				);
+			return stale();
+		}
+		try {
+			await locatorFor(ticket.cwd, ticket.family).write({
+				...Object.fromEntries(
+					Object.entries(previous).filter(
+						([name]) => !isOwnerStoreSetting(name),
+					),
+				),
+				...settings,
 			});
 		} catch {
 			return NOT_SAVED;
 		}
-		return establish(cwd, labelFor(choice.store));
+		return establish(ticket.cwd, labelFor(choice.store), ticket.family);
 	};
 
-	const savedChoice = async (cwd: string) => {
-		const saved = chosenStore.safeParse(await locatorFor(cwd).read());
+	const savedChoice = async (cwd: string, family: "ci" | "cd") => {
+		const saved = chosenStore.safeParse(await locatorFor(cwd, family).read());
 		return saved.success ? saved.data.HOBO_SECRET_STORE : undefined;
 	};
 
 	const elicitChoice = async (
-		cwd: string,
+		ticket: ChoiceTicket,
 		request: ClientRequest,
 	): Promise<CallToolResult> => {
 		const unanswered = (action: string) =>
 			result(
-				`The owner ${action === "decline" ? "declined" : "closed"} the store picker; nothing was recorded. Call choose_secret_store again when they are ready.`,
+				`The owner ${action === "decline" ? "declined" : "closed"} the store picker; nothing was recorded. Ask again with ${CHOOSE_SECRET_STORE_TOOL} when they are ready.`,
 				{ status: action === "decline" ? "decline" : "cancel" },
 			);
 		const first = elicitResult.safeParse(
 			await request("elicitation/create", {
 				mode: "form",
-				message:
-					"Choose where HoBo keeps this project's credentials. Its sign-in is asked for separately; nothing you enter here is shown to the agent.",
+				message: `Choose where HoBo keeps this project's credentials (hobo ${ticket.family} up). Its sign-in is asked for separately; nothing you enter here is shown to the agent.`,
 				requestedSchema: STORE_CHOICE_SCHEMA,
 			}),
 		);
 		if (!first.success || first.data.action !== "accept")
 			return unanswered(first.success ? first.data.action : "cancel");
 		const picked = storeOnly.safeParse(first.data.content);
-		if (!picked.success) return record(cwd, undefined);
+		if (!picked.success) return record(ticket, undefined);
 		const store = picked.data.store;
 		const option = STORE_OPTIONS.find((o) => o.id === store);
 		const second = elicitResult.safeParse(
@@ -540,7 +601,10 @@ export function createStoreChoiceApp(
 		if (!second.success || second.data.action !== "accept")
 			return unanswered(second.success ? second.data.action : "cancel");
 		const fields = second.data.content;
-		return record(cwd, isJsonObject(fields) ? { ...fields, store } : { store });
+		return record(
+			ticket,
+			isJsonObject(fields) ? { ...fields, store } : { store },
+		);
 	};
 
 	const submitOwnerPage = async (
@@ -565,6 +629,14 @@ export function createStoreChoiceApp(
 				true,
 			);
 		}
+		const ticket = pageTickets.get(opened.page);
+		pageTickets.delete(opened.page);
+		if (ticket === undefined || ticket.cwd !== opened.cwd) return UNAVAILABLE;
+		if (
+			(revisions.get(ticket.key) ?? 0) !== ticket.revision ||
+			Date.now() >= ticket.expires
+		)
+			return stale();
 		const { answers } = opened;
 		for (const name of OWNER_PAGE_SECRET_FIELDS) {
 			const value = answers[name]?.trim();
@@ -577,7 +649,20 @@ export function createStoreChoiceApp(
 				return value === undefined ? [] : [[name, value]];
 			}),
 		]);
-		return record(opened.cwd, choice);
+		return record(ticket, choice);
+	};
+
+	const openPage = async (
+		ticket: ChoiceTicket,
+		pages: OwnerPages,
+	): Promise<CallToolResult> => {
+		const opened = await pages.open(ticket.cwd);
+		for (const [page, pending] of pageTickets)
+			if (pending.expires <= Date.now()) pageTickets.delete(page);
+		if (pageTickets.size >= 32)
+			pageTickets.delete(pageTickets.keys().next().value ?? "");
+		pageTickets.set(opened.page, ticket);
+		return ownerPage(opened);
 	};
 
 	const baseTools = (
@@ -587,7 +672,7 @@ export function createStoreChoiceApp(
 			name: CHOOSE_SECRET_STORE_TOOL,
 			title: "Connect the owner's secret store",
 			description:
-				"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form or HoBo's widget) which store to use and sign in. Takes no store settings; returns only a status and the store's name.",
+				"Connect the owner's secret store to this HoBo session: reuse an established session, or ask the owner privately (a host form, HoBo's widget or HoBo's sealed owner page) which store to use (Infisical, 1Password or Bitwarden) and sign in, including when hobo ci|cd up stops with HOBO_*_STORE_CHOICE. Takes no store settings; returns only a status and the store's name.",
 			inputSchema: {
 				type: "object",
 				properties: chooseArgs,
@@ -636,8 +721,12 @@ export function createStoreChoiceApp(
 					"Called only by HoBo's store picker widget with the owner's answer.",
 				inputSchema: {
 					type: "object",
-					properties: { ...familyArg, ...STORE_CHOICE_PROPERTIES },
-					required: ["store"],
+					properties: {
+						...familyArg,
+						...STORE_CHOICE_PROPERTIES,
+						choiceTicket: { type: "string" },
+					},
+					required: ["store", "choiceTicket"],
 					additionalProperties: false,
 				},
 				_meta: {
@@ -691,6 +780,7 @@ export function createStoreChoiceApp(
 		},
 		async callTool(tool, args, support, request) {
 			const cwd = cwdOf(args);
+			const family = args.family === "ci" ? "ci" : "cd";
 			if (tool === RELAY_LOGIN_TOOL)
 				return options.relayLogin === undefined
 					? UNAVAILABLE
@@ -712,43 +802,73 @@ export function createStoreChoiceApp(
 				return submitOwnerPage(args, options.pages);
 			}
 			if (tool === SUBMIT_STORE_CHOICE_TOOL) {
-				if (!support.apps || !awaitingWidget.has(cwd)) return UNAVAILABLE;
-				awaitingWidget.delete(cwd);
-				return record(cwd, args);
+				if (!support.apps) return UNAVAILABLE;
+				const id = isJsonString(args.choiceTicket) ? args.choiceTicket : "";
+				const ticket = tickets.get(id);
+				if (!ticket) return UNAVAILABLE;
+				if (ticket.family !== family || ticket.cwd !== cwd) return stale();
+				const outcome = await record(ticket, args);
+				if (!outcome.isError || outcome.structuredContent?.status === "stale")
+					tickets.delete(id);
+				return outcome;
 			}
+			const key = `${family}\u0000${cwd}`;
+			const ticketFor = (minutes: number): ChoiceTicket => ({
+				cwd,
+				family,
+				key,
+				revision: revisions.get(key) ?? 0,
+				locator: locatorFor(cwd, family),
+				expires: Date.now() + minutes * 60_000,
+			});
 			const parsedCall = callArgs.parse(args);
-			const reselect = parsedCall.reselect === true;
 			if (parsedCall.channel === "page" && options.pages !== undefined)
-				return ownerPage(cwd, options.pages);
-			if (!reselect) {
+				return openPage(ticketFor(30), options.pages);
+			if (parsedCall.reselect !== true) {
+				const locator = locatorFor(cwd, family);
 				const held = options.sessions?.status(cwd);
-				if (held?.established === true && held.store !== undefined)
+				if (held?.established === true && held.store !== undefined) {
+					locator.markSessionChosen?.();
 					return sessionResult(
 						{ status: "established", store: held.store },
 						held.store,
+						family,
 					);
+				}
 				let saved: StoreChoice["store"] | undefined;
 				try {
-					saved = await savedChoice(cwd);
+					saved = await savedChoice(cwd, family);
 				} catch {
 					return NOT_SAVED;
 				}
-				if (saved !== undefined) return establish(cwd, labelFor(saved));
+				if (saved !== undefined) {
+					locator.markSessionChosen?.();
+					return establish(cwd, labelFor(saved), family);
+				}
 			}
+			const ticket = ticketFor(10);
 			if (support.formElicitation && request !== undefined)
-				return elicitChoice(cwd, request);
+				return elicitChoice(ticket, request);
 			if (support.apps) {
-				awaitingWidget.add(cwd);
+				for (const [id, pending] of tickets)
+					if (pending.expires <= Date.now()) tickets.delete(id);
+				if (tickets.size >= 32)
+					tickets.delete(tickets.keys().next().value ?? "");
+				const id = randomUUID();
+				tickets.set(id, ticket);
 				return {
 					...result(
 						"HoBo's store picker is shown to the owner. Their answer goes to HoBo only; it connects the store when they submit it.",
 						{ status: "shown" },
 					),
-					_meta: { "ui/resourceUri": STORE_CHOICE_RESOURCE_URI },
+					_meta: {
+						"ui/resourceUri": STORE_CHOICE_RESOURCE_URI,
+						hoboChoiceTicket: id,
+					},
 				};
 			}
 			if (options.pages === undefined) return UNAVAILABLE;
-			return ownerPage(cwd, options.pages);
+			return openPage(ticketFor(30), options.pages);
 		},
 	};
 }
@@ -766,8 +886,11 @@ export function renderStoreChoiceHtml(): string {
 body{margin:0;padding:16px;font:15px/1.4 system-ui,sans-serif;color:var(--ink);background:var(--paper)}
 h1{font-size:17px;margin:0 0 12px}.opt{display:block;padding:10px;border:2px solid var(--line);border-radius:8px;margin:0 0 8px}
 .opt span{color:var(--muted);font-size:13px}.ids label{display:block;margin:8px 0 2px;font-size:13px}
+[data-for][hidden]{display:none}
 input[type=text]{width:100%;box-sizing:border-box;padding:8px;border:2px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink)}
 button{margin-top:12px;padding:10px 16px;border:2px solid var(--line);border-radius:8px;background:var(--ink);color:var(--paper);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:not(:disabled){cursor:pointer}
 #say{margin-top:10px;min-height:1.2em}
 </style></head><body>
 <h1>Choose your secret store</h1>
@@ -778,20 +901,21 @@ button{margin-top:12px;padding:10px 16px;border:2px solid var(--line);border-rad
 <label for="c" data-for="1password">Connect server (https)</label><input type="text" id="c" name="OP_CONNECT_HOST" data-for="1password">
 <label for="b" data-for="bitwarden">Self-hosted server (optional)</label><input type="text" id="b" name="BITWARDEN_SERVER_URL" data-for="bitwarden">
 </div>
-<button type="submit">Use this store</button><div id="say" role="status"></div></form>
+<button type="submit" disabled>Use this store</button><div id="say" role="status"></div></form>
 <script>
 (function(){
-var nextId=1,pending={},cwd;
+var nextId=1,pending={},family="cd",cwd,choiceTicket,inputReady=false;
 function post(m){window.parent.postMessage(m,"*")}
 function request(method,params){var id=nextId++;post({jsonrpc:"2.0",id:id,method:method,params:params});return new Promise(function(res,rej){pending[id]={res:res,rej:rej}})}
 function notify(method,params){post({jsonrpc:"2.0",method:method,params:params})}
-var f=document.getElementById("f"),say=document.getElementById("say");
+var f=document.getElementById("f"),say=document.getElementById("say"),button=f.querySelector("button");
+function ready(){button.disabled=!(inputReady&&choiceTicket)}
 function picked(){return f.querySelector("input[name=store]:checked")}
 function show(){var s=(picked()||{}).value;
 Array.prototype.forEach.call(document.querySelectorAll("[data-for]"),function(e){e.hidden=e.getAttribute("data-for")!==s});
 notify("ui/notifications/size-changed",{height:Math.ceil(document.documentElement.scrollHeight)})}
 f.addEventListener("change",show);show();
-f.addEventListener("submit",function(e){e.preventDefault();var d=new FormData(f),args={},label=(picked()||{getAttribute:function(){return ""}}).getAttribute("data-label");
+f.addEventListener("submit",function(e){e.preventDefault();if(!inputReady||!choiceTicket)return;var d=new FormData(f),args={family:family,choiceTicket:choiceTicket},label=(picked()||{getAttribute:function(){return ""}}).getAttribute("data-label");
 if(cwd)args.cwd=cwd;
 d.forEach(function(v,k){var t=String(v).trim();var el=f.elements[k];if(t&&(!el||!el.hidden))args[k]=t});
 request("tools/call",{name:"${SUBMIT_STORE_CHOICE_TOOL}",arguments:args}).then(function(r){
@@ -801,7 +925,8 @@ if(r&&!r.isError)request("ui/message",{role:"user",content:[{type:"text",text:"I
 function(){say.textContent="Not recorded: the request did not complete. Try again."})});
 window.addEventListener("message",function(ev){if(ev.source!==window.parent)return;var m=ev.data;if(!m||m.jsonrpc!=="2.0")return;
 if(m.method===undefined&&m.id!==undefined){var w=pending[m.id];if(!w)return;delete pending[m.id];m.error?w.rej(m.error):w.res(m.result);return}
-if(m.method==="ui/notifications/tool-input"&&m.params&&m.params.arguments&&typeof m.params.arguments.cwd==="string")cwd=m.params.arguments.cwd;
+if(m.method==="ui/notifications/tool-input"&&m.params&&m.params.arguments){if(m.params.arguments.family)family=m.params.arguments.family;if(typeof m.params.arguments.cwd==="string")cwd=m.params.arguments.cwd;inputReady=true;ready()}
+if(m.method==="ui/notifications/tool-result"&&m.params&&m.params._meta&&typeof m.params._meta.hoboChoiceTicket==="string"){choiceTicket=m.params._meta.hoboChoiceTicket;ready()}
 if(m.method==="ui/notifications/host-context-changed"&&m.params&&m.params.theme)document.documentElement.setAttribute("data-theme",m.params.theme);
 if(m.id!==undefined&&(m.method==="ui/resource-teardown"||m.method==="ping"))post({jsonrpc:"2.0",id:m.id,result:{}})});
 request("ui/initialize",{appInfo:{name:"hobo-store-choice",version:"1.0.0"},appCapabilities:{},protocolVersion:"2026-01-26"}).then(function(r){

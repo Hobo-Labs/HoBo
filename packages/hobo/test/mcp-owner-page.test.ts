@@ -187,6 +187,7 @@ describe.skipIf(browser === undefined)("HoBo's owner page", () => {
 
 		const unsealed = await pages.unseal(out.data.sealed);
 		expect(unsealed).toEqual({
+			page: opened.page,
 			cwd: "/synthetic/project",
 			answers: {
 				store: "infisical",
@@ -399,6 +400,60 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 		expect(choice).toEqual({ store: "infisical", projectId: undefined });
 		expect(locatorSettings(choice)).toEqual({ HOBO_SECRET_STORE: "infisical" });
 	});
+
+	it.skipIf(browser === undefined)(
+		"refuses a page answer once the owner chose again, and deposits nothing",
+		async () => {
+			const deposited = new Map<string, string>();
+			const written: Record<string, string>[] = [];
+			const app = createStoreChoiceApp({
+				cwd: "/synthetic/project",
+				locatorFor: () => ({
+					read: async () => ({}),
+					write: async (values: Record<string, string>) => {
+						written.push(values);
+					},
+				}),
+				pages: createOwnerPages(),
+				deposit: (name, value) => deposited.set(name, value),
+			});
+			const support = { formElicitation: true, apps: false };
+			const shown = await app.callTool(
+				CHOOSE_SECRET_STORE_TOOL,
+				{ channel: "page" },
+				support,
+				undefined,
+			);
+			const page = z
+				.object({ status: z.literal("owner-page"), html: z.string() })
+				.parse(shown.structuredContent);
+			const answers = [
+				{ action: "accept", content: { store: "bitwarden" } },
+				{ action: "accept", content: {} },
+			];
+			const chosen = await app.callTool(
+				CHOOSE_SECRET_STORE_TOOL,
+				{ reselect: true },
+				support,
+				async () => answers.shift() ?? { action: "cancel" },
+			);
+			expect(chosen.structuredContent).toMatchObject({ status: "chosen" });
+			const out = await submitInBrowser(
+				page.html,
+				{ INFISICAL_PROJECT_ID: PROJECT, INFISICAL_TOKEN: TOKEN },
+				"infisical",
+			);
+			const done = await app.callTool(
+				SUBMIT_OWNER_PAGE_TOOL,
+				{ sealed: out.data.sealed },
+				support,
+				undefined,
+			);
+			expect(done.structuredContent).toEqual({ status: "stale" });
+			expect(deposited.size).toBe(0);
+			expect(written).toEqual([{ HOBO_SECRET_STORE: "bitwarden" }]);
+		},
+	);
 
 	it("still reports no private form when no owner page is wired", async () => {
 		const app = createStoreChoiceApp({

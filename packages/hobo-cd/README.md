@@ -137,7 +137,9 @@ Creating a missing Neon member requires a durable, owner-scoped store with an
 atomic create-if-absent operation; Neon cannot deduplicate a create across
 processes or after a crash. The Infisical and Bitwarden vault adapters do not
 advertise that operation, so they refuse creation of missing members. Existing
-complete fleets can still be opened.
+complete fleets can still be opened. Provisioning re-reads the roster, existing
+connection entries and other settings after acquiring the store write lock, so a
+waiting run cannot recreate a member or overwrite settings changed by its predecessor.
 Each connection string goes straight into the
 owner's secret store at `HOBO_CD_POSTGRES_URL_<ID>`, its claim link beside it at
 `HOBO_CD_POSTGRES_CLAIM_<ID>` (claim each to keep it: an unclaimed database

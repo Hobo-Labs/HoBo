@@ -6,6 +6,5 @@
 	"ticketId": "cap_AAAAAAAAAAAAAAAAAAAAAA",
 	"name": "HOBO_CI_WEBHOOK_SECRET",
 	"target": "runtime",
-	"channel": "mcp-app",
-	"ref": "infisical://proj-1/prod/hobo-ci-relay/HOBO_CI_WEBHOOK_SECRET"
+	"channel": "mcp-app"
 }

@@ -55,6 +55,16 @@ export interface RemoteOwnerHands {
 export type RemoteOwnerResult =
 	| { readonly kind: "ready"; readonly runs: number; readonly trail: string[] }
 	| {
+			readonly kind: "waiting";
+			readonly runs: number;
+			readonly trail: string[];
+	  }
+	| {
+			readonly kind: "blocked";
+			readonly reason: string;
+			readonly trail: string[];
+	  }
+	| {
 			readonly kind: "dead-end";
 			readonly reason: string;
 			readonly lines: readonly string[];
@@ -78,8 +88,11 @@ export async function driveRemoteOwner(options: {
 		const step = readOwnerTurn(turn.ready, turn.lines, options.publicOrigins);
 		if (step.kind === "ready") return { kind: "ready", runs, trail };
 		if (step.kind === "dead-end") return { ...step, trail };
+		if (step.kind === "blocked") return { ...step, trail };
 		const action = step.action;
 		trail.push(action.kind);
+		if (action.kind === "wait-for-owner")
+			return { kind: "waiting", runs, trail };
 		const hands = options.hands;
 		const done =
 			action.kind === "run-again"
@@ -136,6 +149,7 @@ export function heldOwnerChannel() {
 		restart(): void;
 		readonly opened: typeof opened;
 	} = {
+		privateCaptureAllowed: true,
 		opened,
 		openUrl: async (url, _message, capture) => {
 			opened.push({ url, capture });

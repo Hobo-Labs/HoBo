@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -22,7 +23,7 @@ import {
 	isolatedOwnerFetch,
 } from "../../src/isolated-owner-fetch.js";
 import { OWNER_PROXY_CONNECTION_LIMIT } from "../../src/isolated-owner-origin.js";
-import { ownerRequest } from "../../src/isolated-owner-wire.js";
+import { OWNER_RUN_FD, ownerRequest } from "../../src/isolated-owner-wire.js";
 
 const marker = "fixture-private-origin-value";
 const address = z.object({ port: z.number().int().positive().max(65535) });
@@ -92,6 +93,10 @@ it("revalidates proxy credentials in the child before connecting", async () => {
 		);
 		const run = async (proxyUrl: string) => {
 			const packet = ownerRequest.parse({
+				run: {
+					id: crypto.randomUUID(),
+					secret: "A".repeat(43),
+				},
 				url: "https://fixture.invalid/",
 				method: "POST",
 				headers: [],
@@ -111,11 +116,14 @@ it("revalidates proxy credentials in the child before connecting", async () => {
 			});
 			const child = spawn(process.execPath, [childPath], {
 				env: {},
-				stdio: ["pipe", "pipe", "ignore"],
+				stdio: ["pipe", "pipe", "ignore", "pipe"],
 			});
 			const chunks: Buffer[] = [];
 			child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
 			const closed = once(child, "close");
+			const runPipe = child.stdio[OWNER_RUN_FD];
+			if (!(runPipe instanceof Writable)) throw new Error("no run pipe");
+			runPipe.end(JSON.stringify(packet.run));
 			child.stdin.end(JSON.stringify(packet));
 			const [code] = await closed;
 			return { code, output: Buffer.concat(chunks).toString() };

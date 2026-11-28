@@ -22,11 +22,13 @@ export type OwnerAction =
 	/** The agent runs the ceremony through the HoBo MCP server instead. */
 	| { readonly kind: "use-mcp" }
 	/** Nothing for the owner to do: the agent runs again (a transient refusal). */
-	| { readonly kind: "run-again" };
+	| { readonly kind: "run-again" }
+	| { readonly kind: "wait-for-owner" };
 
 export type OwnerStep =
 	| { readonly kind: "ready" }
 	| { readonly kind: "act"; readonly action: OwnerAction }
+	| { readonly kind: "blocked"; readonly reason: string }
 	| {
 			readonly kind: "dead-end";
 			readonly reason: string;
@@ -61,6 +63,30 @@ export function readOwnerTurn(
 			reason:
 				"The run told a remote owner to do something only possible at the box.",
 			lines: infeasible,
+		};
+	if (lines.includes("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"))
+		return {
+			kind: "blocked",
+			reason:
+				"A verified atomic claim store or an existing CD journal fleet is required.",
+		};
+	if (
+		lines.some((line) =>
+			[
+				"HOBO_UP_INCOMPLETE",
+				"HOBO_UP_FAILED",
+				"HOBO_MCP_OWNER_FORM_UNAVAILABLE",
+				"HOBO_MCP_OWNER_APPROVAL_UNAVAILABLE",
+				"HOBO_MCP_SETUP_NOT_COMPLETED",
+				"HOBO_MCP_SETUP_FAILED",
+				"HOBO_MCP_SETUP_RESULT",
+				"MCP_SCOPE_DENIED",
+			].includes(line),
+		)
+	)
+		return {
+			kind: "blocked",
+			reason: "HoBo setup cannot proceed in this session.",
 		};
 	if (ready) return { kind: "ready" };
 	const captures: string[] = [];
@@ -102,6 +128,14 @@ export function readOwnerTurn(
 	}
 	if (lines.some((line) => /through the HoBo MCP server/u.test(line)))
 		return { kind: "act", action: { kind: "use-mcp" } };
+	if (
+		lines.some(
+			(line) =>
+				line ===
+				"The owner declined Vercel approval. Retry only if they request it.",
+		)
+	)
+		return { kind: "act", action: { kind: "wait-for-owner" } };
 	// A form the owner declined or closed: the agent asks again.
 	if (
 		lines.some((line) => /\b(Ask again with|call) capture_secret\b/u.test(line))

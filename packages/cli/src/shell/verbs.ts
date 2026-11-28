@@ -389,7 +389,7 @@ Usage:
   hobo ci usage                    Billed minutes, short jobs, minutes kept off GitHub and the included minutes left (--source github)
   hobo ci performance              Workflow, job and runner times against ubuntu-latest, and the signals by slice and day
   hobo ci serve                   Host the CI relay locally (see serve options)
-  hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
+  hobo ci deploy                  Deliver the hosted relay to Vercel (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
   hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
   hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
@@ -460,11 +460,11 @@ Serve options (hobo ci serve):
   --home <path>               HOBO_HOME for serve state (credentials, db)
 
 Deploy options (hobo ci deploy; run in the relay's project directory, or pass --cwd):
-  --repo <owner/repository>   The GitHub repository Vercel builds
+  --repo <owner/repository>   The repository containing the source
   --ref <branch|tag|sha>      The git ref to deploy
   --sha <commit>              Pin the full commit sha the ref names
   --project <name>            The Vercel project
-  --target preview|production Deployment target (default: preview)
+  --target preview|production Deployment target (default: preview; managed defaults to production)
   --team <team_id>            Vercel team id (default: VERCEL_TEAM_ID)
   --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
   --root-directory <dir>      Project root directory to save on the project
@@ -474,11 +474,16 @@ Deploy options (hobo ci deploy; run in the relay's project directory, or pass --
                               then promotes that build. Production needs prebuilt
                               (HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT)
   --dry-run                   Print what would be sent; reads no token, sends nothing
-                              A real run reads the team and the config service's
-                              coordinates from the owner's store session (HoBo MCP's
-                              choose_secret_store); without one it stops with
-                              HOBO_CI_SECRET_STORE_SESSION_REQUIRED.
-  --adopt                     Token-free: adopt the deployment Vercel's Git integration
+                              A real run reads the deploy credential from its trusted
+                              vault or the isolated secret-store project, not the environment,
+                              and the team and the config service's coordinates from the
+                              owner's store session (HoBo MCP's choose_secret_store);
+                              without one it stops with HOBO_CI_SECRET_STORE_SESSION_REQUIRED.
+  --managed                   Deliver --sha through HoBo CD: upload the pinned workspace,
+                              verify preview, stage production, check its public health,
+                              and attempt rollback on failure. No Git connection is needed.
+                              Use --target preview for a preview-only delivery.
+  --adopt                     Optional: adopt a deployment Vercel's Git integration
                               made of --sha (takes --sha, --repo, --ref only). Reads
                               GitHub's Deployments API with GITHUB_TOKEN, never a Vercel
                               token; verifies preview by its deployment record (READY,

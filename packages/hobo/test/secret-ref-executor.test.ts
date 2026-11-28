@@ -131,6 +131,14 @@ describe("secretRef execution", () => {
 			open: async () => bitwarden(),
 			store: await recorded(),
 		});
+		const preview = await iac.preview(
+			program("config", "secret-store:bitwarden"),
+		);
+		expect(preview).toEqual({
+			summary: "secret store reference ready",
+			changes: 0,
+		});
+		expect(JSON.stringify(preview)).not.toContain("org/project");
 		await expect(
 			iac.apply(program("config", "secret-store:bitwarden")),
 		).resolves.toEqual({

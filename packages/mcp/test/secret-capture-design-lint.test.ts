@@ -59,9 +59,16 @@ describe("secret-capture form design lint (HoBo Rubberhose)", () => {
 				'el("capture-label").textContent = next.label || next.name;',
 				'el("capture-purpose").textContent = next.purpose || "";',
 				'el("capture-name").textContent = next.name;',
-				'done.textContent = String(answer.ref || "")',
+				"done.textContent = handoff",
 			])
 				expect(html).toContain(assignment);
+			expect(html).not.toContain("answer.ref");
+			expect(html).not.toContain("handoff://");
+			expect(html).toContain("Handed to the waiting run. You can close this.");
+			expect(html).toContain(
+				"Writes authorized for this session. You can close this.",
+			);
+			expect(html).toContain("Stored in the secret store. You can close this.");
 		}
 	});
 

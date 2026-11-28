@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { startFakeInfisical } from "./support/fake-infisical-api.js";
+import {
+	copiedSession,
+	startFakeInfisical,
+} from "./support/fake-infisical-api.js";
 import {
 	fakeNeon,
 	fakeVercel,
@@ -275,6 +278,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+			expect(check(REACHES_FRONTIER, events).holds).toBe(true);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
 			expect(
@@ -293,11 +297,89 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 		}
 	}, 120_000);
 
-	it("a form nobody answers: the one cd call ends with the link instead of hanging", async () => {
-		// Derived from the live run: the host took the sign-in form and never
-		// showed it, and cd sat open for the host's whole 30 minutes. With
-		// a deadline (1 ms here; 10 minutes by default) the server withdraws
-		// the form and the call ends with the link, so the agent falls back.
+	it("refuses a fresh journal without an atomic claim before contacting Neon", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const vercel = fakeVercel();
+		const neon = fakeNeon();
+		const world = await startTlsWorld({
+			"app.infisical.com": api.handle,
+			"api.vercel.com": vercel.handle,
+			"neon.new": neon.handle,
+		});
+		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
+		mkdirSync(path.dirname(locator), { recursive: true });
+		writeFileSync(
+			locator,
+			JSON.stringify({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "proj-1",
+			}),
+		);
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			CLAUDE_CODE_REMOTE: "true",
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: LIVE_HOST,
+				}),
+			);
+			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
+			const signIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			const jwt = api.signIn();
+			const copied = copiedSession(jwt);
+			server.send({
+				jsonrpc: "2.0",
+				id: signIn.id ?? null,
+				result: { action: "accept", content: { value: copied } },
+			});
+			const approval = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			const form = z
+				.object({
+					requestedSchema: z.object({
+						properties: z.object({ link: z.object({ default: z.string() }) }),
+					}),
+				})
+				.parse(approval.params);
+			server.send({
+				jsonrpc: "2.0",
+				id: approval.id ?? null,
+				result: { action: "accept", content: { done: true } },
+			});
+			vercel.approve(form.requestedSchema.properties.link.default);
+			const response = JSON.stringify(await server.answer(run));
+			expect(response).toContain("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE");
+			expect(response).toContain("atomic-claim-store-required");
+			for (const privateValue of [copied, jwt, "proj-1"])
+				expect(response).not.toContain(privateValue);
+			expect(world.blocked).toEqual([]);
+			expect(world.requests).not.toContainEqual(
+				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
+			);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+			rmSync(config, { recursive: true, force: true });
+		}
+	}, 120_000);
+
+	it("withdraws an unanswered form without returning its private link", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		const api = await startFakeInfisical("org-1");
 		const world = await startTlsWorld({ "app.infisical.com": api.handle });
@@ -340,15 +422,149 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			);
 			const ended = JSON.stringify(await server.answer(run));
 			expect(ended).toContain("HOBO_CD_INFISICAL_SIGN_IN");
-			expect(ended).toMatch(
-				/HOBO_OWNER_SIGN_IN url=https:\/\/app\.infisical\.com\/login/u,
-			);
-			// The link it ends with is the one the form carried.
+			expect(ended).toContain("retry-setup-when-ready");
+			expect(ended).not.toMatch(/https?:|HOBO_OWNER_SIGN_IN|proj-1/u);
 			const events = eventsFromWire(server.wire);
 			const verdicts = ceremonyProperties({}).map((property) =>
 				check(property, events),
 			);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+		}
+	}, 120_000);
+
+	it("reuses the selected owner session for the same project subdirectory", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const world = await startTlsWorld({ "app.infisical.com": api.handle });
+		const project = path.join(REPO, "packages/ci-vercel");
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: LIVE_HOST,
+				}),
+			);
+			const first = await server.answer(
+				server.tool("cd", { args: ["up", "--hand-off"], cwd: project }),
+			);
+			expect(JSON.stringify(first)).toContain("HOBO_CD_STORE_CHOICE");
+			const choice = server.tool("choose_secret_store", {
+				family: "cd",
+				cwd: project,
+			});
+			const picker = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: picker.id ?? null,
+				result: { action: "accept", content: { store: "infisical" } },
+			});
+			const settings = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: settings.id ?? null,
+				result: {
+					action: "accept",
+					content: { INFISICAL_PROJECT_ID: "synthetic-private-project" },
+				},
+			});
+			const choiceSignIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: choiceSignIn.id ?? null,
+				result: { action: "decline" },
+			});
+			const selected = JSON.stringify(await server.answer(choice));
+			expect(selected).toContain("sign-in-needed");
+			expect(selected).not.toContain("synthetic-private-project");
+			const retry = server.tool("cd", {
+				args: ["up", "--hand-off"],
+				cwd: project,
+			});
+			const signIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
+			server.send({
+				jsonrpc: "2.0",
+				id: signIn.id ?? null,
+				result: { action: "decline" },
+			});
+			const result = JSON.stringify(await server.answer(retry));
+			expect(result).toContain("HOBO_CD_INFISICAL_SIGN_IN");
+			expect(result).not.toContain("synthetic-private-project");
+			expect(result).not.toMatch(/https?:/u);
+		} finally {
+			server.stop();
+			await world.close();
+			await api.close();
+		}
+	}, 120_000);
+
+	it("does not expose a sign-in link when the host offers no owner form", async () => {
+		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
+		const api = await startFakeInfisical("org-1");
+		const world = await startTlsWorld({ "app.infisical.com": api.handle });
+		const locator = secretStoreLocatorPath(REPO, { XDG_CONFIG_HOME: config });
+		mkdirSync(path.dirname(locator), { recursive: true });
+		writeFileSync(
+			locator,
+			JSON.stringify({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "synthetic-private-project",
+			}),
+		);
+		const server = startServer({
+			...process.env,
+			XDG_CONFIG_HOME: config,
+			HTTPS_PROXY: world.proxyUrl,
+			https_proxy: world.proxyUrl,
+			HTTP_PROXY: world.proxyUrl,
+			http_proxy: world.proxyUrl,
+			NO_PROXY: "",
+			no_proxy: "",
+			NODE_EXTRA_CA_CERTS: world.caBundle,
+		});
+		try {
+			await server.answer(
+				server.call("initialize", {
+					protocolVersion: "2025-11-25",
+					capabilities: {},
+				}),
+			);
+			const result = JSON.stringify(
+				await server.answer(
+					server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO }),
+				),
+			);
+			expect(result).toContain("HOBO_MCP_OWNER_FORM_UNAVAILABLE");
+			expect(result).not.toContain("synthetic-private-project");
+			expect(result).not.toMatch(/https?:/u);
+			expect(
+				server.wire
+					.filter((line) => line.to === "host")
+					.map((line) => line.message)
+					.join("\n"),
+			).not.toMatch(/elicitation\/create|synthetic-private-project|https?:/u);
 		} finally {
 			server.stop();
 			await world.close();

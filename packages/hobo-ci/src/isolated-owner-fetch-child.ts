@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
 import { isolatedOwnerEgressFetch } from "./egress.js";
 import {
 	assertPrivateOwnerProxy,
 	isolatedOwnerOrigin,
 } from "./isolated-owner-origin.js";
-import { OWNER_MESSAGE_LIMIT, ownerRequest } from "./isolated-owner-wire.js";
+import {
+	authenticatedOwnerRun,
+	OWNER_MESSAGE_LIMIT,
+	OWNER_RUN_FD,
+	ownerRequest,
+	ownerRun,
+} from "./isolated-owner-wire.js";
 import { parseProxyUrl } from "./parsed-values.js";
 
 async function respond(value: string): Promise<void> {
@@ -17,6 +24,9 @@ async function respond(value: string): Promise<void> {
 }
 
 async function run(): Promise<void> {
+	const authorizedRun = ownerRun.parse(
+		JSON.parse(readFileSync(OWNER_RUN_FD, "utf8")),
+	);
 	const pieces: Buffer[] = [];
 	let length = 0;
 	for await (const piece of process.stdin) {
@@ -28,6 +38,8 @@ async function run(): Promise<void> {
 	const parsed = ownerRequest.parse(
 		JSON.parse(Buffer.concat(pieces).toString("utf8")),
 	);
+	if (!authenticatedOwnerRun(parsed, authorizedRun))
+		throw new Error("Private owner run authentication failed.");
 	const route = {
 		proxy: parsed.egress.proxy
 			? parseProxyUrl("HTTPS_PROXY", parsed.egress.proxy)
@@ -89,6 +101,7 @@ async function run(): Promise<void> {
 	await respond(
 		JSON.stringify({
 			ok: true,
+			runId: parsed.run.id,
 			url: response.url,
 			redirected: response.redirected,
 			type: response.type,

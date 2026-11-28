@@ -213,6 +213,17 @@ export interface BitwardenProvisionOptions {
 	readonly projectId?: BitwardenId;
 	readonly fetch: typeof fetch;
 	readonly emit: (line: string) => void;
+	readonly privateOwner?: boolean;
+	readonly approve?: (request: {
+		readonly url: string;
+		readonly message: string;
+	}) => Promise<boolean | undefined>;
+	readonly chooseOrganization?: (
+		choices: readonly { readonly value: string; readonly label: string }[],
+	) => Promise<string | undefined>;
+	readonly authErrorReadTimeoutMs?: number;
+	readonly runMutation?: <T>(action: () => Promise<T>) => Promise<T>;
+	readonly markUncertainMutation?: () => void;
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
 	/** How long the owner has to approve (Bitwarden expires requests at 15 minutes). */
@@ -289,6 +300,41 @@ const authResponse = z.object({
 	responseDate: z.string().nullish(),
 	requestApproved: z.boolean().nullish(),
 });
+
+async function authenticationRejected(
+	response: Response,
+	timeoutMs: number,
+): Promise<boolean> {
+	if (response.status === 401) return true;
+	if (response.status !== 400 || response.body === null) return false;
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let text = "";
+	let size = 0;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<undefined>((resolve) => {
+		timer = setTimeout(() => resolve(undefined), timeoutMs);
+	});
+	try {
+		for (;;) {
+			const part = await Promise.race([reader.read(), timeout]);
+			if (part === undefined) return false;
+			if (part.done) break;
+			size += part.value.byteLength;
+			if (size > 8192) return false;
+			text += decoder.decode(part.value, { stream: true });
+		}
+		text += decoder.decode();
+		return z
+			.object({ error: z.enum(["invalid_client", "invalid_grant"]) })
+			.safeParse(JSON.parse(text)).success;
+	} catch {
+		return false;
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+		void reader.cancel().catch(() => {});
+	}
+}
 const named = z.object({
 	data: z.array(z.object({ id: z.string(), name: z.string().nullish() })),
 });
@@ -327,6 +373,22 @@ export async function provisionBitwardenAccessToken(
 	options: BitwardenProvisionOptions,
 ): Promise<BitwardenProvisionResult> {
 	const fam = options.family.toUpperCase();
+	const ownerChannelFailed = () =>
+		new ProvisionRefusal(
+			`HOBO_${fam}_OWNER_CHANNEL_FAILED`,
+			"The private owner channel failed before completing this step.",
+			["Retry with a working private owner channel."],
+		);
+	if (options.privateOwner && options.approve === undefined)
+		return {
+			kind: "refused",
+			code: `HOBO_${fam}_HANDOFF_SILENT`,
+			message:
+				"This session cannot reach the owner through a private approval form.",
+			remediation: [
+				"Run setup when a private owner approval form is available.",
+			],
+		};
 	const server = options.endpoints;
 	const deviceHeaders = {
 		"Device-Type": "25",
@@ -340,28 +402,54 @@ export async function provisionBitwardenAccessToken(
 		url: string,
 		init: RequestInit,
 	): Promise<T> => {
-		const headers = new Headers(init.headers);
-		headers.set("Accept", "application/json");
-		for (const [name, value] of Object.entries(deviceHeaders))
-			headers.set(name, value);
-		const response = await options.fetch(url, { ...init, headers });
-		if (!response.ok)
-			throw new ProvisionRefusal(
-				`HOBO_${fam}_BITWARDEN_API`,
-				`Bitwarden refused ${what} (HTTP ${response.status}).`,
-				[
-					"Check that your account can manage Secrets Manager in this organization (it needs Secrets Manager access and the right to create projects and machine accounts).",
-				],
-			);
-		const text = await response.text();
-		const parsed = schema.safeParse(text === "" ? {} : JSON.parse(text));
-		if (!parsed.success)
+		const mutation = !["GET", "HEAD"].includes(
+			(init.method ?? "GET").toUpperCase(),
+		);
+		const execute = async () => {
+			const headers = new Headers(init.headers);
+			headers.set("Accept", "application/json");
+			for (const [name, value] of Object.entries(deviceHeaders))
+				headers.set(name, value);
+			let response: Response;
+			try {
+				response = await options.fetch(url, { ...init, headers });
+			} catch (error) {
+				if (mutation) options.markUncertainMutation?.();
+				throw error;
+			}
+			if (!response.ok) {
+				if (mutation && (response.status >= 500 || response.status === 408))
+					options.markUncertainMutation?.();
+				throw new ProvisionRefusal(
+					`HOBO_${fam}_BITWARDEN_API`,
+					`Bitwarden refused ${what} (HTTP ${response.status}).`,
+					[
+						"Check that your account can manage Secrets Manager in this organization (it needs Secrets Manager access and the right to create projects and machine accounts).",
+					],
+				);
+			}
+			try {
+				const text = await response.text();
+				const parsed = schema.safeParse(text === "" ? {} : JSON.parse(text));
+				if (parsed.success) return parsed.data;
+			} catch {
+				if (mutation) options.markUncertainMutation?.();
+				throw new ProvisionRefusal(
+					`HOBO_${fam}_BITWARDEN_API`,
+					`Bitwarden answered ${what} in an unexpected shape.`,
+					["Reconcile the operation before retrying."],
+				);
+			}
+			if (mutation) options.markUncertainMutation?.();
 			throw new ProvisionRefusal(
 				`HOBO_${fam}_BITWARDEN_API`,
 				`Bitwarden answered ${what} in an unexpected shape.`,
-				["Retry; if it persists, Bitwarden's API changed: report it."],
+				["Reconcile the operation before retrying."],
 			);
-		return parsed.data;
+		};
+		return mutation && options.runMutation
+			? options.runMutation(execute)
+			: execute();
 	};
 
 	let userKey: Buffer | undefined;
@@ -375,18 +463,38 @@ export async function provisionBitwardenAccessToken(
 			((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 		const now = options.now ?? Date.now;
 		const timeoutMs = options.timeoutMs ?? 15 * 60_000;
+		const key = options.apiKey;
 		const signIn = await bitwardenSignIn(
 			server,
-			options.apiKey,
+			key,
 			options.deviceId,
 			options.fetch,
 		);
+		const readTimeout = options.authErrorReadTimeoutMs;
+		const authErrorReadTimeoutMs =
+			readTimeout !== undefined &&
+			Number.isSafeInteger(readTimeout) &&
+			readTimeout > 0 &&
+			readTimeout <= 30_000
+				? readTimeout
+				: 5_000;
+		if (
+			!signIn.ok &&
+			!(await authenticationRejected(signIn, authErrorReadTimeoutMs))
+		)
+			throw new ProvisionRefusal(
+				`HOBO_${fam}_BITWARDEN_API`,
+				"Bitwarden sign-in is unavailable or rejected the request.",
+				["Inspect the provider status before retrying."],
+			);
 		if (!signIn.ok)
 			throw new ProvisionRefusal(
 				`HOBO_${fam}_BITWARDEN_API_KEY_REJECTED`,
 				`Bitwarden refused the personal API key (HTTP ${signIn.status}).`,
 				[
-					`Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
+					options.privateOwner
+						? "Run setup again to use the private owner form."
+						: `Enter your personal API key again (${bitwardenApiKeyPage(server)}: Account settings → Security → Keys → View API key) when the run asks for it.`,
 				],
 			);
 		const bearer = tokenResponse.parse(await signIn.json()).access_token;
@@ -409,12 +517,28 @@ export async function provisionBitwardenAccessToken(
 				org.useSecretsManager === true && org.accessSecretsManager !== false,
 		);
 		const usable = withSecretsManager.length > 0 ? withSecretsManager : member;
+		const selected =
+			options.organizationId === undefined &&
+			usable.length > 1 &&
+			options.chooseOrganization !== undefined
+				? await Promise.resolve()
+						.then(() =>
+							options.chooseOrganization?.(
+								usable.map((org) => ({ value: org.id, label: org.name })),
+							),
+						)
+						.catch(() => {
+							throw ownerChannelFailed();
+						})
+				: undefined;
 		const organization =
 			options.organizationId !== undefined
 				? member.find((org) => org.id.toLowerCase() === options.organizationId)
-				: usable.length === 1
-					? usable[0]
-					: undefined;
+				: selected !== undefined
+					? usable.find((org) => org.id === selected)
+					: usable.length === 1
+						? usable[0]
+						: undefined;
 		if (organization === undefined)
 			throw new ProvisionRefusal(
 				`HOBO_${fam}_BITWARDEN_ORGANIZATION`,
@@ -423,14 +547,20 @@ export async function provisionBitwardenAccessToken(
 					: options.organizationId !== undefined
 						? "BWS_ORGANIZATION_ID is not one of your organizations."
 						: "You belong to more than one organization: choose one.",
-				member.length === 0
+				options.privateOwner
 					? [
-							`Create an organization (a free one is enough) at ${server.vault}/#/create-organization, or ask an admin to confirm your membership, then retry.`,
+							member.length === 0
+								? "Ask an organization admin to confirm your membership, then retry."
+								: "Run setup again and choose the organization in the private owner form.",
 						]
-					: usable.map(
-							(org) =>
-								`BWS_ORGANIZATION_ID=${org.id} — ${org.name} (a non-secret setting)`,
-						),
+					: member.length === 0
+						? [
+								`Create an organization (a free one is enough) at ${server.vault}/#/create-organization, or ask an admin to confirm your membership, then retry.`,
+							]
+						: usable.map(
+								(org) =>
+									`BWS_ORGANIZATION_ID=${org.id} — ${org.name} (a non-secret setting)`,
+							),
 			);
 		const storage =
 			organization.useSecretsManager === true &&
@@ -469,10 +599,28 @@ export async function provisionBitwardenAccessToken(
 			},
 		);
 		const phrase = fingerprintPhrase(profile.email, pair.spki);
-		options.emit(
-			`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} server=${new URL(server.vault).host} phrase=${phrase} — open a Bitwarden app signed in to that server (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. ${storage === "vault" ? `This run then keeps its secrets as secure notes in the collection "${BITWARDEN_PROVISIONED_NAME}" of ${organization.name}` : `This run then creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself`}, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
-		);
 		const deadline = now() + timeoutMs;
+		if (options.approve !== undefined) {
+			const accepted = await Promise.resolve()
+				.then(() =>
+					options.approve?.({
+						url: server.vault,
+						message: `Approve HoBo's Bitwarden login request with fingerprint ${phrase}, then select Done.`,
+					}),
+				)
+				.catch(() => {
+					throw ownerChannelFailed();
+				});
+			if (accepted !== true)
+				throw new ProvisionRefusal(
+					`HOBO_${fam}_BITWARDEN_APPROVAL_REQUIRED`,
+					"The Bitwarden approval was not completed.",
+					["Run again when the owner is ready."],
+				);
+		} else
+			options.emit(
+				`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} server=${new URL(server.vault).host} phrase=${phrase} — open a Bitwarden app signed in to that server (mobile, desktop, browser extension or web vault), approve the login request from "HoBo" whose fingerprint phrase is ${phrase}. ${storage === "vault" ? `This run then keeps its secrets as secure notes in the collection "${BITWARDEN_PROVISIONED_NAME}"` : `This run then creates the Secrets Manager project and machine account "${BITWARDEN_PROVISIONED_NAME}" and a one-day access token itself`}, and waits ${Math.round(timeoutMs / 60_000)} minutes.`,
+			);
 		let approved: z.infer<typeof authResponse> | undefined;
 		while (approved === undefined) {
 			const answer = await call(

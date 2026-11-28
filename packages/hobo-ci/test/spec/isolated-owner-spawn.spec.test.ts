@@ -312,6 +312,7 @@ it("sends the supported request properties over the private pipe", async () => {
 		stdout.end(
 			JSON.stringify({
 				ok: true,
+				runId: received.run.id,
 				url: "https://fixture.invalid/path",
 				redirected: false,
 				type: "basic",
@@ -343,6 +344,9 @@ it("sends the supported request properties over the private pipe", async () => {
 		referrer: "https://fixture.invalid/private",
 		referrerPolicy: "no-referrer",
 	});
+	const [input] = launch.mock.calls[0] ?? [];
+	expect(JSON.parse(input?.run ?? "null")).toEqual(received?.run);
+	expect(JSON.stringify(input?.env)).not.toContain(received?.run.secret);
 });
 
 it("preserves a highly fragmented request body across the private pipe", async () => {
@@ -364,6 +368,7 @@ it("preserves a highly fragmented request body across the private pipe", async (
 		stdout.end(
 			JSON.stringify({
 				ok: true,
+				runId: received.run.id,
 				url: "https://fixture.invalid/",
 				redirected: false,
 				type: "basic",
@@ -425,4 +430,35 @@ it("refuses an oversized child response without exposing its contents", async ()
 	})("https://fixture.invalid/").catch((error) => error);
 	expect(failure).toBeInstanceOf(PrivateOwnerDispatchError);
 	expect(String(failure)).not.toContain(marker);
+});
+
+it("rejects a response that is not bound to the dispatched run", async () => {
+	const stdin = new PassThrough();
+	const stdout = new PassThrough();
+	const child = Object.assign(new EventEmitter(), {
+		stdin,
+		stdout,
+		kill: vi.fn(),
+	});
+	stdin.resume();
+	stdin.on("end", () => {
+		stdout.once("end", () => child.emit("close", 0));
+		stdout.end(
+			JSON.stringify({
+				ok: true,
+				runId: "00000000-0000-4000-8000-000000000099",
+				url: "https://fixture.invalid/",
+				redirected: false,
+				type: "basic",
+				status: 200,
+				statusText: "OK",
+				headers: [],
+				body: "",
+			}),
+		);
+	});
+	launch.mockReturnValue(child);
+	await expect(
+		createIsolatedOwnerFetch({}, launch)("https://fixture.invalid/"),
+	).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
 });

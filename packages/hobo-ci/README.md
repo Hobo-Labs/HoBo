@@ -59,7 +59,20 @@ locator) signs in with the job's own OIDC token. Bitwarden has no workload OIDC
 sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
 Selecting the Infisical OAuth application sign-in keeps the store read-only
-even if another credential is available. A handed-off run on a remote box
+even if another credential is available. Owner-selection currency is checked
+again after reading the locator. A selection change immediately after a store
+mutation marks that write uncertain instead of hiding its committed outcome.
+A failed write is marked uncertain only when the provider may have taken it
+(Infisical's `write-uncertain`, or an SDK failure that cannot be placed); an
+answer that proves the write was refused or never sent (a read-only OAuth
+sign-in, a refused name, a 4xx from Infisical) is not, so it does not block
+the next run. Through the HoBo MCP server an uncertain write holds that
+project's store writes and refuses `hobo ci up` and `hobo cd up` with
+`HOBO_<FAMILY>_STORE_OPERATION_UNCERTAIN` (reconcile it before trying again),
+on that run and on later ones; a later store choice does not clear it.
+`HOBO_<FAMILY>_OWNER_CHOICE_CHANGED` is reported only when the owner changed
+the selected store while the operation was running.
+A handed-off run on a remote box
 shows no page: when the store's only missing piece is its sign-in token (an
 Infisical access token or a 1Password Connect token), or Bitwarden needs your
 personal API key, the run refuses with a `HOBO_OWNER_CAPTURE` line and takes
@@ -76,6 +89,27 @@ HoBo creates. The resolved project and environment are written back to the
 locator; refusals carry names, never project or identity ids.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
+For a remote owner hand-off, an existing 1Password service account can be
+connected through the private owner form. Its credential stays in the scoped
+owner session and is used by the in-process SDK; the remote path does not run
+the 1Password CLI with owner information in its arguments. Provisioning and
+every reuse authenticate the token and verify that its only accessible vault is
+the configured vault. HoBo also bounds reuse to 24 hours after provisioning;
+missing, expired, or later-dated reuse leases are refused before the SDK client
+opens. When the run requires an egress proxy or extra CA bundle, validation
+refuses before SDK authentication rather than attempting a direct connection it
+cannot route through those controls. Transport failures refuse rather than
+falling back to an unvalidated token. A configured desktop account does not bypass these checks when a
+service-account token is held; the Connect path uses its own bearer token.
+Local owner-terminal setup continues to use the owner's CLI session.
+Private
+owner-channel failures return an explicit refusal without exposing channel
+errors.
+A silent run (`--json` or `-q`) that reaches the owner through the private
+approval form is held to the same rule for Bitwarden: the organization is
+chosen in that form, and a refusal names neither the organizations nor a
+self-hosted server address.
+
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password
 references point to the item's `password` field.
@@ -123,7 +157,10 @@ including streams, are fully buffered before the child starts; bodies over
 32 MiB are refused. URL, header, certificate and encoded-packet limits can also
 refuse a request before the child starts.
 It isolates request diagnostics from the parent process; it is not connected to
-a verified production owner session. Requests require HTTPS, and automatic
+a verified production owner session. Each request gets a fresh run id and
+secret, which the parent writes once to the child's descriptor 3 pipe, never to
+its environment or arguments. The child refuses a request packet that does not
+carry that run, and the parent refuses a response bound to another run. Requests require HTTPS, and automatic
 redirects stay within the original origin so credential headers do not cross
 origins. A caller can inspect a redirect with `redirect: "manual"`. For local
 synthetic tests only, `allowInsecureLoopback` permits HTTP to the literal
