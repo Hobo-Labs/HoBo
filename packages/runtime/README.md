@@ -694,3 +694,10 @@ receipts to expire.
 transitions independently of a hosting provider. It does not persist state,
 serialize concurrent transitions, issue operation receipts, authenticate a
 caller or provide a messaging transport; a host must supply those guarantees.
+
+`@hobo/runtime/durable-topic-journal` provides a SQLite receipt journal for
+the reducer. The supplied database must serialize isolated transactions and
+atomically commit state and receipts, and the host must enforce ownership,
+authorization, clock and semantic identity. An unknown outcome requires
+reconciliation using the same operation identity before its original expiry.
+An `expired` result does not establish whether an earlier attempt committed.

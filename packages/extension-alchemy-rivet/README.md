@@ -227,3 +227,5 @@ The local Rivet engine test builds the selected pool source with Alchemy,
 starts the mapped application and durable topic actor, and exercises retries and
 tenant isolation. Its Alchemy provider is simulated; it does not verify hosted
 Rivet deployment, networking or billing.
+
+The topic actor source fence includes the shared runtime topic journal.

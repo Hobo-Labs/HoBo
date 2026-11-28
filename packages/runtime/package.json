@@ -20,6 +20,10 @@
 			"types": "./dist/durable-messaging-host.d.ts",
 			"default": "./dist/durable-messaging-host.js"
 		},
+		"./durable-topic-journal": {
+			"types": "./dist/durable-topic-journal.d.ts",
+			"default": "./dist/durable-topic-journal.js"
+		},
 		"./durable-topic-reducer": {
 			"types": "./dist/durable-topic-reducer.d.ts",
 			"default": "./dist/durable-topic-reducer.js"

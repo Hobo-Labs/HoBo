@@ -1,15 +1,18 @@
 /* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: the fixture exercises SQLite parameters at a raw provider boundary. */
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import {
 	type DurableMessagingOutcome,
 	durableMessagingOperation,
 } from "@hobo/core";
-import type { RawAccess } from "rivetkit/db";
 import { expect, it } from "vitest";
+import type {
+	DurableTopicSqlDatabase,
+	DurableTopicSqlExecutor,
+} from "../src/durable-topic-journal.js";
 import {
-	migrateDurableReceiptJournal,
-	runDurableReceiptJournal,
-} from "../src/durable-receipt-journal.js";
+	migrateDurableTopicJournal,
+	runDurableTopicJournal,
+} from "../src/durable-topic-journal.js";
 
 it("matches bounded receipt, effect and expiry interleavings in SQLite", async () => {
 	const actions = ["a", "conflict", "b", "fail", "lost", "expire"] as const;
@@ -29,15 +32,16 @@ it("matches bounded receipt, effect and expiry interleavings in SQLite", async (
 				fail = false;
 				throw new Error("injected failure");
 			}
-			return sql.prepare(query).all(...args);
+			// SAFETY: the journal supplies only SQLite-compatible values to this test fixture.
+			return sql.prepare(query).all(...(args as SQLInputValue[]));
 		};
 		const transaction = async <T>(
-			run: (tx: RawAccess) => Promise<T>,
+			run: (tx: DurableTopicSqlExecutor) => Promise<T>,
 		): Promise<T> => {
 			sql.exec("BEGIN IMMEDIATE");
 			try {
 				// SAFETY: the journal uses only execute on the transaction fixture.
-				const value = await run({ execute } as RawAccess);
+				const value = await run({ execute } as DurableTopicSqlExecutor);
 				sql.exec("COMMIT");
 				if (lost) {
 					lost = false;
@@ -52,9 +56,9 @@ it("matches bounded receipt, effect and expiry interleavings in SQLite", async (
 			}
 		};
 		// SAFETY: the tested journal uses only execute and transaction.
-		const db = { execute, transaction } as RawAccess;
+		const db = { execute, transaction } as DurableTopicSqlDatabase;
 		try {
-			await migrateDurableReceiptJournal(db);
+			await migrateDurableTopicJournal(db);
 			const receipts = new Map<string, { byte: number; value: string }>();
 			let time = 10;
 			let state = 0;
@@ -91,7 +95,7 @@ it("matches bounded receipt, effect and expiry interleavings in SQLite", async (
 				if (action === "lost") expected = { status: "unknown", operation };
 				fail = action === "fail";
 				lost = action === "lost";
-				const actual = await runDurableReceiptJournal(
+				const actual = await runDurableTopicJournal(
 					db,
 					input,
 					() => time,

@@ -263,3 +263,6 @@ Synchronous actor and journal authorities must return synchronously. Ordinary na
 
 The Rivet topic actor uses the provider-neutral bounded reducer from
 `@hobo/runtime/durable-topic-reducer` with its actor-local transactional journal.
+
+The actor uses the provider-neutral SQLite topic receipt journal from
+`@hobo/runtime/durable-topic-journal`.

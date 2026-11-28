@@ -139,14 +139,38 @@ try {
 		),
 	);
 	const journal = fileURLToPath(
+		new URL("../../runtime/dist/durable-topic-journal.js", import.meta.url),
+	);
+	const reducer = fileURLToPath(
+		new URL("../../runtime/dist/durable-topic-reducer.js", import.meta.url),
+	);
+	const synchronousResult = fileURLToPath(
+		new URL("../../runtime/dist/synchronous-result.js", import.meta.url),
+	);
+	const topicLog = fileURLToPath(
 		new URL(
-			"../../runtimes/runtime-rivet/dist/durable-receipt-journal.js",
+			"../../runtimes/runtime-rivet/dist/durable-topic-log.js",
+			import.meta.url,
+		),
+	);
+	const actorSynchronousResult = fileURLToPath(
+		new URL(
+			"../../runtimes/runtime-rivet/dist/synchronous-result.js",
 			import.meta.url,
 		),
 	);
 	const hashSources = () => {
 		const hash = createHash("sha256");
-		for (const path of [main, definition, runtime, journal]) {
+		for (const path of [
+			main,
+			definition,
+			runtime,
+			journal,
+			reducer,
+			synchronousResult,
+			topicLog,
+			actorSynchronousResult,
+		]) {
 			const bytes = readFileSync(path);
 			hash.update(`${bytes.length}:`);
 			hash.update(bytes);
