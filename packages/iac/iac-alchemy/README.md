@@ -1301,3 +1301,11 @@ An AWS HTTP handler obtains its request-scoped port using
 `awsHttpBindings(context).crypto("key")`. The host must verify that the exact
 key ID and grant correspond to the mapped resource; access is revoked when the
 request ends. Deployment admission does not budget each later KMS operation.
+
+The bounded `AwsCryptoOperation` model checks authorization at dispatch and
+result disclosure, rejection before dispatch, and retention of capacity after a
+timeout until the transport settles. Mutation checks exercise each guard, and
+reachability witnesses cover unknown outcomes before and after processing,
+capacity rejection and subsequent recovery. The model abstracts two calls and a
+single capacity slot; it assumes a truthful transport and verifier, and does not
+prove the TypeScript implementation, AWS behavior or budget admission.
