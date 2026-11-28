@@ -49,13 +49,15 @@ availability fact per node and Freight.
 
 - Graph shape:
   - the pipeline has nodes, and node names are unique slugs;
-  - every node has a source;
+  - every node has a Freight source, an origin slot, or an upstream node;
   - upstream nodes and Freight sources exist;
   - the graph is acyclic.
 - Freight sources:
   - named sources are `source.Defined` facts in the journal;
   - pushed Freight has no source name, so it enters through the origin
-    pseudo-sources `origin:manifest|attestation|cdevent|hobo-ci|local-build`.
+    pseudo-sources `origin:manifest|attestation|cdevent|hobo-ci|local-build`;
+  - origin slots have unique slug names, and each lists at least one known
+    Freight source or origin pseudo-source.
 - Camps and Placements:
   - every node has exactly one of `camp_ids` or `placement` (D21);
   - placed nodes name an existing Placement, and their mandatory groups are
@@ -112,6 +114,28 @@ Availability is computed per Freight, newest first.
 - **Recorded facts.** `tick` records `pipeline.FreightAvailable` once per
   node and Freight.
 
+### Origin slots
+
+A node lists its origins in `origin_slots` beside or instead of
+`from_sources`. Each slot has a slug `name`, a non-empty `from_sources` list
+and an optional `auto_promotion`.
+
+- **Availability is per node.** A Freight is available to the node through
+  the sources of every slot, and `via` names the admitting source. `available`
+  and `pipeline.FreightAvailable` are node facts; they do not name a slot.
+- **Auto-promotion is per slot.** `tick` evaluates each slot as its own lane
+  and considers only Freight available through that slot's sources. A lane's
+  policy is the slot's `auto_promotion`, or the node's when the slot leaves it
+  UNSPECIFIED, so a slot setting overrides the node setting for that lane. A
+  lane whose policy is `DISABLED` or UNSPECIFIED is left to explicit commands.
+- **Keys.** A lane requests with the key
+  `pipeline:<p>:<node>:<freight>:slot:<slot>`, with the same
+  `:approval:<camp>` and `:match:<camp>` suffixes.
+- **`MATCH_UPSTREAM` in a lane.** The lane follows the upstream node's latest
+  `env.Promoted` Freight among the slot's sources, whether that promotion was
+  automatic or manual. Each lane resolves its own current Freight, so an
+  upstream promotion of Freight from other sources does not move it.
+
 ### `tick`
 
 `tick` walks nodes in topological order and is safe to repeat.
@@ -140,8 +164,10 @@ Availability is computed per Freight, newest first.
   promotion fails, is rejected, is superseded, or is rolled back. A manual
   fan-out hold lasts until that fan-out completes, halts, rolls back, or is
   superseded. Automatic requests do not create manual holds. Failed promotions
-  do not set holds. `promoteByOrigin` returns a refusal when a promotion or
-  fan-out could not be requested.
+  do not set holds. On a node with origin slots the hold is raised when any
+  lane would auto-promote other Freight, and it then covers every slot. A hold
+  does not refuse `promoteByOrigin`. `promoteByOrigin` returns a refusal when
+  a promotion or fan-out could not be requested.
 
 ### State
 
@@ -153,7 +179,8 @@ All state comes from one catch-up projection over these events:
 is rebuilt from the journal on start, so
 replay equals live (I8). New promotion and fan-out requests persist their
 manual or automatic mode in event metadata; older requests use the documented
-pipeline-generated idempotency keys to identify automatic work. Promotion
+pipeline-generated idempotency keys, or `failover:<id>:promote` and
+`failover:<id>:purge`, to identify automatic work. Promotion
 bodies, which WP6 owns, are decoded as `PromotionRecord`.
 
 ## Metrics
