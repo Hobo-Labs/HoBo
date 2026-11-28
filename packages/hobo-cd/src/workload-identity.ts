@@ -213,6 +213,25 @@ export async function ensureCdWorkloadIdentity(
 		await admin.updateOidcAuth(identityId, trust);
 		outcome = "unchanged";
 	} else {
+		const named = await admin.findProjectIdentity({
+			projectId: binding.projectId,
+			name: project,
+		});
+		if (named !== undefined) {
+			if (await admin.oidcAuthAttached(named))
+				await admin.updateOidcAuth(named, trust);
+			else await admin.attachOidcAuth(named, trust);
+			await store.port.put(CD_WORKLOAD_IDENTITY_ENTRY, named);
+			vault.put(
+				CD_STORE_COORDINATES_HANDOFF,
+				cdStoreCoordinatesText({ ...binding, identityId: named }),
+			);
+			return {
+				id: "cd-identity",
+				outcome: "created",
+				detail: `Infisical identity ${project} already in the project now also trusts Vercel project ${project} (${environment}, team ${teamSlug}); its id is in ${store.id}`,
+			};
+		}
 		const made = await admin.createProjectIdentity({
 			projectId: binding.projectId,
 			name: project,

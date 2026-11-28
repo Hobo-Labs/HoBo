@@ -96,7 +96,11 @@ the owner's own sign-ins and the providers' APIs. Nobody creates it by hand
    `owner:<team>:project:hobo-cd:environment:preview`, and claim `owner_id`.
    The identity's id is kept in the store (`HOBO_CD_WORKLOAD_IDENTITY_ID`).
    A re-run reuses the identity and re-applies its trust. When two runs race,
-   the identity saved first is kept and the other is deleted.
+   the identity saved first is kept and the other is deleted. When the
+   project already has an identity named `hobo-cd` (on a plan with no
+   identity left to create, say), it adopts that one instead: it attaches
+   or replaces its OIDC trust and keeps its id, so the deployment signs in
+   with that identity's existing role.
 3. It gives the deployment the store's coordinates as its configuration:
    project, environment, folder and identity. These are ids only.
 
