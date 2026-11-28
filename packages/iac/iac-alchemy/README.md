@@ -98,7 +98,7 @@ optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
 `@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS partition, owner account and region,
 host-issued resource and grant epochs, an explicit operation allow-list, a
 per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
-The host must authenticate the actual table incarnation, never reuse a
+The host must authenticate the actual table incarnation and each call, never reuse a
 revoked epoch, fence outstanding requests during ownership changes, and enforce
 matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
 bytes and values to 256 KiB. A failed or timed-out write or delete has an
@@ -1088,6 +1088,49 @@ exposure; uncertain partial applies retain exposure for reconciliation. The
 mapping and budget outcomes are exercised against the Vercel Labs emulator and
 the opt-in official AWS Emulator; these tests do not establish production
 deployment or IAM behavior.
+
+### AWS static queue schedules
+
+The opt-in static schedule mapper creates an Alchemy `AWS.Scheduler.Schedule`
+for a schedule that depends on exactly one SQS queue. Its cadence is UTC and
+supports wildcard day and weekday fields, and numeric, wildcard or step minute,
+hour and month fields. It rejects other cron
+forms before registering resources. Supply a nonempty SQS message body and an
+existing Scheduler execution role for each declared schedule.
+Message bodies containing Scheduler's `<aws.scheduler.` substitution prefix are
+rejected so a configured body remains literal.
+The mapper composes with an AWS mapper set whose entries are own data properties
+and which does not already define a schedule mapper.
+
+```ts
+import { bindle, cadence } from "@hobo/bindles";
+import { awsBindleMappers } from "@hobo/iac-alchemy/aws";
+import { awsStaticScheduleMappers } from "@hobo/iac-alchemy/aws/schedule";
+
+const app = bindle("repair", (b) => {
+	const queue = b.queue();
+	return { queue, tick: b.schedule().dependsOn(queue).with(cadence("*/15 * * * *")) };
+});
+const mappers = awsStaticScheduleMappers(awsBindleMappers(), {
+	tick: { roleArn: "arn:aws:iam::123456789012:role/scheduler-send", input: '{"kind":"repair"}' },
+});
+```
+
+Pass `app` and `mappers` to `mapBindleToAlchemy` with the normal requirement,
+source and financial checks. The inventory includes both the schedule and its
+queue; bounded-budget routing requires supplied pricing that covers both.
+Authorized unpriced routing bypasses budget evaluation as described above. An
+incomplete supplied model does not fall back to unpriced routing. The role is
+an existing external resource, so the trusted host must authenticate its
+account, trust policy and permission to send to the exact queue. AWS may deliver
+more than once or after the scheduled minute. The mapping does not implement the
+dynamic HoBo scheduler port, queue consumption, or application bindings. The
+official emulator test checks resource reconciliation and message delivery; it
+does not establish production timing or IAM behavior.
+The bounded `AwsStaticSchedule` model covers invalid targets and configuration,
+complete budget coverage and explicit unpriced admission. It treats the host's
+role authentication and the financial engine's admission decision as trusted
+inputs; it does not prove provider delivery or the implementation itself.
 
 ### AWS Vite websites
 
