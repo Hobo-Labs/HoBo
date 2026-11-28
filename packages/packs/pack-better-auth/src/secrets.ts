@@ -31,7 +31,8 @@ function wireRecordContainsMaterial(
 		wire.secretRef.includes(material) ||
 		wire.secretScheme.includes(material) ||
 		wire.secretsPortId.includes(material) ||
-		wire.resolvedAtIso.includes(material)
+		wire.resolvedAtIso.includes(material) ||
+		JSON.stringify(wire).includes(material)
 	);
 }
 

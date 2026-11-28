@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
 import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
@@ -167,6 +167,47 @@ describe("wireBetterAuthSigningSecret", () => {
 			await wireBetterAuthSigningSecret(bundlePlan, port, {
 				campAuthority: "camp-prod",
 				now: "2026-11-25T00:00:00.000Z",
+			});
+		} catch (error) {
+			rejected = error;
+		}
+		expect(rejected).toBeInstanceOf(BetterAuthBundlePlanError);
+		if (!(rejected instanceof BetterAuthBundlePlanError)) {
+			throw new Error("expected BetterAuthBundlePlanError");
+		}
+		expect(rejected.code).toBe("BETTER_AUTH_SIGNING_SECRET_EXPOSED");
+		expect(rejected.message.includes(material)).toBe(false);
+		expect(rejected.remediation.includes(material)).toBe(false);
+	});
+
+	it("refuses when signing material is only a cross-field splice in the wire JSON", async () => {
+		const portId = randomUUID();
+		const now = "2026-11-25T00:00:00.000Z";
+		const material = `signing-key","secretScheme":"hobo-secret","secretsPortId":"${portId}`;
+		const wire = {
+			secretRef: PORTS.signingSecretRef,
+			secretScheme: "hobo-secret",
+			secretsPortId: portId,
+			resolvedAtIso: now,
+		};
+		expect(portId.length).toBeGreaterThan(0);
+		expect(wire.secretRef.includes(material)).toBe(false);
+		expect(wire.secretScheme.includes(material)).toBe(false);
+		expect(wire.secretsPortId.includes(material)).toBe(false);
+		expect(wire.resolvedAtIso.includes(material)).toBe(false);
+		expect(JSON.stringify(wire).includes(material)).toBe(true);
+
+		const port = createMemorySecretsPort({ id: portId });
+		await port.put(
+			campSecretNameFromBetterAuthRef(PORTS.signingSecretRef, "camp-prod"),
+			material,
+		);
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		let rejected: unknown;
+		try {
+			await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+				now,
 			});
 		} catch (error) {
 			rejected = error;
