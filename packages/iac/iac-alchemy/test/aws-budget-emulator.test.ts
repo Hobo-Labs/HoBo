@@ -52,6 +52,11 @@ import {
 } from "../../../pricing/test/fixtures.js";
 import { createDurableQueueWitHost } from "../../../runtime/src/durable-queue-host.js";
 import { awsBindleMappers } from "../src/aws.js";
+import { createAwsKmsCryptography } from "../src/aws-cryptography.js";
+import {
+	awsKmsCryptographyMappers,
+	withAwsKmsCryptography,
+} from "../src/aws-cryptography-mapper.js";
 import { awsHttpBindings } from "../src/aws-http-runtime.js";
 import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsNotificationPublisher } from "../src/aws-notification.js";
@@ -255,8 +260,13 @@ function fixture(
 	const definition =
 		resource === "crypto"
 			? mapBindleToAlchemy(
-					bindle("shop", (b) => ({ objects: b.crypto() })),
-					awsBindleMappers(),
+					withAwsKmsCryptography(
+						bindle("shop", (b) => ({
+							objects: b.crypto().allow("encrypt", "decrypt"),
+						})),
+						{ objects: true },
+					),
+					awsKmsCryptographyMappers(),
 					{ assessRequirements: () => ({ status: "supported" }) },
 				)
 			: resource === "websocket"
@@ -315,7 +325,17 @@ function fixture(
 			),
 			state: inMemoryState(),
 		},
-		definition.pipe(Effect.map(() => ({}))),
+		definition.pipe(
+			Effect.map((mapped) => {
+				if (resource !== "crypto") return {};
+				const key = mapped.primary.objects;
+				if (!key || key.Type !== Key.Type)
+					throw new Error("mapped KMS key missing");
+				// SAFETY: the mapped resource type was checked above.
+				const mappedKey = key as Key;
+				return { keyId: mappedKey.keyId, keyArn: mappedKey.keyArn };
+			}),
+		),
 	);
 
 	const authorityOptions: Parameters<
@@ -802,6 +822,66 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
 						),
 				).toBe(true);
+				const { keyId, keyArn } = result.outputs;
+				if (!keyId || !keyArn) throw new Error("admitted KMS key missing");
+				const arn =
+					/^arn:(aws(?:-[a-z0-9]+)*):kms:([a-z0-9-]+):([0-9]{12}):key\/(.+)$/u.exec(
+						keyArn,
+					);
+				if (!arn || arn[4] !== keyId || !arn[1] || !arn[2] || !arn[3])
+					throw new Error("invalid admitted key ARN");
+				const crypto = createAwsKmsCryptography({
+					grant: {
+						keyId,
+						partition: arn[1],
+						region: arn[2],
+						accountId: arn[3],
+						resourceEpoch: DIGEST,
+						grantEpoch: DIGEST,
+						allow: ["encrypt", "decrypt"],
+					},
+					verify: () => true,
+					layer: f.awsLayers,
+				});
+				const appDefinition = bindle("shop", (b) => {
+					const objects = b.crypto().allow("encrypt", "decrypt");
+					return {
+						objects,
+						web: b
+							.web((context) => async () => {
+								const bound = awsHttpBindings(context).crypto("objects");
+								const encrypted = await bound.encrypt({
+									attemptId: "priced_encrypt_123",
+									data: new Uint8Array([7, 8]),
+								});
+								if (encrypted.status !== "completed")
+									return new Response(null, { status: 500 });
+								const decrypted = await bound.decrypt({
+									attemptId: "priced_decrypt_123",
+									data: encrypted.data,
+								});
+								if (decrypted.status !== "completed")
+									return new Response(null, { status: 500 });
+								return Response.json({ data: Array.from(decrypted.data) });
+							})
+							.with(sessionReplay({ enabled: false }))
+							.dependsOn(objects),
+					};
+				});
+				const app = defineAwsHttpSource({
+					bindle: withAwsKmsCryptography(appDefinition, { objects: true }),
+					applicationName: "web",
+					environment: { HOBO_RESOURCE_0: keyId },
+					resolveStores: () => ({ objects: crypto }),
+					verifyBinding: (claim) =>
+						claim.kind === "crypto" && claim.grant.keyId === keyId,
+				});
+				const response = await app.fetch(new Request("https://app.test"));
+				expect(response.status).toBe(200);
+				expect(await response.json()).toEqual({ data: [7, 8] });
+				expect(f.mutationTargets()).toContain("TrentService.Encrypt");
+				expect(f.mutationTargets()).toContain("TrentService.Decrypt");
+				expect(f.authority.read(NOW).reservedMicros).toBe(1_500_000);
 			} finally {
 				f.authority.close();
 				f.routeAuthority.close();
