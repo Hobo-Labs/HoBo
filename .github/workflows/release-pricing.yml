@@ -3,7 +3,7 @@ name: HoBo Pricing release (npm dry-run)
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "packages/pricing/**"
       - "release/npm-scope-map.json"
