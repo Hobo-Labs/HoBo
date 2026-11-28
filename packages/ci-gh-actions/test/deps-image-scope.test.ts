@@ -151,6 +151,11 @@ describe("CI deps image push scope", () => {
 		expect(publisherGroup(job.concurrency.group, "cancelled")).not.toBe(
 			publisherGroup(job.concurrency.group, "success"),
 		);
+		expect(job.concurrency).toEqual({
+			group:
+				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}",
+			"cancel-in-progress": true,
+		});
 		expect(job["timeout-minutes"]).toBe(20);
 		// PR validation follows the chosen fleet or hosted runner; the publisher
 		// alone promotes the box's image after a green main run.
@@ -168,8 +173,13 @@ describe("CI deps image push scope", () => {
 		);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(publisherCondition(job.if, "success")).toBe(true);
+		expect(publisherCondition(job.if, "failure")).toBe(true);
 		expect(publisherCondition(job.if, "cancelled")).toBe(false);
 		expect(publisherCondition(job.if, "", "workflow_dispatch")).toBe(true);
+		expect(job.if).toContain(
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
+		);
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.steps[0].with.ref).toContain(
 			"github.event.workflow_run.head_sha",
 		);
@@ -204,13 +214,18 @@ describe("CI deps image push scope", () => {
 		expect(JSON.stringify(depsJob)).not.toContain("docker push");
 	});
 
-	it("publishes the worker image after a green main run when GHCR lacks it", () => {
+	it("publishes the worker image after a finished main run when GHCR lacks it", () => {
 		// Finding 113: a dropped main push's image change is built by no later
 		// push, and release jobs on ARC pull the worker from GHCR.
 		const job = publisher.jobs["runner-image"];
 		expect(publisherCondition(job.if, "success")).toBe(true);
+		expect(publisherCondition(job.if, "failure")).toBe(true);
 		expect(publisherCondition(job.if, "cancelled")).toBe(false);
 		expect(publisherCondition(job.if, "", "workflow_dispatch")).toBe(true);
+		expect(job.if).toContain(
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
+		);
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.concurrency["cancel-in-progress"]).toBe(false);
 		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
