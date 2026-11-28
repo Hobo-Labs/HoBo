@@ -85,10 +85,20 @@ export type PrFabricDecision = Readonly<{
 export const AWAITING_EVIDENCE_REASON =
 	"the merge-group head commit could not be read";
 
+export const ROUTE_JOB_NAME = "Route runners";
+
+export type RunJob = Readonly<{
+	name?: string | undefined;
+	status?: string | null | undefined;
+	conclusion?: string | null | undefined;
+}>;
+
 export type PrFabricReads = Readonly<{
 	commit: (sha: string) => Promise<CommitAnswer | undefined>;
 	pull: (number: number) => Promise<PullAnswer | undefined>;
 	mergeBase: (prHead: string) => Promise<string | undefined>;
+	jobs: (runId: number) => Promise<readonly RunJob[] | undefined>;
+	artifacts: (runId: number) => Promise<readonly RunArtifact[] | undefined>;
 }>;
 
 export const UNREAD_RUNS_REASON =
@@ -126,6 +136,42 @@ function isGreenRunFor(
 		Number.isSafeInteger(run.id) &&
 		run.id > 0
 	);
+}
+
+export const PR_FABRIC_TESTED_ARTIFACT = "pr-fabric-tested";
+const TESTED_ARTIFACT_NAME = new RegExp(
+	`^${PR_FABRIC_TESTED_ARTIFACT}-([0-9a-f]{40})-([0-9a-f]{40})$`,
+	"u",
+);
+
+function routeJobSucceeded(jobs: readonly RunJob[] | undefined): boolean {
+	return (
+		jobs?.some(
+			(job) =>
+				job.name?.trim() === ROUTE_JOB_NAME &&
+				job.status === "completed" &&
+				job.conclusion === "success",
+		) === true
+	);
+}
+
+async function executedRouteEvidence(
+	runId: number,
+	reads: Pick<PrFabricReads, "jobs" | "artifacts">,
+): Promise<boolean | undefined> {
+	const jobs = await reads.jobs(runId);
+	if (routeJobSucceeded(jobs)) return true;
+	const artifacts = await reads.artifacts(runId);
+	if (
+		artifacts?.some(
+			(artifact) =>
+				artifact.expired !== true &&
+				TESTED_ARTIFACT_NAME.test(artifact.name ?? ""),
+		) === true
+	)
+		return true;
+	if (jobs === undefined || artifacts === undefined) return undefined;
+	return false;
 }
 
 export async function decidePrFabricReuse(
@@ -172,8 +218,15 @@ export async function decidePrFabricReuse(
 	if (!sameRepository(pull.head?.repo?.full_name, input.repository))
 		return refuse("the pull request's head is in another repository");
 	let sawRunForThisHead = false;
+	let unreadExecution: string | undefined;
 	for (const run of input.runs) {
 		if (!isGreenRunFor(run, input, entry.number, prHead)) continue;
+		const executed = await executedRouteEvidence(run.id, input.reads);
+		if (executed !== true) {
+			if (executed === undefined)
+				unreadExecution ??= `the execution of run ${run.id} could not be read`;
+			continue;
+		}
 		sawRunForThisHead = true;
 		const head = await input.reads.commit(prHead);
 		if (head === undefined) return refuse(AWAITING_EVIDENCE_REASON);
@@ -191,18 +244,13 @@ export async function decidePrFabricReuse(
 			runId: run.id,
 		};
 	}
+	if (unreadExecution !== undefined) return refuse(unreadExecution);
 	return refuse(
 		sawRunForThisHead
 			? "no green PR Fabric run tested this tree with the base contained in its head"
 			: "no green PR Fabric run tested this pull request's current head",
 	);
 }
-
-export const PR_FABRIC_TESTED_ARTIFACT = "pr-fabric-tested";
-const TESTED_ARTIFACT_NAME = new RegExp(
-	`^${PR_FABRIC_TESTED_ARTIFACT}-([0-9a-f]{40})-([0-9a-f]{40})$`,
-	"u",
-);
 
 export function prFabricTestedArtifactName(
 	mergeSha: string,
@@ -466,7 +514,44 @@ export function prFabricReads(options: {
 			return undefined;
 		}
 	};
-	return { commit, pull, mergeBase };
+	const jobs = async (
+		runId: number,
+	): Promise<readonly RunJob[] | undefined> => {
+		if (!usable || !Number.isSafeInteger(runId) || runId <= 0) return undefined;
+		try {
+			const rows = (
+				await read(`/actions/runs/${runId}/jobs?filter=latest&per_page=100`)
+			)?.jobs;
+			if (!Array.isArray(rows)) return undefined;
+			return rows.flatMap((row) => runJob(row) ?? []);
+		} catch {
+			return undefined;
+		}
+	};
+	const artifacts = async (
+		runId: number,
+	): Promise<readonly RunArtifact[] | undefined> => {
+		if (!usable || !Number.isSafeInteger(runId) || runId <= 0) return undefined;
+		try {
+			const rows = (await read(`/actions/runs/${runId}/artifacts?per_page=100`))
+				?.artifacts;
+			if (!Array.isArray(rows)) return undefined;
+			return rows.flatMap((row) => runArtifact(row) ?? []);
+		} catch {
+			return undefined;
+		}
+	};
+	return { commit, pull, mergeBase, jobs, artifacts };
+}
+
+function runJob(value: JsonValue): RunJob | undefined {
+	const answer = asObject(value);
+	if (!answer) return undefined;
+	return {
+		name: asText(answer.name),
+		status: asText(answer.status),
+		conclusion: asText(answer.conclusion),
+	};
 }
 
 function runArtifact(value: JsonValue): RunArtifact | undefined {
@@ -636,6 +721,8 @@ export async function main(env: NodeJS.ProcessEnv): Promise<PrFabricDecision> {
 				commit: async () => undefined,
 				pull: async () => undefined,
 				mergeBase: async () => undefined,
+				jobs: async () => undefined,
+				artifacts: async () => undefined,
 			},
 		},
 		evidence,

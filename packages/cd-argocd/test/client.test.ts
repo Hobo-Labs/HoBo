@@ -1,7 +1,11 @@
-import type { CdContext, CredentialResolver } from "@hobo/cd";
+import type { CdContext, CredentialResolver, RunbookExecutor } from "@hobo/cd";
 import type { HttpTransport, JsonValue, TransportResponse } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
 import { createArgoCdControlClient } from "../src/client.js";
+import {
+	ARGO_CD_SYNC_RUNBOOK,
+	createArgoCdRunbookExecutor,
+} from "../src/hook.js";
 
 const REV = "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5";
 
@@ -264,5 +268,195 @@ describe("ArgoCdControlClient", () => {
 			reasons: [{ code: "argocd-credential-missing" }],
 		});
 		expect(http).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["other-app", "argocd"],
+		["hobo-prod", "other-ns"],
+	] as const)("refuses getWorkload for %s/%s before resolving credentials", async (name, namespace) => {
+		const http = vi.fn<HttpTransport>();
+		const resolver: CredentialResolver = { resolve: vi.fn() };
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace: "argocd",
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			resolver,
+		);
+		const result = await client.getWorkload({ name, namespace }, ctx);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [
+				{
+					code: "argocd-body-invalid",
+					message: "Argo CD client is bound to one Application",
+					subject: "hobo-prod",
+				},
+			],
+		});
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["other-app", "argocd"],
+		["hobo-prod", "other-ns"],
+	] as const)("refuses requestSync for %s/%s before resolving credentials", async (name, namespace) => {
+		const http = vi.fn<HttpTransport>();
+		const resolver: CredentialResolver = { resolve: vi.fn() };
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace: "argocd",
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			resolver,
+		);
+		const result = await client.requestSync(
+			{ name, namespace, revision: REV },
+			ctx,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [
+				{
+					code: "argocd-body-invalid",
+					message: "Argo CD client is bound to one Application",
+					subject: "hobo-prod",
+				},
+			],
+		});
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["other-app", "argocd"],
+		["hobo-prod", "other-ns"],
+	] as const)("refuses observeSync for %s/%s before resolving credentials", async (name, namespace) => {
+		const http = vi.fn<HttpTransport>();
+		const resolver: CredentialResolver = { resolve: vi.fn() };
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace: "argocd",
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			resolver,
+		);
+		const observed = await client.observeSync(
+			{ name, namespace, revision: REV },
+			ctx,
+		);
+		expect(observed).toMatchObject({
+			state: "converging",
+			healthy: false,
+			reason: {
+				code: "argocd-body-invalid",
+				message: "Argo CD client is bound to one Application",
+			},
+		});
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
+	it("keeps the snapshotted Application when the config object changes", async () => {
+		const config = {
+			apiBaseUrl: "https://argo.example",
+			application: "hobo-prod",
+			appNamespace: "argocd",
+			tokenRef: "owner://ARGO_TOKEN",
+		};
+		const http = vi.fn<HttpTransport>();
+		const resolver: CredentialResolver = { resolve: vi.fn() };
+		const client = createArgoCdControlClient(config, http, resolver);
+		config.application = "other-app";
+		config.appNamespace = "other-ns";
+		const result = await client.getWorkload(
+			{ name: "other-app", namespace: "other-ns" },
+			ctx,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [
+				{
+					code: "argocd-body-invalid",
+					subject: "hobo-prod",
+				},
+			],
+		});
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"another application",
+			"argocd",
+			{
+				application: "other-app",
+				appNamespace: "argocd",
+				revision: REV,
+			},
+		],
+		[
+			"another namespace",
+			"argocd",
+			{
+				application: "hobo-prod",
+				appNamespace: "other-ns",
+				revision: REV,
+				manual: true,
+			},
+		],
+		[
+			"the default namespace",
+			"tenant-a",
+			{ application: "hobo-prod", revision: REV },
+		],
+	] as const)("refuses a RUNBOOK sync for %s before resolving credentials", async (_label, appNamespace, args) => {
+		const http = vi.fn<HttpTransport>();
+		const resolver: CredentialResolver = { resolve: vi.fn() };
+		const client = createArgoCdControlClient(
+			{
+				apiBaseUrl: "https://argo.example",
+				application: "hobo-prod",
+				appNamespace,
+				tokenRef: "owner://ARGO_TOKEN",
+			},
+			http,
+			resolver,
+		);
+		let delegated = 0;
+		const inner: RunbookExecutor = {
+			async run() {
+				delegated += 1;
+				return { ok: true, value: {} };
+			},
+		};
+		const result = await createArgoCdRunbookExecutor(inner, client).run(
+			{ path: ARGO_CD_SYNC_RUNBOOK, args },
+			ctx,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reasons: [
+				{
+					code: "argocd-body-invalid",
+					message: "Argo CD client is bound to one Application",
+					subject: "hobo-prod",
+				},
+			],
+		});
+		expect(delegated).toBe(0);
+		expect(http).not.toHaveBeenCalled();
+		expect(resolver.resolve).not.toHaveBeenCalled();
 	});
 });

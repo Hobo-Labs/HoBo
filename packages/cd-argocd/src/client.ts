@@ -4,6 +4,7 @@ import type {
 	ClusterSyncPort,
 	CredentialResolver,
 	Outcome,
+	Refusal,
 } from "@hobo/cd";
 import {
 	argoVerdict,
@@ -79,6 +80,19 @@ export function createArgoCdControlClient(
 	const target = `argocd:${config.apiBaseUrl}:${config.application}`;
 	const bearer = (_ctx: CdContext) =>
 		token(credentials, config.tokenRef, ENGINE_CREDENTIAL_SCOPE);
+	const foreignTarget = (
+		name: string,
+		namespace: string,
+	): Refusal | undefined => {
+		if (name === config.application && namespace === config.appNamespace) {
+			return undefined;
+		}
+		return argocdRefusal(
+			ARGCD_FAILURES.bodyInvalid,
+			"Argo CD client is bound to one Application",
+			config.application,
+		);
+	};
 
 	const port: ClusterSyncPort = {
 		target,
@@ -86,6 +100,8 @@ export function createArgoCdControlClient(
 			input: Readonly<{ name: string; namespace: string }>,
 			ctx: CdContext,
 		): Promise<Outcome<JsonObject>> {
+			const refused = foreignTarget(input.name, input.namespace);
+			if (refused) return refused;
 			try {
 				const url = applicationUrl(
 					config.apiBaseUrl,
@@ -158,6 +174,8 @@ export function createArgoCdControlClient(
 			}>,
 			ctx: CdContext,
 		): Promise<Outcome<void>> {
+			const refused = foreignTarget(input.name, input.namespace);
+			if (refused) return refused;
 			try {
 				if (!isJsonString(input.revision) || input.revision.trim() === "") {
 					return argocdRefusal(

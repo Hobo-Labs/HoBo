@@ -7,10 +7,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "version.json"
       - "deploy/release-images/**"
+      - "packages/providers/provider-oci-registry/**"
       - "release/**"
       - "release/mise.toml"
       - "release/mise.lock"
@@ -103,6 +104,7 @@ on:
     types: [checks_requested]
     paths:
       - "deploy/release-images/**"
+      - "packages/providers/provider-oci-registry/**"
       - "release/**"
       - "release/mise.toml"
       - "release/mise.lock"
