@@ -300,3 +300,5 @@ pnpm --filter @hobo/cloud run build      # tsc
 pnpm --filter @hobo/cloud run test       # vitest
 pnpm run architecture:guard              # boundary/records/PACT evidence
 ```
+
+The published SDK package is `@hobo-labs/cloud`.

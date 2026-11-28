@@ -46,3 +46,5 @@ re-exported `registryCatalogProjection` materialized view / projection (with
 snapshots feeding read stores, rebuildable from zero) exposes catalog
 history; the search index here is a pure in-memory read model over parsed
 manifests, not a second source of truth.
+
+The published SDK package is `@hobo-labs/registry`.

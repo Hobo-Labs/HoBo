@@ -105,7 +105,7 @@ const SDK_PACKAGE_DIRS = {
 	"@hobo/provider-opa": "packages/providers/provider-opa",
 } satisfies Record<string, string>;
 
-function findPackageDir(name: string): string {
+export function findPackageDir(name: string): string {
 	const nested = Object.entries(SDK_PACKAGE_DIRS).find(
 		([packageName]) => packageName === name,
 	)?.[1];

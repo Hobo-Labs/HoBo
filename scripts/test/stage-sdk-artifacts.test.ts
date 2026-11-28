@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadNpmScopeMap } from "../ci/npm-publish-scope.mts";
 import {
+	findPackageDir,
 	orderedSdkTarballPaths,
 	prepareSdkPackageManifest,
 	releaseSdkTurboBuildArgv,
@@ -25,6 +26,50 @@ import {
 } from "../ci/stage-sdk-artifacts.mts";
 
 describe("stage-sdk-artifacts", () => {
+	it("packs starter gitignore templates", { timeout: 60_000 }, () => {
+		const cache = mkdtempSync(join(tmpdir(), "hobo-patterns-pack-cache-"));
+		try {
+			const result = spawnSync(
+				"npm",
+				["pack", "--dry-run", "--json", "--ignore-scripts", "--cache", cache],
+				{ cwd: findPackageDir("@hobo/patterns"), encoding: "utf8" },
+			);
+			expect(result.status, result.stderr).toBe(0);
+			const files = JSON.parse(result.stdout)[0].files.map(
+				(file: { path: string }) => file.path,
+			);
+			for (const starter of ["agent", "api", "fullstack", "todo"])
+				expect(files).toContain(
+					`patterns/starter/cli/${starter}/project/.gitignore.tpl`,
+				);
+		} finally {
+			rmSync(cache, { recursive: true, force: true });
+		}
+	});
+	it("orders each staged runtime workspace dependency before its consumer", () => {
+		const map = loadNpmScopeMap();
+		const names: readonly string[] = SDK_PACKAGES;
+		for (const [index, name] of names.entries()) {
+			const manifest = JSON.parse(
+				readFileSync(join(findPackageDir(name), "package.json"), "utf8"),
+			);
+			expect(manifest.name).toBe(name);
+			expect(manifest.private).not.toBe(true);
+			expect(map.packages[name]).toBeDefined();
+			for (const field of ["dependencies", "optionalDependencies"] as const) {
+				for (const [dependency, range] of Object.entries(
+					manifest[field] ?? {},
+				)) {
+					if (!dependency.startsWith("@hobo/")) continue;
+					expect(range).toBe("workspace:*");
+					expect(names.indexOf(dependency)).toBeGreaterThanOrEqual(0);
+					expect(names.indexOf(dependency)).toBeLessThan(index);
+					expect(map.packages[dependency]).toBeDefined();
+				}
+			}
+		}
+	});
+
 	it("stages the financial dependency graph in dependency order", () => {
 		const root = join(import.meta.dirname, "..", "..");
 		const map = loadNpmScopeMap();
