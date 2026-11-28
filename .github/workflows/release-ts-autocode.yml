@@ -3,7 +3,7 @@ name: ts-autocode release (HoBo pins cone)
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "tools/pins/siblings.json"
       - "scripts/bootstrap-siblings.mts"

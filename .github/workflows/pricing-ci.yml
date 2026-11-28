@@ -2,7 +2,7 @@ name: HoBo Pricing CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"

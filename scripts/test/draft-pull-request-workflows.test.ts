@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateExpression } from "../ci/attested-jobs.mts";
 import {
+	ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES,
 	CANONICAL_ENTRY_JOB_DRAFT_IF,
 	draftGateEntryJobs,
 	jobLevelIfHasRequiredDraftGate,
@@ -30,7 +31,7 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workflowDir = join(repoRoot, ".github", "workflows");
 
 const pullRequestOn =
-	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, labeled]\n  push:\n    branches: [main]\n";
+	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n  push:\n    branches: [main]\n";
 const routeJobGood =
 	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 const trunkJob =
@@ -38,7 +39,7 @@ const trunkJob =
 
 const actionsLockOn = `on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
 `;
 const actionsLockJob = (jobIf: string) => `  actions-lock:
@@ -175,6 +176,69 @@ describe("draft pull request CI policy", () => {
 		assert.match(local, /needs: local-box-enrolled/u);
 	});
 
+	it("schedules zero HoBo CI Fabric jobs for draft pull_request events", () => {
+		const text = readFileSync(join(workflowDir, "hobo-ci.yml"), "utf8");
+		const lines = text.split(/\r?\n/);
+		const jobsIndex = lines.findIndex((line) => line === "jobs:");
+		assert.notEqual(jobsIndex, -1);
+		const jobIds = lines
+			.slice(jobsIndex + 1)
+			.filter((line) => /^  [A-Za-z0-9_-]+:$/.test(line))
+			.map((line) => line.slice(2, -1));
+		const values = new Map<string, string | boolean>([
+			["github.event_name", "pull_request"],
+			["github.event.pull_request.draft", true],
+			["github.event.action", "synchronize"],
+			["needs.route.result", "skipped"],
+		]);
+		for (const jobId of draftGateEntryJobs("hobo-ci.yml", jobIds)) {
+			const block = jobBlockFromText(text, jobId);
+			assert.equal(
+				jobLevelIfHasRequiredDraftGate("hobo-ci.yml", jobId, block),
+				true,
+				jobId,
+			);
+			assert.equal(
+				evaluateExpression(
+					CANONICAL_ENTRY_JOB_DRAFT_IF,
+					(path) => values.get(path) ?? null,
+				),
+				false,
+				jobId,
+			);
+		}
+		assert.equal(
+			evaluateExpression(
+				"always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))",
+				(path) => values.get(path) ?? null,
+			),
+			false,
+			"pr-gate",
+		);
+	});
+
+	it("starts the HoBo CI Fabric route for ready pull_request events", () => {
+		for (const action of [
+			"ready_for_review",
+			"synchronize",
+			"opened",
+		] as const) {
+			const values = new Map<string, string | boolean>([
+				["github.event_name", "pull_request"],
+				["github.event.pull_request.draft", false],
+				["github.event.action", action],
+			]);
+			assert.equal(
+				evaluateExpression(
+					CANONICAL_ENTRY_JOB_DRAFT_IF,
+					(path) => values.get(path) ?? null,
+				),
+				true,
+				action,
+			);
+		}
+	});
+
 	it("does not run draft heads, even when the old opt-in label is added", () => {
 		for (const [event, draft, action, label, expected] of [
 			["pull_request", true, "opened", "", false],
@@ -215,17 +279,47 @@ describe("draft pull request CI policy", () => {
 		);
 	});
 
-	it("requires the labeled event for label-selected ready PR lanes", async () => {
-		const withoutLabel = pullRequestOn.replace(
-			", ready_for_review, labeled",
-			", ready_for_review",
+	it("allows labeled only on the examples E2E workflow for ready label-gated lanes", () => {
+		assert.deepEqual(
+			ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES.get("examples-e2e.yml"),
+			["labeled"],
+		);
+		const text = readFileSync(join(workflowDir, "examples-e2e.yml"), "utf8");
+		assert.match(text, /ready_for_review, labeled/);
+		assert.equal(
+			jobLevelIfHasRequiredDraftGate(
+				"examples-e2e.yml",
+				"hello-bindle-fixture",
+				jobBlockFromText(text, "hello-bindle-fixture"),
+			),
+			true,
+		);
+		const quarantine = jobBlockFromText(
+			text,
+			"hello-bindle-fixture-quarantine",
+		);
+		assert.equal(
+			jobLevelIfHasRequiredDraftGate(
+				"examples-e2e.yml",
+				"hello-bindle-fixture-quarantine",
+				quarantine,
+			),
+			true,
+		);
+		assert.match(quarantine.join("\n"), /hobo\/e2e-quarantine/);
+	});
+
+	it("rejects a pull_request.types list that still listens on labeled", async () => {
+		const withLabel = pullRequestOn.replace(
+			"ready_for_review]",
+			"ready_for_review, labeled]",
 		);
 		const result = await lintFixtureWorkflow(
 			"hobo-ci.yml",
-			`${withoutLabel}jobs:\n${routeJobGood}${trunkJob}`,
+			`${withLabel}jobs:\n${routeJobGood}${trunkJob}`,
 		);
 		assert.equal(result.exitCode, 1);
-		assert.match(result.stderr, /pull_request\.types must include labeled/u);
+		assert.match(result.stderr, /pull_request\.types must match/u);
 	});
 
 	it("does not start always-running aggregate jobs on drafts", () => {
