@@ -18,10 +18,8 @@ jobs:
     # runner-image job so that build pulls the image instead of racing a second build.sh
     # (both use the box's fixed staging registry container).
     needs: [runner-image]
-    # Keyed by the CI run's conclusion: a dropped or failed main run completes too, and the
-    # job skips it, so it must not cancel a publish that a green run started.
     concurrency:
-      group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      group: ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}
       cancel-in-progress: true
     # Runs when the runner-image job succeeded, failed or skipped, but not when it was cancelled:
     # a waiting runner-image job that a newer run replaced is cancelled, and this run's deps
@@ -31,7 +29,7 @@ jobs:
       needs.runner-image.result != 'cancelled' &&
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+      (github.event_name == 'workflow_run' && contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)))
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -49,22 +47,14 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh
 
-  # HoBo CI Fabric builds the worker image on a main push only when that push's own commits
-  # touch an image input. A push that waited behind a running main run and was dropped is
-  # listed by no later push, so its image change was never built or published, and release
-  # jobs on ARC pull the worker from GHCR (finding 113). After every green main run this
-  # publishes the image for that commit's content key if GHCR lacks it, built from that
-  # commit here, never taken from the box's Docker cache, where pull requests build too.
   runner-image:
     name: Publish worker image if GHCR lacks it (non-blocking)
     if: >-
       github.repository == 'Hobo-Labs/HoBo' &&
       (github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
-    # A build takes several minutes; a newer green run waits for it rather than cancelling it,
-    # and then finds the image published (or publishes its own content key).
+      (github.event_name == 'workflow_run' && contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)))
     concurrency:
-      group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion || 'dispatch' }}
+      group: ci-runner-image-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}
       cancel-in-progress: false
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     # The 20-minute job rule holds here too (finding 121): the build gets 15 of them, so a
@@ -103,8 +93,6 @@ jobs:
             echo "::error title=Worker image tag still present::could not remove ${tag} before building"
             exit 1
           fi
-          # build.sh leaves the box's :local on this image, the green main commit's, which is what
-          # the box's next main jobs want; the next image-changing build moves it again.
           HOBO_CI_SKIP_GHCR_PULL=1 node --no-warnings scripts/ci/ensure-ci-worker-image.mts
           node --no-warnings scripts/ci/push-ci-runner-image-ghcr.mts
       - name: Fail unless GHCR now has it
