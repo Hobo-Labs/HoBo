@@ -48,7 +48,9 @@ variables; loader hooks and arbitrary application variables are excluded.
 Other CI paths still read credentials from the environment. The store is found through
 a locator in the owner's HoBo settings
 (`~/.config/hobo/projects/<project>/secret-store.json`, never the repository:
-which store, its ids, no credential). You sign in on the setup page: an Infisical access token from your
+which store, its ids, no credential). `hobo ci up` and `hobo cd up` read the
+locator of the project they converge, wherever they were started from (the HoBo
+MCP server runs at the repository root). You sign in on the setup page: an Infisical access token from your
 own `infisical login`, the 1Password desktop app (`OP_ACCOUNT`, unlocked with
 your biometrics), or a Bitwarden Secrets Manager machine account token on the
 US or EU cloud. The sign-in's vault buffer is cleared when setup ends, including
