@@ -14,9 +14,13 @@ import {
 	mergeQueueEntry,
 	PR_FABRIC_REUSE_SETTING,
 	type PrFabricReads,
+	prFabricTestedArtifactName,
 	type PullAnswer,
 	type PullRequestRun,
 	prFabricReads,
+	ROUTE_JOB_NAME,
+	type RunArtifact,
+	type RunJob,
 	reusePrFabricSetting,
 	UNREAD_RUNS_REASON,
 } from "../ci/pr-fabric-reuse.mts";
@@ -29,7 +33,9 @@ type GithubAnswer =
 	| CommitAnswer
 	| PullAnswer
 	| CompareAnswer
-	| Readonly<{ workflow_runs?: readonly PullRequestRun[] | string }>;
+	| Readonly<{ workflow_runs?: readonly PullRequestRun[] | string }>
+	| Readonly<{ jobs?: readonly RunJob[] | string }>
+	| Readonly<{ artifacts?: readonly RunArtifact[] | string }>;
 
 const repo = "Hobo-Labs/HoBo";
 const base = "b".repeat(40);
@@ -63,6 +69,17 @@ const greenRun = (
 	...over,
 });
 
+const routeSuccess = (): RunJob => ({
+	name: ROUTE_JOB_NAME,
+	status: "completed",
+	conclusion: "success",
+});
+
+const testedArtifact = (over: Partial<RunArtifact> = {}): RunArtifact => ({
+	name: prFabricTestedArtifactName("a".repeat(40), tree),
+	...over,
+});
+
 const happyReads = (over: Partial<PrFabricReads> = {}): PrFabricReads => ({
 	commit: async (sha) =>
 		sha === mergeHead
@@ -76,6 +93,8 @@ const happyReads = (over: Partial<PrFabricReads> = {}): PrFabricReads => ({
 		base: { ref: "main", sha: base },
 	}),
 	mergeBase: async () => base,
+	jobs: async () => [routeSuccess()],
+	artifacts: async () => [testedArtifact()],
 	...over,
 });
 
@@ -461,6 +480,93 @@ describe("the reuse decision", () => {
 			"no green PR Fabric run tested this tree with the base contained in its head",
 		);
 	});
+
+	it("reuses a successful pull request only when its route ran", async () => {
+		const skippedRoute: RunJob = {
+			name: ROUTE_JOB_NAME,
+			status: "completed",
+			conclusion: "skipped",
+		};
+		const noRun =
+			"no green PR Fabric run tested this pull request's current head";
+		const unread = "the execution of run 55 could not be read";
+		const decide = (reads: Partial<PrFabricReads>) =>
+			decidePrFabricReuse({
+				...decisionInput,
+				runs: [greenRun()],
+				reads: happyReads(reads),
+			});
+		const byRoute = await decide({
+			jobs: async () => [routeSuccess()],
+			artifacts: async () => [],
+		});
+		assert.equal(byRoute.reuse, true);
+		assert.equal(byRoute.runId, 55);
+		const byArtifact = await decide({
+			jobs: async () => [skippedRoute],
+			artifacts: async () => [testedArtifact()],
+		});
+		assert.equal(byArtifact.reuse, true);
+		const neither = await decide({
+			jobs: async () => [skippedRoute],
+			artifacts: async () => [],
+		});
+		assert.equal(neither.reuse, false);
+		assert.equal(neither.reason, noRun);
+		const expiredOnly = await decide({
+			jobs: async () => [skippedRoute],
+			artifacts: async () => [testedArtifact({ expired: true })],
+		});
+		assert.equal(expiredOnly.reuse, false);
+		assert.equal(expiredOnly.reason, noRun);
+		const otherJob = await decide({
+			jobs: async () => [
+				{ name: "PR impact gate", status: "completed", conclusion: "success" },
+			],
+			artifacts: async () => [{ name: "pr-fabric-tested" }],
+		});
+		assert.equal(otherJob.reuse, false);
+		assert.equal(otherJob.reason, noRun);
+		const unreadable = await decide({
+			jobs: async () => undefined,
+			artifacts: async () => undefined,
+		});
+		assert.equal(unreadable.reuse, false);
+		assert.equal(unreadable.reason, unread);
+		const jobsDown = await decide({
+			jobs: async () => undefined,
+			artifacts: async () => [],
+		});
+		assert.equal(jobsDown.reuse, false);
+		assert.equal(jobsDown.reason, unread);
+		const artifactsDown = await decide({
+			jobs: async () => [skippedRoute],
+			artifacts: async () => undefined,
+		});
+		assert.equal(artifactsDown.reuse, false);
+		assert.equal(artifactsDown.reason, unread);
+		let artifactsRead = false;
+		const routeAlone = await decide({
+			jobs: async () => [routeSuccess()],
+			artifacts: async () => {
+				artifactsRead = true;
+				return [];
+			},
+		});
+		assert.equal(routeAlone.reuse, true);
+		assert.equal(artifactsRead, false);
+		const later = await decidePrFabricReuse({
+			...decisionInput,
+			runs: [greenRun({ id: 40 }), greenRun({ id: 56 })],
+			reads: happyReads({
+				jobs: async (runId) =>
+					runId === 56 ? [routeSuccess()] : [skippedRoute],
+				artifacts: async () => [],
+			}),
+		});
+		assert.equal(later.reuse, true);
+		assert.equal(later.runId, 56);
+	});
 });
 
 const okJson =
@@ -578,6 +684,52 @@ describe("the evidence fetch", () => {
 			fetch: okJson({ merge_base_commit: { sha: "short" } }),
 		});
 		assert.equal(await malformed.mergeBase(prHead), undefined);
+	});
+
+	it("reads the route job and the tested artifact through the jobs and artifacts APIs", async () => {
+		const urls: string[] = [];
+		const reads = prFabricReads({
+			apiUrl: "https://api.github.com/",
+			repository: repo,
+			token: "token",
+			entryBase: base,
+			fetch: okJsonWithUrls(urls, {
+				[`/repos/${repo}/actions/runs/55/jobs?filter=latest&per_page=100`]: {
+					jobs: [routeSuccess()],
+				},
+				[`/repos/${repo}/actions/runs/55/artifacts?per_page=100`]: {
+					artifacts: [testedArtifact({ expired: false })],
+				},
+			}),
+		});
+		assert.deepEqual(await reads.jobs(55), [routeSuccess()]);
+		assert.deepEqual(await reads.artifacts(55), [
+			testedArtifact({ expired: false }),
+		]);
+		assert.equal(await reads.jobs(0), undefined);
+		assert.equal(await reads.artifacts(Number.NaN), undefined);
+		assert.deepEqual(urls, [
+			`https://api.github.com/repos/${repo}/actions/runs/55/jobs?filter=latest&per_page=100`,
+			`https://api.github.com/repos/${repo}/actions/runs/55/artifacts?per_page=100`,
+		]);
+		const failing = prFabricReads({
+			apiUrl: "https://api.github.com",
+			repository: repo,
+			token: "token",
+			entryBase: base,
+			fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
+		});
+		assert.equal(await failing.jobs(55), undefined);
+		assert.equal(await failing.artifacts(55), undefined);
+		const unusable = prFabricReads({
+			apiUrl: "https://api.github.com",
+			repository: repo,
+			token: "",
+			entryBase: base,
+			fetch: async () => assert.fail("no fetch without a token"),
+		});
+		assert.equal(await unusable.jobs(55), undefined);
+		assert.equal(await unusable.artifacts(55), undefined);
 	});
 });
 
