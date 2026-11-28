@@ -322,6 +322,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 		const input = {
 			action: "up",
 			projectDir: "/box/project",
+			cwd: "/box/project",
 			whatIf: false,
 			yes: false,
 			handOff: true,
@@ -486,6 +487,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		const input = {
 			action: "up",
 			projectDir: "/box/project",
+			cwd: "/box/project",
 			whatIf: false,
 			yes: false,
 			handOff: true,
@@ -545,6 +547,7 @@ function handedOff(see: (line: string) => void): PrepareInput {
 	return {
 		action: "up",
 		projectDir: "/box/project",
+		cwd: "/box/project",
 		whatIf: false,
 		yes: false,
 		handOff: true,

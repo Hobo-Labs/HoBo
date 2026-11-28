@@ -41,6 +41,7 @@ export type ProjectResolution =
 export interface PrepareInput {
 	readonly action: "up";
 	readonly projectDir: string;
+	readonly cwd: string;
 	readonly whatIf: boolean;
 	readonly yes: boolean;
 	/**
@@ -289,6 +290,7 @@ export function createLifecycleFamilyCommand(
 					const outcome = await spec.prepare({
 						action: "up",
 						projectDir: project.projectDir,
+						cwd: input.flags.cwd,
 						whatIf: flags.whatIf,
 						yes: flags.yes,
 						handOff: flags.handOff,

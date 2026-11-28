@@ -46,6 +46,7 @@ function handOff(see: (line: string) => void): PrepareInput {
 	return {
 		action: "up",
 		projectDir: "/box/project",
+		cwd: "/box/project",
 		whatIf: false,
 		yes: false,
 		handOff: true,

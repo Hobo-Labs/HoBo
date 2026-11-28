@@ -267,6 +267,7 @@ export async function prepareVercelConnection(
 	try {
 		const outcome = await prepareVercelWithVault(input, {
 			...deps,
+			cwd: deps.cwd ?? input.cwd,
 			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
 			vault,
 		});
