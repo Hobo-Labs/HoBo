@@ -45,7 +45,7 @@
       {
         "labels": ["hobo-agent37"],
         "runnerNamePrefix": "hobo-a37-",
-        "maxRunners": 4
+        "maxRunners": 8
       }
     ],
     "retiredVariables": [
@@ -192,7 +192,7 @@
             "enabled": true,
             "pool": {
               "minBoxes": 0,
-              "maxBoxes": 4,
+              "maxBoxes": 8,
               "type": "vm",
               "size": { "cpu": 2, "memory": 4, "disk": 20 },
               "region": "us",
