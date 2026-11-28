@@ -826,7 +826,9 @@ of those paths are visible, copies the binary into a private image instead.
 An existing copy of the same package may be supplied with
 `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
-the same hosted fallback as the other pricing checks and a 20-minute job limit.
+the same hosted fallback as the other pricing checks and a 40-minute job limit.
+The bounded-model job has a 60-minute overall limit; individual model-checking
+processes retain their own limits.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
