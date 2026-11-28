@@ -226,3 +226,7 @@ stateDiagram-v2
   CheckingPolicy --> PolicyAllows: all applicable checks pass
   CheckingPolicy --> PlanNeedsEvidence: plan requires native evidence before admission
 ```
+
+The bounded `QueueReclamation` model checks that completed-message reclamation
+preserves live receipt references and never reuses a message identity. Reclamation
+requires an unchanged store revision; the model abstracts payloads and storage.
