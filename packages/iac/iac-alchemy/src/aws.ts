@@ -2,6 +2,7 @@ import type { Providers } from "@alchemy.run/aws";
 import { Api } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
+import { Key } from "@alchemy.run/aws/KMS";
 import { Bucket } from "@alchemy.run/aws/S3";
 import { Secret } from "@alchemy.run/aws/SecretsManager";
 import { Topic } from "@alchemy.run/aws/SNS";
@@ -136,6 +137,25 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 			"SNS topic infrastructure only; notification delivery, subscriptions, recipients and application bindings are not implemented.",
 		],
 	};
+	const crypto: Mapper = {
+		resourceTypes: ["AWS.KMS.Key"],
+		operations: [],
+		annotations: [],
+		bindsEntrypoint: false,
+		limitations: [
+			"KMS symmetric key infrastructure only; encryption, decryption, signing, verification and application bindings are not implemented.",
+			"The host must reconcile an unknown key creation before retrying, and control key policy and deletion.",
+		],
+		validate: noDependencies,
+		build: (input) =>
+			Effect.gen(function* () {
+				const primary = yield* Key(input.declaration.name, {
+					keyUsage: "ENCRYPT_DECRYPT",
+					keySpec: "SYMMETRIC_DEFAULT",
+				});
+				return { primary, resources: [primary], boundDependencies: [] };
+			}),
+	};
 	const websocket: Mapper = {
 		resourceTypes: ["AWS.ApiGatewayV2.Api"],
 		operations: [],
@@ -178,6 +198,7 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 		secret,
 		auth,
 		notify,
+		crypto,
 		websocket,
 	});
 }

@@ -6,10 +6,13 @@ import * as Credentials from "@alchemy.run/aws/Credentials";
 import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import { AWSEnvironment } from "@alchemy.run/aws/Environment";
+import { Key, KeyProvider } from "@alchemy.run/aws/KMS";
 import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
 import { Secret, SecretProvider } from "@alchemy.run/aws/SecretsManager";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
+import * as KMS from "@distilled.cloud/aws/kms";
+import * as AwsRetry from "@distilled.cloud/aws/Retry";
 import * as SecretsManager from "@distilled.cloud/aws/secrets-manager";
 import * as SNS from "@distilled.cloud/aws/sns";
 import * as SQS from "@distilled.cloud/aws/sqs";
@@ -166,6 +169,27 @@ async function mappedDurableQueue() {
 	if (!table || table.Type !== Table.Type)
 		throw Error("queue table mapping missing");
 	return { table };
+}
+
+async function mappedCrypto() {
+	const definition = bindle("shop", (b) => ({ key: b.crypto() }));
+	// SAFETY: the fixture supplies the Alchemy stack context for resource construction.
+	const mapped = await Effect.runPromise(
+		mapBindleToAlchemy(definition, awsBindleMappers(), {
+			assessRequirements: () => ({ status: "supported" }),
+		}).pipe(
+			Effect.provideService(StackContext, {
+				name: "shop",
+				stage: "test",
+				resources: {},
+				bindings: {},
+				actions: {},
+			}),
+		) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+	);
+	const key = mapped.primary.key;
+	if (!key || key.Type !== Key.Type) throw Error("crypto key mapping missing");
+	return { key };
 }
 
 function environment(
@@ -403,6 +427,7 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 	});
 
 	const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+	const moto = process.env.HOBO_ALCHEMY_KMS_EMULATOR ? it : it.skip;
 	official(
 		"provisions the mapped WebSocket API in the official AWS Emulator",
 		async () => {
@@ -779,6 +804,91 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			);
 			expect(second.queueName).toBe(first.queueName);
 		},
+	);
+	moto(
+		"reconciles the mapped KMS key through Moto",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_KMS_EMULATOR ?? "");
+			if (
+				endpoint.protocol !== "http:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw new Error("KMS emulator endpoint must be HTTP loopback");
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin),
+				FetchHttpClient.layer,
+			);
+			const { key } = await mappedCrypto();
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const first = await Effect.runPromise(
+				Effect.gen(function* () {
+					const provider = yield* Provider.Provider<Key>(Key.Type);
+					return yield* provider.reconcile({
+						id: key.LogicalId,
+						fqn: key.FQN,
+						instanceId: "12345678901234567890123456789012",
+						session: noopSession,
+						bindings: [],
+						news: key.Props,
+						olds: undefined,
+						output: undefined,
+					});
+				}).pipe(
+					Effect.provide(KeyProvider()),
+					AwsRetry.none,
+					Effect.provide(layer),
+				) as Effect.Effect<Key["Attributes"], Provider.ProviderError, never>,
+			);
+			expect(first.keyArn).toContain(":kms:us-east-1:123456789012:key/");
+			expect(first.keyUsage).toBe("ENCRYPT_DECRYPT");
+			expect(first.keySpec).toBe("SYMMETRIC_DEFAULT");
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const second = await Effect.runPromise(
+				Effect.gen(function* () {
+					const provider = yield* Provider.Provider<Key>(Key.Type);
+					return yield* provider.reconcile({
+						id: key.LogicalId,
+						fqn: key.FQN,
+						instanceId: "12345678901234567890123456789012",
+						session: noopSession,
+						bindings: [],
+						news: key.Props,
+						olds: key.Props,
+						output: first,
+					});
+				}).pipe(
+					Effect.provide(KeyProvider()),
+					AwsRetry.none,
+					Effect.provide(layer),
+				) as Effect.Effect<Key["Attributes"], Provider.ProviderError, never>,
+			);
+			expect(second.keyId).toBe(first.keyId);
+			const plaintext = new TextEncoder().encode("mapped key test");
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const encrypted = await Effect.runPromise(
+				KMS.encrypt({ KeyId: first.keyArn, Plaintext: plaintext }).pipe(
+					AwsRetry.none,
+					Effect.provide(layer),
+				) as Effect.Effect<KMS.EncryptResponse, unknown, never>,
+			);
+			if (!encrypted.CiphertextBlob) throw Error("ciphertext missing");
+			// SAFETY: the test layer supplies the emulator transport and credentials.
+			const decrypted = await Effect.runPromise(
+				KMS.decrypt({
+					KeyId: first.keyArn,
+					CiphertextBlob: encrypted.CiphertextBlob,
+				}).pipe(AwsRetry.none, Effect.provide(layer)) as Effect.Effect<
+					KMS.DecryptResponse,
+					unknown,
+					never
+				>,
+			);
+			const result = Redacted.isRedacted(decrypted.Plaintext)
+				? Redacted.value(decrypted.Plaintext)
+				: decrypted.Plaintext;
+			expect(result).toEqual(plaintext);
+		},
+		30_000,
 	);
 	official(
 		"reconciles the mapped SNS topic through the official AWS Emulator",

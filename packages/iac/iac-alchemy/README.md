@@ -1094,7 +1094,7 @@ and clock correctness remain independently verified host responsibilities.
 ### AWS infrastructure and financial routing
 
 The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues,
-SNS topics, Secrets Manager secrets and Cognito user pools for the corresponding
+SNS topics, Secrets Manager secrets, KMS keys and Cognito user pools for the corresponding
 HoBo declarations. The user pool uses Alchemy's defaults; the host must configure
 identity policy and clients before use. The auth mapping does not implement token
 verification or session operations and rejects declarations that require them.
@@ -1117,6 +1117,13 @@ The official AWS Emulator also checks priced, denied-unpriced and authorized
 unpriced admission before creating the selected notification topic, and sends
 from an HTTP application through that admitted topic. Provisioning admission
 does not perform a new budget check for each subsequent send.
+The crypto declaration maps to a symmetric Alchemy `AWS.KMS.Key`. It does not
+provide encryption, decryption, signing, verification or application bindings;
+declarations requiring those operations are rejected. The host controls key
+policy and deletion and must reconcile an unknown creation before retrying.
+The simulator suite exercises Alchemy key reconciliation and native KMS
+encryption against a pinned Moto image because the official AWS Emulator does
+not currently implement KMS. This does not establish HoBo crypto runtime support.
 The WebSocket mapper creates an Alchemy `AWS.ApiGatewayV2.Api` with the WebSocket
 protocol and requires `sessionReplay({ enabled: false })`. It creates no routes,
 integrations or application bindings and rejects all WebSocket operations.
