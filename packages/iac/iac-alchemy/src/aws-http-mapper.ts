@@ -218,7 +218,7 @@ export function awsHttpBindleMappers<Requirements>(
 					| Bucket["bucketName"]
 					| Secret["secretArn"]
 					| Topic["topicName"]
-					| Key["keyId"]
+					| Key["keyArn"]
 				> = {};
 				for (const binding of graph.bindings) {
 					const dependency: ResourceLike | undefined =
@@ -251,7 +251,7 @@ export function awsHttpBindleMappers<Requirements>(
 								: binding.kind === "notify"
 									? (dependency as Topic).topicName
 									: binding.kind === "crypto"
-										? (dependency as Key).keyId
+										? (dependency as Key).keyArn
 										: (dependency as Secret).secretArn;
 				}
 				const primary = yield* WebFunction(graph.applicationName, {

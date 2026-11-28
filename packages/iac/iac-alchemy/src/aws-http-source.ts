@@ -205,7 +205,8 @@ export function defineAwsHttpSource<Requirements>(options: {
 											grant.topicName !== binding.physicalName
 										: binding.kind === "crypto"
 											? !("keyId" in grant) ||
-												grant.keyId !== binding.physicalName
+												`arn:${grant.partition}:kms:${grant.region}:${grant.accountId}:key/${grant.keyId}` !==
+													binding.physicalName
 											: !("secretArn" in grant) ||
 												grant.secretArn !== binding.physicalName)
 						)

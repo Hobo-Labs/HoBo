@@ -1303,9 +1303,10 @@ Select the symmetric runtime for declared crypto resources with
 the support report lists encrypt and decrypt while rejecting sign and verify.
 Without this explicit choice, the base mapping remains infrastructure only.
 An AWS HTTP handler obtains its request-scoped port using
-`awsHttpBindings(context).crypto("key")`. The host must verify that the exact
-key ID and grant correspond to the mapped resource; access is revoked when the
-request ends. Deployment admission does not budget each later KMS operation.
+`awsHttpBindings(context).crypto("key")`. The source compares the full mapped
+key ARN with the grant, including partition, account and region; the host must
+also verify the grant and its ownership epoch. Access is revoked when the request
+ends. Deployment admission does not budget each later KMS operation.
 
 The bounded `AwsCryptoOperation` model checks authorization at dispatch and
 result disclosure, rejection before dispatch, and retention of capacity after a
