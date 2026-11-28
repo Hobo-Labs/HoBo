@@ -67,28 +67,58 @@ export function vercelProjectTrust(
 }
 
 const Team = z.object({ slug: z.string().min(1) }).loose();
+const TeamPage = z
+	.object({
+		teams: z.array(z.object({ id: z.string(), slug: z.string().min(1) })),
+		pagination: z.object({ next: z.number().nullable() }).loose(),
+	})
+	.loose();
+
+export class VercelSignInRejectedError extends Error {
+	override readonly name = "VercelSignInRejectedError";
+	constructor(readonly status: number) {
+		super(`Vercel no longer accepts the stored sign-in (HTTP ${status}).`);
+	}
+}
 
 export async function vercelTeamSlug(
 	token: string,
 	teamId: string,
 	http: typeof fetch = fetch,
 ): Promise<string> {
-	const reply = await http(
-		`https://api.vercel.com/v2/teams/${encodeURIComponent(teamId)}`,
-		{
+	const get = (url: URL | string) =>
+		http(url, {
 			headers: { authorization: `Bearer ${token}` },
 			redirect: "error",
 			signal: AbortSignal.timeout(10_000),
-		},
+		});
+	const reply = await get(
+		`https://api.vercel.com/v2/teams/${encodeURIComponent(teamId)}`,
 	);
-	const parsed = Team.safeParse(
+	const direct = Team.safeParse(
 		reply.ok ? await reply.json().catch(() => null) : null,
 	);
-	if (!parsed.success)
-		throw new Error(
-			`Vercel did not name team ${teamId} (HTTP ${reply.status}).`,
+	if (direct.success) return direct.data.slug;
+	let cursor: number | undefined;
+	for (let page = 0; page < 100; page++) {
+		const url = new URL("https://api.vercel.com/v2/teams");
+		if (cursor !== undefined) url.searchParams.set("until", String(cursor));
+		const listed = await get(url);
+		if (listed.status === 401 || listed.status === 403)
+			throw new VercelSignInRejectedError(listed.status);
+		const parsed = TeamPage.safeParse(
+			listed.ok ? await listed.json().catch(() => null) : null,
 		);
-	return parsed.data.slug;
+		if (!parsed.success) break;
+		const match = parsed.data.teams.find((team) => team.id === teamId);
+		if (match !== undefined) return match.slug;
+		const next = parsed.data.pagination.next;
+		if (next === null || next === cursor) break;
+		cursor = next;
+	}
+	throw new Error(
+		`Vercel did not name team ${teamId}: it answered HTTP ${reply.status} for the team and did not list it among the sign-in's teams.`,
+	);
 }
 
 export async function enableVercelProjectOidc(
@@ -183,6 +213,25 @@ export async function ensureCdWorkloadIdentity(
 		await admin.updateOidcAuth(identityId, trust);
 		outcome = "unchanged";
 	} else {
+		const named = await admin.findProjectIdentity({
+			projectId: binding.projectId,
+			name: project,
+		});
+		if (named !== undefined) {
+			if (await admin.oidcAuthAttached(named))
+				await admin.updateOidcAuth(named, trust);
+			else await admin.attachOidcAuth(named, trust);
+			await store.port.put(CD_WORKLOAD_IDENTITY_ENTRY, named);
+			vault.put(
+				CD_STORE_COORDINATES_HANDOFF,
+				cdStoreCoordinatesText({ ...binding, identityId: named }),
+			);
+			return {
+				id: "cd-identity",
+				outcome: "created",
+				detail: `Infisical identity ${project} already in the project now also trusts Vercel project ${project} (${environment}, team ${teamSlug}); its id is in ${store.id}`,
+			};
+		}
 		const made = await admin.createProjectIdentity({
 			projectId: binding.projectId,
 			name: project,

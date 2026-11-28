@@ -12,9 +12,12 @@ import {
 	CD_WORKLOAD_IDENTITY_ENTRY,
 	cdStoreCoordinatesText,
 	ensureCdWorkloadIdentity,
+	vercelTeamSlug,
 } from "../src/workload-identity.js";
 
-function fakeAdmin() {
+function fakeAdmin(
+	existing?: Readonly<{ name: string; id: string; oidc: boolean }>,
+) {
 	const calls: string[] = [];
 	const trusts: InfisicalOidcTrust[] = [];
 	let next = 0;
@@ -24,6 +27,14 @@ function fakeAdmin() {
 		},
 		createFolder: async () => {
 			throw new Error("not used");
+		},
+		findProjectIdentity: async ({ projectId, name }) => {
+			calls.push(`find ${name} in ${projectId}`);
+			return existing?.name === name ? existing.id : undefined;
+		},
+		oidcAuthAttached: async (id) => {
+			calls.push(`oidc? ${id}`);
+			return existing?.id === id && existing.oidc;
 		},
 		createProjectIdentity: async ({ projectId, name, role }) => {
 			next += 1;
@@ -89,6 +100,7 @@ describe("the CD workload identity", () => {
 		});
 		expect(step.outcome).toBe("created");
 		expect(calls).toEqual([
+			"find hobo-cd in proj-1",
 			"create hobo-cd in proj-1 as viewer",
 			"attach 00000000-0000-4000-8000-000000000001",
 		]);
@@ -115,6 +127,31 @@ describe("the CD workload identity", () => {
 		expect(handedOff(vault)).toContain('"kind": "infisical-cloud-attach"');
 		expect(step.detail).not.toContain("00000000-0000-4000-8000-000000000001");
 		expect(step.detail).not.toContain("proj-1");
+	});
+
+	it("adopts the project's identity of that name instead of creating one", async () => {
+		const id = "00000000-0000-4000-8000-0000000000cd";
+		for (const oidc of [false, true]) {
+			const { admin, calls } = fakeAdmin({ name: "hobo-cd", id, oidc });
+			const store = infisicalStore();
+			const vault = signedInVault();
+			const step = await ensureCdWorkloadIdentity({
+				store,
+				vault,
+				project: "hobo-cd",
+				environment: "production",
+				deps: { ...vercel, admin: () => admin },
+			});
+			expect(step.outcome).toBe("created");
+			expect(calls).toEqual([
+				"find hobo-cd in proj-1",
+				`oidc? ${id}`,
+				oidc ? `update ${id}` : `attach ${id}`,
+			]);
+			const kept = await store.port.access(CD_WORKLOAD_IDENTITY_ENTRY);
+			expect(kept.status === "ok" && kept.material).toBe(id);
+			expect(handedOff(vault)).toContain(id);
+		}
 	});
 
 	it("is reused on a re-run, its trust re-applied", async () => {
@@ -212,5 +249,55 @@ describe("the CD workload identity", () => {
 			).detail,
 		).toMatch(/no team/u);
 		expect(calls).toEqual([]);
+	});
+});
+
+describe("the Vercel team's slug", () => {
+	type TeamsBody = Readonly<{
+		id?: string;
+		slug?: string;
+		teams?: ReadonlyArray<Readonly<{ id: string; slug: string }>>;
+		pagination?: Readonly<{ next: number | null }>;
+	}>;
+	const reply = (status: number, body: TeamsBody) =>
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { "content-type": "application/json" },
+		});
+
+	it("reads it from the team when the connection may read the team", async () => {
+		const http: typeof fetch = async () =>
+			reply(200, { id: "team_1", slug: "acme" });
+		expect(await vercelTeamSlug("t", "team_1", http)).toBe("acme");
+	});
+
+	it("finds it among the sign-in's teams when the team itself answers 403", async () => {
+		const seen: string[] = [];
+		const http: typeof fetch = async (url) => {
+			const target = String(url);
+			seen.push(target);
+			if (target.endsWith("/v2/teams/team_2")) return reply(403, {});
+			if (!target.includes("until="))
+				return reply(200, {
+					teams: [{ id: "team_1", slug: "other" }],
+					pagination: { next: 7 },
+				});
+			return reply(200, {
+				teams: [{ id: "team_2", slug: "acme" }],
+				pagination: { next: null },
+			});
+		};
+		expect(await vercelTeamSlug("t", "team_2", http)).toBe("acme");
+		expect(seen).toHaveLength(3);
+	});
+
+	it("says which answers it got when neither names the team", async () => {
+		const http: typeof fetch = async (url) =>
+			String(url).endsWith("/v2/teams")
+				? reply(200, { teams: [], pagination: { next: null } })
+				: reply(403, {});
+		await expect(vercelTeamSlug("t", "team_3", http)).rejects.toThrow(
+			/HTTP 403.*did not list it/u,
+		);
 	});
 });

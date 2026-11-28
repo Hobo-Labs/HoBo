@@ -83,7 +83,9 @@ staged, and promotes that exact build (`createCdPrebuiltProvider`, the relay's
 prebuilt path). The coordinates are never Vercel variables, never committed and
 never printed. Without the owner's store session `hobo cd up` stops with
 `HOBO_CD_UP_STORE_SESSION_REQUIRED`; outside a git checkout, with
-`HOBO_CD_UP_NO_CHECKOUT`. A deployment without the bundled binding answers
+`HOBO_CD_UP_NO_CHECKOUT`; from a project with no `packages/cd-vercel` beside
+it, with `HOBO_CD_UP_NO_DEPLOYABLE` (it never falls back to a deployment that
+could not start). A detached checkout is fine: the build is of its commit. A deployment without the bundled binding answers
 `/readyz` with `cd-store-binding-missing`.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service

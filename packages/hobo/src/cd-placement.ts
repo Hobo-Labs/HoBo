@@ -38,10 +38,6 @@ import {
 	type VercelFetch,
 } from "./vercel-client.js";
 import {
-	createVercelDeployProvider,
-	type VercelDeployProviderOptions,
-} from "./vercel-deploy-provider.js";
-import {
 	checkoutHeadOf,
 	promoteStagedBuild,
 	repositoryRoot,
@@ -231,6 +227,7 @@ function refusedUp(
 export const CD_UP_REFUSAL = Object.freeze({
 	storeSessionRequired: "HOBO_CD_UP_STORE_SESSION_REQUIRED",
 	noCheckout: "HOBO_CD_UP_NO_CHECKOUT",
+	noDeployable: "HOBO_CD_UP_NO_DEPLOYABLE",
 } as const);
 
 export type CdPrebuiltDelivery = Readonly<{
@@ -389,35 +386,20 @@ export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
 	credentials: TrustedVault;
 	runtime: R;
 	upWith: (runtime: R) => CommandModule;
-	resolveGitHead?: (
-		dir: string,
-	) => Promise<{ ref: string; sha: string } | undefined>;
-	vercelDeployProvider?: (
-		options: Omit<VercelDeployProviderOptions, "fetch">,
-	) => IacProvider;
+	resolveGitHead?: (dir: string) => Promise<CdCheckoutHead | undefined>;
 	prebuiltProvider?: (delivery: CdPrebuiltDelivery) => IacProvider;
 	prebuilt?: CdPrebuiltDeps;
 }>;
 
-function convergeCdUpWithoutBundledVercelYard<R extends YardRuntime>(
-	deps: CdVercelUpDeps<R>,
-	input: Parameters<CommandModule["run"]>[0],
-): Promise<CommandResult> {
-	const teamId = deps.credentials.reveal("VERCEL_TEAM_ID");
-	return deps
-		.upWith({
-			...cdPlacementRuntime(deps.runtime),
-			executor: createInProcessExecutor({
-				iac: routePreparedPlacements(
-					(deps.vercelDeployProvider ?? createVercelDeployProvider)({
-						token: deps.credentials.reveal("VERCEL_TOKEN") ?? "",
-						...(teamId !== undefined ? { teamId } : undefined),
-						projectName: "hobo-cd",
-					}),
-				),
-			}),
-		})
-		.run(input);
+export type CdCheckoutHead = Readonly<{ sha: string; ref?: string }>;
+
+async function cdCheckoutHead(
+	dir: string,
+): Promise<CdCheckoutHead | undefined> {
+	const named = await gitHead(dir);
+	if (named !== undefined) return named;
+	const sha = await checkoutHeadOf(dir);
+	return sha === "" ? undefined : { sha };
 }
 
 export function createCdVercelUpCommand<R extends YardRuntime>(
@@ -431,13 +413,19 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 			const dir = cdVercelDirFor(projectOf(input));
 			const yards = dir === undefined ? undefined : await loadCdYards(dir);
 			if (dir === undefined || yards === undefined)
-				return convergeCdUpWithoutBundledVercelYard(deps, input);
-			const head = await (deps.resolveGitHead ?? gitHead)(dir);
+				return refusedUp(
+					CD_UP_REFUSAL.noDeployable,
+					"hobo cd up builds HoBo.CD from packages/cd-vercel (its Yard is deploy/yard.ts), and this project has no such directory beside it.",
+					[
+						"Run hobo cd up from a HoBo checkout, in packages/hobo-cd or packages/cd-vercel.",
+					],
+				);
+			const head = await (deps.resolveGitHead ?? cdCheckoutHead)(dir);
 			if (head === undefined)
 				return refusedUp(
-					"HOBO_CD_UP_NO_BRANCH",
-					"hobo cd up deploys CD from the current branch, and this checkout is not on one.",
-					["Check out the branch to deploy, pushed to GitHub, and run again."],
+					CD_UP_REFUSAL.noCheckout,
+					`${dir} is not inside a git checkout: hobo cd up builds the checkout of the commit it deploys.`,
+					["Run hobo cd up from a git checkout of the commit to deploy."],
 				);
 			const [cdYard, ...joined] = yards;
 			if (cdYard === undefined)
@@ -506,7 +494,7 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 				emit: input.emitProgress,
 			});
 			input.emitProgress(
-				`building ${head.ref}@${head.sha.slice(0, 12)} with HoBo.CD's store binding bundled in, then promoting it to CD's ${CD_DEPLOY_ENVIRONMENT} on Vercel (project ${placement.project})`,
+				`building ${head.ref === undefined ? "" : `${head.ref}@`}${head.sha.slice(0, 12)} with HoBo.CD's store binding bundled in, then promoting it to CD's ${CD_DEPLOY_ENVIRONMENT} on Vercel (project ${placement.project})`,
 			);
 			return deps
 				.upWith({

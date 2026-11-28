@@ -235,6 +235,19 @@ describe("Infisical's admin API (consumer contract)", () => {
 		expectRecorded();
 	});
 
+	it("finds an identity by its exact name and whether it has OIDC Auth", async () => {
+		const admin = createInfisicalAdmin({
+			siteUrl: url,
+			accessToken: ADMIN_TOKEN,
+		});
+		expect(
+			await admin.findProjectIdentity({ projectId: "proj-1", name: "hobo-cd" }),
+		).toBe("cd-identity");
+		expect(await admin.oidcAuthAttached("cd-identity")).toBe(false);
+		expect(await admin.oidcAuthAttached("deploy-identity")).toBe(true);
+		expectRecorded();
+	});
+
 	it("maps a 403", async () => {
 		const admin = createInfisicalAdmin({
 			siteUrl: url,

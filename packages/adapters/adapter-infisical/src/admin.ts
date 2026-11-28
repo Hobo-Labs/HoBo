@@ -46,6 +46,7 @@ import {
 	InfisicalCreateProjectRequestSchema,
 	InfisicalCreateProjectResponseSchema,
 	InfisicalIdentityResponseSchema,
+	InfisicalProjectIdentityListResponseSchema,
 } from "./_generated/adapter_infisical_pb.js";
 import { parseInfisicalBinding } from "./binding.js";
 import { type Answer, failure, readBody } from "./client.js";
@@ -93,6 +94,11 @@ export interface InfisicalAdmin {
 		readonly name: string;
 		readonly parentPath?: string;
 	}): Promise<{ readonly folderId: string }>;
+	findProjectIdentity(input: {
+		readonly projectId: string;
+		readonly name: string;
+	}): Promise<string | undefined>;
+	oidcAuthAttached(identityId: string): Promise<boolean>;
 	/** A machine identity scoped to one project, with its role. */
 	createProjectIdentity(input: {
 		readonly projectId: string;
@@ -396,6 +402,43 @@ export function createInfisicalAdmin(options: {
 			if (!ID.test(folderId))
 				throw new InfisicalError(operation, "invalid-response");
 			return { folderId };
+		},
+
+		async findProjectIdentity({ projectId, name }) {
+			const operation = "find identity";
+			input(operation, ID.test(projectId) && IDENTITY_NAME.test(name));
+			const answer = await call(
+				operation,
+				"GET",
+				`/api/v1/projects/${encodeURIComponent(projectId)}/memberships/identities?limit=100`,
+			);
+			const body = okBody(operation, answer);
+			const parsed = parse(operation, () =>
+				fromJson(InfisicalProjectIdentityListResponseSchema, body, {
+					ignoreUnknownFields: true,
+				}),
+			);
+			const named = parsed.identityMemberships.filter(
+				(membership) => membership.identity?.name === name,
+			);
+			if (named.length === 0) return undefined;
+			const identityId = named.length === 1 ? named[0]?.identityId : undefined;
+			if (identityId === undefined || !ID.test(identityId))
+				throw new InfisicalError(operation, "invalid-response");
+			return identityId;
+		},
+
+		async oidcAuthAttached(identityId) {
+			const operation = "read OIDC auth";
+			input(operation, ID.test(identityId));
+			const answer = await call(
+				operation,
+				"GET",
+				`/api/v1/auth/oidc-auth/identities/${encodeURIComponent(identityId)}`,
+			);
+			if (answer.status === 200) return true;
+			if (answer.status === 400 || answer.status === 404) return false;
+			throw failure(operation, answer);
 		},
 
 		async createProjectIdentity({ projectId, name, role }) {

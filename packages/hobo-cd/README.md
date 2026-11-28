@@ -25,7 +25,10 @@ connection:
    empty value) means a personal account; missing, unreadable or changed scope
    is refused until reconciled. Earlier personal installations omitted the
    marker: verify their scope before adding it. Later runs do not verify the
-   connection online. `--what-if` opens nothing either.
+   connection up front, but when Vercel refuses the stored sign-in itself
+   (HTTP 401 or 403 while naming its team), a `--hand-off` run connects Vercel
+   again with the device grant in the same call; other runs refuse with
+   `HOBO_CD_VERCEL_SIGN_IN_REJECTED`. `--what-if` opens nothing either.
    Headless runs refuse with the reason.
 2. **Connect page** (`@hobo/connect-ui`). The owner chooses the store
    (Infisical OIDC by default, 1Password, or Bitwarden Secrets Manager),
@@ -93,7 +96,11 @@ the owner's own sign-ins and the providers' APIs. Nobody creates it by hand
    `owner:<team>:project:hobo-cd:environment:preview`, and claim `owner_id`.
    The identity's id is kept in the store (`HOBO_CD_WORKLOAD_IDENTITY_ID`).
    A re-run reuses the identity and re-applies its trust. When two runs race,
-   the identity saved first is kept and the other is deleted.
+   the identity saved first is kept and the other is deleted. When the
+   project already has an identity named `hobo-cd` (on a plan with no
+   identity left to create, say), it adopts that one instead: it attaches
+   or replaces its OIDC trust and keeps its id, so the deployment signs in
+   with that identity's existing role.
 3. It gives the deployment the store's coordinates as its configuration:
    project, environment, folder and identity. These are ids only.
 

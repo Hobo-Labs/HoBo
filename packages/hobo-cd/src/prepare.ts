@@ -72,6 +72,7 @@ import {
 	CD_DEPLOY_ENVIRONMENT,
 	type CdWorkloadDeps,
 	ensureCdWorkloadIdentity,
+	VercelSignInRejectedError,
 } from "./workload-identity.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
@@ -202,6 +203,11 @@ async function journalStep(
 	}
 }
 
+const VERCEL_SIGN_IN_REJECTED = "HOBO_CD_VERCEL_SIGN_IN_REJECTED";
+
+const signInRejected = (outcome: PrepareOutcome) =>
+	outcome.kind === "refused" && outcome.result.code === VERCEL_SIGN_IN_REJECTED;
+
 async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
@@ -234,11 +240,15 @@ async function ready(
 			...(deps.workload !== undefined ? { deps: deps.workload } : undefined),
 		});
 	} catch (error) {
+		if (error instanceof VercelSignInRejectedError)
+			return refused(VERCEL_SIGN_IN_REJECTED, error.message, [
+				"Run hobo cd up again: HoBo connects Vercel afresh.",
+			]);
 		return refused(
 			"HOBO_CD_WORKLOAD_IDENTITY_FAILED",
 			`The identity HoBo.CD on Vercel reads its journal with could not be made: ${error instanceof Error ? error.message : String(error)}`,
 			[
-				"Run hobo cd up again; if it persists, check that your Infisical sign-in may manage identities in the project.",
+				"Run hobo cd up again. If it persists, the message names the service that refused: the Vercel connection must reach the team and project, and the Infisical sign-in must manage identities in the project.",
 			],
 		);
 	}
@@ -447,9 +457,14 @@ async function prepareVercelWithVault(
 			};
 		}
 		const expected = connection;
-		return ready(owner.opened, "unchanged", vault, deps, (current) =>
-			sameVercelConnection(expected, current),
+		const reused = await ready(
+			owner.opened,
+			"unchanged",
+			vault,
+			deps,
+			(current) => sameVercelConnection(expected, current),
 		);
+		if (!signInRejected(reused) || input.handOff !== true) return reused;
 	}
 	if (input.whatIf)
 		return {

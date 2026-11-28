@@ -7,6 +7,7 @@ import {
 	GITHUB_APP_CODE_CAPTURE,
 	HAND_OFF_SIGN_IN_CAPTURES,
 	INFISICAL_CLI_SESSION_CAPTURE,
+	KEPT_STORE_SIGN_INS,
 	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OwnerChannel,
 	type OwnerJobs,
@@ -70,6 +71,8 @@ export function createMcpOwnerChannel(
 	} = {},
 ): McpOwnerChannel {
 	const held = new Map<string, string>();
+	const vault = createTrustedVault();
+	const kept: ReadonlySet<string> = new Set(KEPT_STORE_SIGN_INS);
 	const links = new Map<string, { url: string; message: string }>();
 	// Each prompt belongs to a job, even when several jobs share one URL.
 	const prompted = new Map<string, string>();
@@ -96,7 +99,8 @@ export function createMcpOwnerChannel(
 		},
 		holds: (name) => held.has(name),
 		deposit(name, value) {
-			held.set(name, value);
+			if (kept.has(name)) vault.put(name, value);
+			else held.set(name, value);
 		},
 		linkFor: (name) => links.get(name),
 		// A link the owner opens while a step waits on them (Vercel's device
@@ -138,9 +142,7 @@ export function createMcpOwnerChannel(
 				});
 			},
 		}),
-		// The store sign-in HoBo created, kept in this process's memory so the
-		// owner signs in once; never a file, gone when the server stops.
-		vault: createTrustedVault(),
+		vault,
 	};
 }
 

@@ -1066,6 +1066,8 @@ describe("prepareVercelConnection", () => {
 				admin: () => ({
 					createProject: async () => ({ projectId: "unused" }),
 					createFolder: async () => ({ folderId: "unused" }),
+					findProjectIdentity: async () => undefined,
+					oidcAuthAttached: async () => false,
 					createProjectIdentity: async () => ({
 						identityId: "00000000-0000-4000-8000-000000000001",
 					}),

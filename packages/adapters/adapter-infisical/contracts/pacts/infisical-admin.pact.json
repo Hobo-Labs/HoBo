@@ -489,6 +489,84 @@
 					}
 				}
 			}
+		},
+		{
+			"description": "The project's member identities are listed, to adopt one named hobo-cd instead of making another",
+			"providerState": "project proj-1 has identity cd-identity named hobo-cd",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/projects/proj-1/memberships/identities?limit=100",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityMemberships": [
+						{
+							"identityId": "cd-identity",
+							"roles": [
+								{
+									"role": "member"
+								}
+							],
+							"identity": {
+								"id": "cd-identity",
+								"name": "hobo-cd",
+								"projectId": "proj-1"
+							}
+						}
+					]
+				}
+			}
+		},
+		{
+			"description": "An identity without OIDC Auth says so",
+			"providerState": "identity cd-identity has no OIDC Auth",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/auth/oidc-auth/identities/cd-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 400,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"statusCode": 400,
+					"message": "The identity does not have OIDC Auth attached",
+					"error": "BadRequest"
+				}
+			}
+		},
+		{
+			"description": "An identity with OIDC Auth answers its trust",
+			"providerState": "identity deploy-identity has OIDC Auth",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/auth/oidc-auth/identities/deploy-identity",
+				"headers": {
+					"authorization": "Bearer fixture-instance-admin-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityOidcAuth": {
+						"identityId": "deploy-identity"
+					}
+				}
+			}
 		}
 	]
 }

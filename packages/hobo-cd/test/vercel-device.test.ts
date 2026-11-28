@@ -9,6 +9,7 @@ import {
 	prepareVercelConnection,
 	VERCEL_DEVICE_AUTHORIZATION_URL,
 	VERCEL_DEVICE_TOKEN_URL,
+	VercelSignInRejectedError,
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "../src/index.js";
@@ -253,6 +254,55 @@ describe("hobo cd up --hand-off", () => {
 			"team_abc",
 		);
 		expect(lines.join("\n")).not.toContain(TOKEN);
+	});
+
+	it("connects Vercel afresh when Vercel rejects the stored sign-in", async () => {
+		const port = createMemorySecretsPort({ id: "memory" });
+		await port.put("HOBO_CD_VERCEL_TOKEN", "revoked-vercel-token");
+		await port.put("HOBO_CD_VERCEL_TEAM_ID", "team_abc");
+		await port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "device-grant");
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port,
+			reference: (name) => `infisical://proj/prod/hobo-cd/${name}`,
+		};
+		const { http } = fakeVercel(["ok"]);
+		const held = new Map([["INFISICAL_TOKEN", "fixture-handed-over-token"]]);
+		const outcome = await prepareVercelConnection(handOffInput([]), {
+			env: {},
+			locator: locator({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "proj",
+			}),
+			ownerChannel: {
+				openUrl: async () => undefined,
+				captureSecret: async ({ name }) => {
+					const value = held.get(name);
+					held.delete(name);
+					return value;
+				},
+				holds: (name) => held.has(name),
+			},
+			workload: {
+				...fakeWorkload(),
+				teamSlug: async (token) => {
+					if (token !== TOKEN) throw new VercelSignInRejectedError(403);
+					return "acme";
+				},
+			},
+			openStore: async (): Promise<SecretStoreOpening> => ({
+				ok: true,
+				store,
+			}),
+			fetch: http,
+			sleep: instant,
+			startPage: () => {
+				throw new Error("a handed-off run must not serve a page");
+			},
+		});
+		if (outcome.kind !== "ready") throw new Error(JSON.stringify(outcome));
+		expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
+		expect((await port.access("HOBO_CD_VERCEL_TOKEN")).material).toBe(TOKEN);
 	});
 
 	it("without an Infisical session, asks for one sign-in, never hand-made identities", async () => {

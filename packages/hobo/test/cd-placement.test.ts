@@ -210,9 +210,6 @@ describe("hobo cd up delivers CD on Vercel as a prebuilt build", () => {
 			credentials: preparedVault(),
 			runtime,
 			resolveGitHead: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
-			vercelDeployProvider: () => {
-				throw new Error("hobo cd up never makes a git deployment");
-			},
 			prebuiltProvider: (delivery) => {
 				seen = delivery;
 				return {
@@ -312,7 +309,44 @@ describe("hobo cd up delivers CD on Vercel as a prebuilt build", () => {
 		});
 	});
 
-	it("refuses when the checkout is on no branch", async () => {
+	it("builds a detached checkout by its commit, with no branch needed", async () => {
+		let seen: CdPrebuiltDelivery | undefined;
+		const progress: string[] = [];
+		const up = createCdVercelUpCommand({
+			credentials: preparedVault(),
+			runtime: createDefaultYardRuntime({ env: {} }),
+			resolveGitHead: async () => ({ sha: "b".repeat(40) }),
+			prebuiltProvider: (delivery) => {
+				seen = delivery;
+				return {
+					id: "fake",
+					preview: async () => ({ summary: "", changes: 1 }),
+					apply: async () => ({}),
+					destroy: async () => {},
+					refresh: async () => ({ drift: false, observed: {} }),
+				};
+			},
+			upWith: () => ({
+				implemented: true,
+				run: async () => ({
+					ok: true,
+					status: "ok",
+					code: "HOBO_OK",
+					message: "",
+					data: {},
+				}),
+			}),
+		});
+		const result = await up.run({
+			...cdUpRunInput(),
+			emitProgress: (line) => progress.push(line),
+		});
+		expect(result.ok).toBe(true);
+		expect(seen?.sha).toBe("b".repeat(40));
+		expect(progress.join("\n")).toContain(`building ${"b".repeat(12)} with`);
+	});
+
+	it("refuses outside a git checkout", async () => {
 		const up = createCdVercelUpCommand({
 			credentials: createTrustedVault(),
 			runtime: createDefaultYardRuntime({ env: {} }),
@@ -322,7 +356,29 @@ describe("hobo cd up delivers CD on Vercel as a prebuilt build", () => {
 			},
 		});
 		const result = await up.run(cdUpRunInput());
-		expect(result.code).toBe("HOBO_CD_UP_NO_BRANCH");
+		expect(result.code).toBe("HOBO_CD_UP_NO_CHECKOUT");
+	});
+
+	it("refuses without packages/cd-vercel instead of delivering a CD that cannot start", async () => {
+		const elsewhere = path.dirname(packages);
+		const up = createCdVercelUpCommand({
+			credentials: preparedVault(),
+			runtime: createDefaultYardRuntime({ env: {} }),
+			prebuiltProvider: () => {
+				throw new Error("must not deliver");
+			},
+			upWith: () => {
+				throw new Error("must not converge");
+			},
+		});
+		const result = await up.run({
+			...cdUpRunInput(),
+			context: { cwd: elsewhere, projectDir: elsewhere },
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CD_UP_NO_DEPLOYABLE",
+		});
 	});
 });
 
