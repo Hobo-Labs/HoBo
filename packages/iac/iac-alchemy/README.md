@@ -120,7 +120,7 @@ request bodies, stream responses, or provide connectors or session replay. The
 bounded `AwsHttpBindings` model checks request retirement, grant revalidation
 and timed-out capacity. It assumes host verification and transport behavior;
 it does not prove AWS, HTTP parsing, byte limits or liveness.
-The model explores one application with two request slots.
+The model explores one application and two requests sharing one capacity slot.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application

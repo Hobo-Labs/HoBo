@@ -47,6 +47,36 @@ it("keeps topic failures unavailable when application code changes array prototy
 		Reflect.set(Array.prototype, "push", push);
 	}
 	expect(response.status).toBe(503);
+	let pushed: Response;
+	try {
+		Reflect.set(Array.prototype, "push", () => 0);
+		pushed = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		Reflect.set(Array.prototype, "push", push);
+	}
+	expect(pushed.status).toBe(503);
+	expect(await pushed.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
+	let sealed: Response;
+	try {
+		Object.prototype.writable = true;
+		Object.prototype.configurable = true;
+		sealed = rivetTopicUnavailable("scope-unverified");
+	} finally {
+		delete Object.prototype.writable;
+		delete Object.prototype.configurable;
+	}
+	expect(Object.getOwnPropertyDescriptor(sealed, "then")).toMatchObject({
+		writable: false,
+		configurable: false,
+		value: undefined,
+	});
+	expect(await sealed.json()).toEqual({
+		status: "topic-unavailable",
+		reason: "scope-unverified",
+	});
 	const ordinary = rivetTopicUnavailable("scope-unverified");
 	expect(ordinary.status).toBe(503);
 	expect(await ordinary.json()).toEqual({
