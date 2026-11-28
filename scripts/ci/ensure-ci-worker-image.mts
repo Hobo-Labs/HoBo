@@ -380,6 +380,7 @@ const WORKER_DIGEST_CONFIRM_MIN_SEC = 1;
 
 type WorkerPublicationProbe =
 	| "pullable"
+	| "published"
 	| "missing"
 	| "manifest-unavailable"
 	| "pull-failed"
@@ -405,6 +406,40 @@ function probeWorkerPull(
 		: "unknown";
 }
 
+function workerManifestBackoffSec(attempt: number): number {
+	return Math.min(15, 5 * 2 ** Math.max(0, attempt - 1));
+}
+
+export function probeWorkerPublicationManifest(
+	remote: string,
+	token: string,
+	options?: Readonly<{
+		budgetSec?: number;
+		now?: () => number;
+	}>,
+): "present" | "missing" | "unknown" {
+	const budgetSec = options?.budgetSec ?? WORKER_PUBLISH_PROBE_BUDGET_SEC;
+	const now = options?.now ?? Date.now;
+	const deadline = now() + budgetSec * 1000;
+	let attempt = 0;
+	let status: "present" | "missing" | "unknown" = "unknown";
+	while (now() < deadline) {
+		attempt += 1;
+		const remainingSec = Math.max(0, Math.floor((deadline - now()) / 1000));
+		if (remainingSec <= 0) break;
+		status = workerManifestStatus(remote, token, Math.min(45, remainingSec));
+		if (status === "present" || status === "missing") return status;
+		const afterProbeSec = Math.max(0, Math.floor((deadline - now()) / 1000));
+		if (afterProbeSec <= 1 || attempt >= 6) break;
+		const delay = Math.min(
+			workerManifestBackoffSec(attempt),
+			afterProbeSec - 1,
+		);
+		if (delay > 0) spawnSync("sleep", [String(delay)], { stdio: "ignore" });
+	}
+	return status;
+}
+
 function probeWorkerPublication(
 	repo: string,
 	version: string,
@@ -422,7 +457,10 @@ function probeWorkerPublication(
 	const remainingSec = () => Math.max(0, Math.floor((deadline - now()) / 1000));
 	const manifestBudget = Math.min(45, remainingSec());
 	if (manifestBudget <= 0) return "budget-exhausted";
-	const manifestStatus = workerManifestStatus(remote, token, manifestBudget);
+	const manifestStatus = probeWorkerPublicationManifest(remote, token, {
+		budgetSec: manifestBudget,
+		now,
+	});
 	const pullBudget = options
 		? remainingSec()
 		: manifestStatus === "present"
@@ -788,6 +826,34 @@ export interface CiWorkerImagePresence {
 	readonly ghcrProbe: WorkerPublicationProbe;
 }
 
+function probePublishedWorkerManifest(
+	repo: string,
+	version: string,
+	token: string,
+	options?: Readonly<{ now?: () => number }>,
+): WorkerPublicationProbe {
+	const now = options?.now ?? Date.now;
+	const deadline = now() + WORKER_PUBLISH_PROBE_BUDGET_SEC * 1000;
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	const loginMs = Math.floor(deadline - now());
+	if (loginMs <= 0) return "budget-exhausted";
+	if (!dockerLoginGhcr(actor, token, loginMs)) return "login-failed";
+	const remainingSec = () => Math.max(0, Math.floor((deadline - now()) / 1000));
+	if (remainingSec() <= 0) return "budget-exhausted";
+	const remote = remoteWorkerTag(repo, version);
+	const status = probeWorkerPublicationManifest(remote, token, {
+		budgetSec: Math.min(45, remainingSec()),
+		now,
+	});
+	if (status === "present") return "published";
+	const pullBudget = remainingSec();
+	if (pullBudget <= 0) return "budget-exhausted";
+	const pullStatus = probeWorkerPull(remote, pullBudget);
+	if (pullStatus === "pullable") return "pullable";
+	if (status === "missing" && pullStatus === "missing") return "missing";
+	return status === "unknown" ? "manifest-unavailable" : "pull-failed";
+}
+
 /**
  * Whether this tree's worker image (by content key) is on this host and in GHCR.
  * The publisher in ci-deps-publish.yml asks this after every green main run,
@@ -803,17 +869,28 @@ export function ciWorkerImagePublished(options?: {
 	const token = ghcrAuthToken();
 	const ghcrProbe =
 		repo && token
-			? probeWorkerPublication(
+			? probePublishedWorkerManifest(
 					repo,
 					version,
 					token,
 					options?.now === undefined ? undefined : { now: options.now },
 				)
 			: "login-failed";
-	return { version, host, ghcr: ghcrProbe === "pullable", ghcrProbe };
+	return {
+		version,
+		host,
+		ghcr: ghcrProbe === "pullable" || ghcrProbe === "published",
+		ghcrProbe,
+	};
 }
 
 function main(): void {
+	if (process.argv.includes("--published-digest")) {
+		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+		const version = ciRunnerImageVersion(root);
+		console.log(resolveWorkerDigestRef(repo, version));
+		return;
+	}
 	if (process.argv.includes("--resolve-digest")) {
 		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
 		const version = ciRunnerImageVersion(root);
