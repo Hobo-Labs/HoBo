@@ -157,7 +157,7 @@ below are **not** included in those counts.
 | `@hobo/cd-kube-fleet` | **pass** | OCM/Karmada; not Argo CD hub |
 | `@hobo/cd-vercel` hosted runtime | **partial** | Tick schedule **and** `cd-api` (`/v1/cd/`, agent feed, probes); journal on Neon fleet |
 | `@hobo/hobo-cd` CD Bindle + `hobo cd up` | **partial** | Vercel connection/lifecycle ceremony; not `@hobo/cd/compose` |
-| `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | Pluggable fail-closed registry in `packages/cd/src/compose/engine-registry.ts` (`packages/cd/test/compose/engine-registry.test.ts`) + flow router in `packages/cd/src/host/flow-router.ts` |
+| `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) + flow router in `packages/cd/src/host/flow-router.ts` |
 | `@hobo/cd-argocd` native API adapter | **not-built** | Read/observe client currently lives in `@hobo/cd-gitops/src/engines/index.ts` (P3 split optional) |
 | Separate `@hobo/cd-kargo` promotion runtime | **intentional-gap** | Would duplicate `@hobo/cd` brain (ADR-0182) |
 | Separate `@hobo/cd-octopus` engine | **intentional-gap** | Supported as a pluggable `release-orchestrator` target via `CdEngineRegistry` + `createCdDeliveryFlowRouterLayer` |
@@ -181,7 +181,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | PR | Scope | Status / closes |
 | --- | --- | --- |
 | **P1** | `docs/cd/*` (this audit) + index links | Landed |
-| **P2** | `CdEngineRegistry` in `@hobo/cd/compose` + `createCdDeliveryFlowRouterLayer` | Landed |
+| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Landed (`engines.ts`, `cd-gitops` bridge) |
 | **P3** | `packages/cd-argocd` split (optional; read/observe already in `@hobo/cd-gitops`) | Open |
 | **P4** | Durable auto-promotion holds in `CdStage` (`@hobo/cd/domain`) | Landed |
 | **P5** | Named multi-origin Freight slots in `CdStage` (`@hobo/cd/domain`) | Landed |

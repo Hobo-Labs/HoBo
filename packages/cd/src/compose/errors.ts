@@ -33,10 +33,8 @@ export const COMPOSE_FAILURES = Object.freeze({
 		"A NOTIFY hook named a channel with no composed sink; the notification was dropped (NOTIFY is best-effort). Configure the channel's CloudEvents webhook sink.",
 	"rail-delivery-invalid":
 		"The Rail's `delivery` object does not parse as RailDeliveryRecord; the Rail is treated as binding no Camp sets. Republish the Rail with a valid delivery object.",
-	"compose-engine-missing":
-		"No CD engine is registered under this target name or flow kind. Register the engine adapter (such as argo-cd, flux, direct, or octopus-deploy) in CdEngineRegistry before composing.",
-	"compose-engine-duplicate":
-		"A CD engine with this name is already registered in CdEngineRegistry. Use a unique engine name or construct a fresh registry.",
+	"compose-engine-unknown":
+		"No CD engine is registered under this target name. Register a gitops publisher (`argo-cd`, `flux`) or another engine package at compose time.",
 } as const);
 
 export type ComposeFailureCode = keyof typeof COMPOSE_FAILURES;

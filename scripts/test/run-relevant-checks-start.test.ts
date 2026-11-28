@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -30,6 +32,33 @@ function tempDir(): string {
 	return dir;
 }
 
+function osBinWithoutPackageManagers(): string {
+	const hide = new Set([
+		"pnpm",
+		"npm",
+		"npx",
+		"yarn",
+		"yarnpkg",
+		"corepack",
+		"bun",
+		"pnpx",
+	]);
+	const dest = join(tempDir(), "bin-os");
+	mkdirSync(dest);
+	for (const dir of ["/usr/bin", "/bin"]) {
+		if (!existsSync(dir)) continue;
+		for (const name of readdirSync(dir)) {
+			if (hide.has(name)) continue;
+			const to = join(dest, name);
+			if (existsSync(to)) continue;
+			try {
+				symlinkSync(join(dir, name), to);
+			} catch {}
+		}
+	}
+	return dest;
+}
+
 // Node, git and sh, and no package manager: the directory node ships in also
 // holds pnpm.
 const nodeBin = join(tempDir(), "bin");
@@ -37,7 +66,7 @@ mkdirSync(nodeBin);
 symlinkSync(process.execPath, join(nodeBin, "node"));
 const env = {
 	HOME: tempDir(),
-	PATH: [nodeBin, "/usr/bin", "/bin"].join(":"),
+	PATH: [nodeBin, osBinWithoutPackageManagers()].join(":"),
 	GIT_CONFIG_GLOBAL: "/dev/null",
 	GIT_CONFIG_NOSYSTEM: "1",
 	GIT_AUTHOR_NAME: "fixture",

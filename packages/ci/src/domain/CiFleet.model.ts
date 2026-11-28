@@ -11,13 +11,13 @@ import {
 	JobObservedPolicyLive,
 } from "./JobDispatch.policies.js";
 import { StationFleet } from "./StationFleet.aggregate.js";
-import { FleetCapacityView, RoutingAuditView } from "./views.js";
+import { RoutingAuditView, StationCapacityView } from "./views.js";
 
 export class CiFleet extends Domain.Model(
 	"CiFleet",
 	{
 		aggregates: [StationFleet, JobDispatch],
-		views: [FleetCapacityView, RoutingAuditView],
+		views: [StationCapacityView, RoutingAuditView],
 		policies: [JobObservedPolicy, JobCompletedPolicy, JobExpiredPolicy],
 		sagas: [DispatchJob],
 	},
@@ -45,7 +45,7 @@ export class CiFleetApi extends Domain.Api(
 			"ObserveJobDispatch",
 			"CompleteJobDispatch",
 		],
-		views: ["FleetCapacityView", "RoutingAuditView"],
+		views: ["StationCapacityView", "RoutingAuditView"],
 	},
 	{
 		description:

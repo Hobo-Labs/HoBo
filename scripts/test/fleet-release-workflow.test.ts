@@ -135,12 +135,20 @@ describe("the release workflow's fleet service images", () => {
 			condition,
 			/needs\.release-oci-build-tag\.result == 'success'/u,
 		);
+		assert.match(
+			condition,
+			/needs\.release-oci-build-cli\.result == 'success'/u,
+		);
+		assert.match(
+			condition,
+			/needs\.release-oci-build-mcp\.result == 'success'/u,
+		);
 		assert.match(condition, /needs\.release-hobo-cli\.result == 'success'/u);
 		assert.match(condition, /!startsWith\(github\.ref, 'refs\/tags\/sdk-v'\)/u);
 		assert.match(condition, /!startsWith\(github\.ref, 'refs\/tags\/cli-v'\)/u);
 		assert.match(
 			block,
-			/ {4}needs: \[release-main-train-gate, release-oci-build-tag, release-hobo-cli\]\n/u,
+			/ {4}needs: \[release-main-train-gate, release-oci-build-tag, release-oci-build-cli, release-oci-build-mcp, release-hobo-cli\]\n/u,
 		);
 		assert.equal(shipsServiceImages("v0.1.0"), true);
 		assert.equal(shipsServiceImages("v0.0.0-alpha.12"), true);

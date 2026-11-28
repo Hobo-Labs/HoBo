@@ -33,6 +33,7 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@alchemy.run/better-auth": "2.0.0-beta.87",
 		"@bufbuild/protobuf": "2.12.1",
 		"@bytecodealliance/jco": "1.24.3",
 		"@hobo/adapter-infisical": "workspace:*",
@@ -66,6 +67,7 @@
 		"@hobo/fleet-p2p": "workspace:*",
 		"@hobo/hobo-cd": "workspace:*",
 		"@hobo/hobo-ci": "workspace:*",
+		"@hobo/iac-alchemy": "workspace:*",
 		"@hobo/iac-pulumi": "workspace:*",
 		"@hobo/junctions": "workspace:*",
 		"@hobo/identity": "workspace:*",
@@ -113,9 +115,14 @@
 		"@hobo/trails": "workspace:*",
 		"@hobo/trust": "workspace:*",
 		"@hobo/yards": "workspace:*",
+		"better-auth": "^1.7.5",
+		"effect": "4.1.4",
 		"esbuild": "^0.25.0",
+		"kysely": "^0.29.4",
 		"tar-stream": "3.1.7",
 		"tsx": "4.22.4",
+		"typescript": "^5.9.3",
+		"typescript-patterns": "npm:typescript@6.0.3",
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
@@ -127,9 +134,13 @@
 		"@hobo/provider-agent37": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
+		"@modelcontextprotocol/client": "2.4.0",
+		"@modelcontextprotocol/ext-apps": "2.0.4",
+		"@types/jsdom": "21.1.7",
 		"@types/pg": "8.15.5",
 		"@types/tar-stream": "3.1.5",
 		"fast-check": "^4.3.0",
+		"jsdom": "26.1.0",
 		"pg": "8.22.0",
 		"undici": "7.29.0"
 	},

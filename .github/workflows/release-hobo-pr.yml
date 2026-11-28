@@ -2,6 +2,7 @@ name: HoBo release integration PR
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
 
 permissions:
@@ -42,6 +43,7 @@ concurrency:
 jobs:
   release-integration:
     name: HoBo release integration shard
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     strategy:
       fail-fast: false
       matrix:
@@ -153,7 +155,7 @@ jobs:
 
   release-integration-gate:
     name: HoBo release integration PR gate
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    if: always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
     needs: [release-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

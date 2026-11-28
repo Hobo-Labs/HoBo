@@ -17,6 +17,7 @@ import {
 	type JsonValue,
 } from "../ci/attestation.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { anyPathMatchesReleaseHoboFilters } from "../lib/release-hobo-path-filters.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
@@ -197,8 +198,17 @@ function runScope(root: string, base: string, path = process.env.PATH) {
 }
 
 describe("release integration pull-request and merge-queue lane", () => {
-	it("uses an unfiltered pull_request and merge_group trigger", () => {
-		assert.equal(trigger(pr, "pull_request"), null);
+	it("runs for pull requests without path or branch filters and for merge groups", () => {
+		const pullRequest = asObject(trigger(pr, "pull_request"));
+		assert.deepEqual(asList(pullRequest?.types), [
+			"opened",
+			"synchronize",
+			"reopened",
+			"ready_for_review",
+			"labeled",
+		]);
+		assert.equal(pullRequest?.paths, undefined);
+		assert.equal(pullRequest?.branches, undefined);
 		assert.equal(trigger(pr, "merge_group"), null);
 	});
 
@@ -300,6 +310,25 @@ describe("release integration pull-request and merge-queue lane", () => {
 		}
 	});
 
+	it("runs the release workflow for OCI registry provider changes", () => {
+		for (const event of ["pull_request", "merge_group"]) {
+			const paths = (
+				asList(asObject(trigger(train, event))?.paths) ?? []
+			).flatMap((value) => {
+				const path = asText(value);
+				return path === undefined ? [] : [path];
+			});
+			for (const path of [
+				"packages/providers/provider-oci-registry/src/resolver.ts",
+				"packages/providers/provider-oci-registry/test/resolver.test.ts",
+			])
+				assert.ok(
+					anyPathMatchesReleaseHoboFilters([path], paths),
+					`${event}: ${path}`,
+				);
+		}
+	});
+
 	it("scopes merge groups from base_sha and skips only a successfully computed out-of-scope diff", () => {
 		const scope = namedStep(
 			job(pr, "release-integration"),
@@ -396,6 +425,49 @@ describe("release integration pull-request and merge-queue lane", () => {
 		);
 	});
 
+	it("rejects skipped release integration shards even for a draft", () => {
+		const run = (script: string, env: Record<string, string>) =>
+			spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: { ...process.env, ...env },
+			});
+		for (const [workflow, id] of [
+			[pr, "release-integration-gate"],
+			[train, "release-integration-measure-gate"],
+		] as const) {
+			const gate = namedStep(
+				job(workflow, id),
+				"Require successful release integration shards",
+			);
+			for (const env of [
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "skipped",
+				},
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "false",
+					INTEGRATION_RESULT: "skipped",
+				},
+				{
+					GITHUB_EVENT_NAME: "pull_request",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "failure",
+				},
+				{
+					GITHUB_EVENT_NAME: "merge_group",
+					PULL_REQUEST_DRAFT: "true",
+					INTEGRATION_RESULT: "skipped",
+				},
+			]) {
+				const rejected = run(gate.run, env);
+				assert.notEqual(rejected.status, 0, `${id}: ${JSON.stringify(env)}`);
+				assert.match(rejected.stdout, /must pass/u);
+			}
+		}
+	});
+
 	it("fails both integration-only gates on cancelled, skipped, failed, or missing results", () => {
 		for (const [workflow, id] of [
 			[pr, "release-integration-gate"],
@@ -408,7 +480,12 @@ describe("release integration pull-request and merge-queue lane", () => {
 			for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
 				const run = spawnSync("bash", ["-c", gate.run], {
 					encoding: "utf8",
-					env: { ...process.env, INTEGRATION_RESULT: result },
+					env: {
+						...process.env,
+						GITHUB_EVENT_NAME: "pull_request",
+						PULL_REQUEST_DRAFT: "false",
+						INTEGRATION_RESULT: result,
+					},
 				});
 				assert.equal(
 					run.status === 0,

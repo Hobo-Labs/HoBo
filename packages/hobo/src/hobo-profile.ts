@@ -7,6 +7,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrincipalKind, PrincipalRef } from "@hobo/core";
 import {
+	isJsonBoolean,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -32,6 +34,34 @@ export interface HoboProfileDefaultStation {
 	readonly dataDir?: string;
 }
 
+export type HoboAlchemyVaultProvider = "owner-store" | "infisical" | "doppler";
+
+export type HoboAlchemyStorageKind =
+	| "sqlite-local"
+	| "sqlite-shared"
+	| "secondary-sqlite"
+	| "rivet-actor";
+
+export interface HoboAlchemyAuthProfile {
+	readonly workspaceId: string;
+	readonly ownerPrincipalId: string;
+	readonly profileName: string;
+	readonly stage: string;
+	readonly vaultProvider: HoboAlchemyVaultProvider;
+	readonly issuerOrigin: string;
+	readonly basePath: string;
+	readonly signingKeyLocator: string;
+	readonly storageKind: HoboAlchemyStorageKind;
+	readonly boxId: string;
+	readonly sessionId: string;
+	readonly handleDigest: string;
+	readonly signingKeyFingerprint: string;
+	readonly expiresAtMs: number;
+	readonly allowCrossBoxReuse: boolean;
+	readonly authDbPath?: string;
+	readonly domainDbPath?: string;
+}
+
 export interface HoboProfile {
 	readonly schemaVersion: typeof HOBO_PROFILE_SCHEMA;
 	/**
@@ -43,6 +73,7 @@ export interface HoboProfile {
 	readonly defaultStation?: HoboProfileDefaultStation;
 	readonly activeRail?: string;
 	readonly session?: HoboProfileSession;
+	readonly alchemyAuth?: HoboAlchemyAuthProfile;
 	readonly updatedAt: string;
 }
 
@@ -115,8 +146,37 @@ export function upsertLoginProfile(input: {
 		...(existing?.activeRail !== undefined
 			? { activeRail: existing.activeRail }
 			: undefined),
+		...(existing?.alchemyAuth !== undefined
+			? { alchemyAuth: existing.alchemyAuth }
+			: undefined),
 	};
 	saveHoboProfile(input.hoboHome, profile);
+	return profile;
+}
+
+export function upsertAlchemyAuthProfile(
+	hoboHome: string,
+	alchemyAuth: HoboAlchemyAuthProfile,
+): HoboProfile {
+	const existing = loadHoboProfile(hoboHome);
+	const profile: HoboProfile = {
+		schemaVersion: HOBO_PROFILE_SCHEMA,
+		updatedAt: new Date().toISOString(),
+		alchemyAuth,
+		...(existing?.defaultBrokerUri !== undefined
+			? { defaultBrokerUri: existing.defaultBrokerUri }
+			: undefined),
+		...(existing?.defaultStation !== undefined
+			? { defaultStation: existing.defaultStation }
+			: undefined),
+		...(existing?.activeRail !== undefined
+			? { activeRail: existing.activeRail }
+			: undefined),
+		...(existing?.session !== undefined
+			? { session: existing.session }
+			: undefined),
+	};
+	saveHoboProfile(hoboHome, profile);
 	return profile;
 }
 
@@ -140,6 +200,9 @@ export function setDefaultStation(
 			: undefined),
 		...(existing?.session !== undefined
 			? { session: existing.session }
+			: undefined),
+		...(existing?.alchemyAuth !== undefined
+			? { alchemyAuth: existing.alchemyAuth }
 			: undefined),
 	};
 	saveHoboProfile(hoboHome, profile);
@@ -183,6 +246,11 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 			}),
 		});
 	}
+	if (obj.alchemyAuth !== undefined && obj.alchemyAuth !== null) {
+		Object.assign(profile, {
+			alchemyAuth: parseAlchemyAuthProfile(obj.alchemyAuth),
+		});
+	}
 	if (obj.session !== undefined && obj.session !== null) {
 		// SAFETY: assertion required at this I/O or test boundary.
 		const s = obj.session as JsonObject;
@@ -211,6 +279,107 @@ export function parseHoboProfile(raw: JsonValue | undefined): HoboProfile {
 		};
 	}
 	return profile;
+}
+
+function parseVaultProvider(
+	value: JsonValue | undefined,
+): HoboAlchemyVaultProvider {
+	switch (value) {
+		case "owner-store":
+		case "infisical":
+		case "doppler":
+			return value;
+		default:
+			throw new TypeError("hobo profile.alchemyAuth.vaultProvider invalid");
+	}
+}
+
+function parseStorageKind(
+	value: JsonValue | undefined,
+): HoboAlchemyStorageKind {
+	switch (value) {
+		case "sqlite-local":
+		case "sqlite-shared":
+		case "secondary-sqlite":
+		case "rivet-actor":
+			return value;
+		default:
+			throw new TypeError("hobo profile.alchemyAuth.storageKind invalid");
+	}
+}
+
+function requireProfileString(
+	obj: JsonObject,
+	key: string,
+	pattern?: RegExp,
+): string {
+	const value = obj[key];
+	if (!isJsonString(value) || value.length === 0) {
+		throw new TypeError(`hobo profile.alchemyAuth.${key} required`);
+	}
+	if (pattern !== undefined && !pattern.test(value)) {
+		throw new TypeError(`hobo profile.alchemyAuth.${key} invalid`);
+	}
+	return value;
+}
+
+function parseAlchemyAuthProfile(
+	raw: JsonValue | undefined,
+): HoboAlchemyAuthProfile {
+	if (raw === null || !isJsonObject(raw)) {
+		throw new TypeError("hobo profile.alchemyAuth must be an object");
+	}
+	const expiresAtMs = raw.expiresAtMs;
+	if (
+		!isJsonNumber(expiresAtMs) ||
+		!Number.isInteger(expiresAtMs) ||
+		expiresAtMs < 0
+	) {
+		throw new TypeError(
+			"hobo profile.alchemyAuth.expiresAtMs must be a non-negative integer",
+		);
+	}
+	const allowCrossBoxReuse = raw.allowCrossBoxReuse;
+	if (!isJsonBoolean(allowCrossBoxReuse)) {
+		throw new TypeError(
+			"hobo profile.alchemyAuth.allowCrossBoxReuse must be a boolean",
+		);
+	}
+	return Object.freeze({
+		workspaceId: requireProfileString(raw, "workspaceId"),
+		ownerPrincipalId: requireProfileString(raw, "ownerPrincipalId"),
+		profileName: requireProfileString(raw, "profileName"),
+		stage: requireProfileString(raw, "stage"),
+		vaultProvider: parseVaultProvider(raw.vaultProvider),
+		issuerOrigin: requireProfileString(raw, "issuerOrigin", /^https?:\/\//u),
+		basePath: requireProfileString(raw, "basePath", /^\//u),
+		signingKeyLocator: requireProfileString(
+			raw,
+			"signingKeyLocator",
+			/^owner:\/\/[A-Z][A-Z0-9_]{1,127}$/u,
+		),
+		storageKind: parseStorageKind(raw.storageKind),
+		boxId: requireProfileString(raw, "boxId"),
+		sessionId: requireProfileString(raw, "sessionId"),
+		handleDigest: requireProfileString(
+			raw,
+			"handleDigest",
+			/^sha256:[a-f0-9]{16,64}$/u,
+		),
+		signingKeyFingerprint: requireProfileString(
+			raw,
+			"signingKeyFingerprint",
+			/^sha256:[a-f0-9]{16,64}$/u,
+		),
+		expiresAtMs,
+		allowCrossBoxReuse,
+		...(isJsonString(raw.authDbPath) && raw.authDbPath.length > 0
+			? { authDbPath: raw.authDbPath }
+			: undefined),
+		...(isJsonString(raw.domainDbPath) && raw.domainDbPath.length > 0
+			? { domainDbPath: raw.domainDbPath }
+			: undefined),
+	});
 }
 
 function parsePrincipal(raw: JsonValue | undefined): PrincipalRef {

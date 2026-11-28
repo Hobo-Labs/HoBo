@@ -19,6 +19,7 @@ name: Actions lock
 # locked pin that stopped verifying upstream, which no file change in the PR shows.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
   push:
     branches: [main]
@@ -46,6 +47,7 @@ env:
 jobs:
   actions-lock:
     name: actions lock
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

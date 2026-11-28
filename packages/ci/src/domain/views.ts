@@ -43,19 +43,19 @@ const PoolCapacitySnapshot = Schema.Struct({
 });
 type PoolCapacitySnapshot = typeof PoolCapacitySnapshot.Type;
 
-export const FleetCapacityState = Schema.Struct({
+export const StationCapacityState = Schema.Struct({
 	ceilingMicros: Schema.NullOr(NonNegativeMicros),
 	exposureMicros: NonNegativeMicros,
 	pools: Schema.Array(PoolCapacitySnapshot),
 });
-export type FleetCapacityState = typeof FleetCapacityState.Type;
+export type StationCapacityState = typeof StationCapacityState.Type;
 
-export class FleetCapacityView extends Domain.View(
-	"FleetCapacityView",
+export class StationCapacityView extends Domain.View(
+	"StationCapacityView",
 	{
 		from: [StationFleet],
 		key: StationFleet,
-		state: FleetCapacityState,
+		state: StationCapacityState,
 		initial: {
 			ceilingMicros: null,
 			exposureMicros: ZERO_MICROS,

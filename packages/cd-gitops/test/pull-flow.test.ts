@@ -991,6 +991,21 @@ const passingGateLayer = CdVerificationGate.toLayer(
 const sleep = (ms: number) =>
 	Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)));
 
+const waitForState = <A, E, R>(
+	read: Effect.Effect<A, E, R>,
+	predicate: (value: A) => boolean,
+	timeoutMs = 5_000,
+) =>
+	Effect.gen(function* () {
+		const deadline = Date.now() + timeoutMs;
+		let latest = yield* read;
+		while (!predicate(latest) && Date.now() < deadline) {
+			yield* sleep(15);
+			latest = yield* read;
+		}
+		return latest;
+	});
+
 describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and pluggable flow router", () => {
 	it("drives full PR lifecycle, Argo selector convergence, and rollback PR directly through createArgoCdPullFlowAdapter", async () => {
 		const harness = createSimulatedGitAndArgoHarness();
@@ -1260,10 +1275,17 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(120);
-
-				const devRunView = yield* client.CdDeliveryRunStatusView.get(devRun);
-				const freightAfterDev = yield* client.CdFreightCatalogView.get(digest);
+				const devSettled = yield* waitForState(
+					Effect.all({
+						devRunView: client.CdDeliveryRunStatusView.get(devRun),
+						freightAfterDev: client.CdFreightCatalogView.get(digest),
+					}),
+					({ devRunView, freightAfterDev }) =>
+						devRunView?._tag === "Completed" &&
+						freightAfterDev?._tag === "Active" &&
+						freightAfterDev.qualifications.some((q) => q.stageId === devStage),
+				);
+				const { devRunView, freightAfterDev } = devSettled;
 
 				const earlyExit = yield* Effect.exit(
 					client.RequestStagePromotion(prodStage, {
@@ -1282,11 +1304,22 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [{ stageId: devStage, qualifiedAtMs: t0 }],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(150);
-
-				const prodRunView = yield* client.CdDeliveryRunStatusView.get(prodRun);
-				const prodStageView = yield* client.CdStageStatusView.get(prodStage);
-				const freightAfterProd = yield* client.CdFreightCatalogView.get(digest);
+				const prodSettled = yield* waitForState(
+					Effect.all({
+						prodRunView: client.CdDeliveryRunStatusView.get(prodRun),
+						prodStageView: client.CdStageStatusView.get(prodStage),
+						freightAfterProd: client.CdFreightCatalogView.get(digest),
+					}),
+					({ prodRunView, prodStageView, freightAfterProd }) =>
+						prodRunView?._tag === "Completed" &&
+						prodStageView?._tag === "Idle" &&
+						prodStageView.currentFreightDigest === digest &&
+						freightAfterProd?._tag === "Active" &&
+						freightAfterProd.qualifications.some(
+							(q) => q.stageId === prodStage,
+						),
+				);
+				const { prodRunView, prodStageView, freightAfterProd } = prodSettled;
 
 				return {
 					devRunView,
@@ -1431,8 +1464,10 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(120);
-				const closedView = yield* client.CdDeliveryRunStatusView.get(closedRun);
+				const closedView = yield* waitForState(
+					client.CdDeliveryRunStatusView.get(closedRun),
+					(view) => view?._tag === "Failed",
+				);
 				const badFreightView =
 					yield* client.CdFreightCatalogView.get(badDigest);
 
@@ -1459,7 +1494,16 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(120);
+				yield* waitForState(
+					Effect.all({
+						goodView: client.CdDeliveryRunStatusView.get(goodRun),
+						stageView: client.CdStageStatusView.get(directStage),
+					}),
+					({ goodView, stageView }) =>
+						goodView?._tag === "Completed" &&
+						stageView?._tag === "Idle" &&
+						stageView.currentFreightDigest === goodDigest,
+				);
 
 				harness.state.argoByApp.set("checkout-prod-us", {
 					syncStatus: "Synced",
@@ -1473,10 +1517,10 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(150);
-
-				const degradedView =
-					yield* client.CdDeliveryRunStatusView.get(degradedRun);
+				const degradedView = yield* waitForState(
+					client.CdDeliveryRunStatusView.get(degradedRun),
+					(view) => view?._tag === "RolledBack",
+				);
 				return { closedView, badFreightView, degradedView };
 			}).pipe(Effect.scoped, Effect.provide(World)),
 		);
@@ -1615,8 +1659,10 @@ describe("end-to-end Kargo + Argo CD pull-based CD flows with CdRelease and plug
 					upstreamQualifications: [],
 					manualApprovalExpiresAtMs: null,
 				});
-				yield* sleep(120);
-				return yield* client.CdDeliveryRunStatusView.get(octoRun);
+				return yield* waitForState(
+					client.CdDeliveryRunStatusView.get(octoRun),
+					(view) => view?._tag === "Completed",
+				);
 			}).pipe(Effect.scoped, Effect.provide(World)),
 		);
 

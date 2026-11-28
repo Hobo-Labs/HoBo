@@ -931,7 +931,7 @@ yet, and no relay writes the provider-health file today. The wiring, in
 
 - **Aggregates**: `StationFleet` balances traffic across `local`, `hostinger`, `agent37`, `boat`, and `github` runner tiers by role, lowest utilization ratio, lowest cost per minute, and deterministic tier priority while enforcing station and payer budget ceilings (`BudgetCeilingExceeded`, `BudgetCeilingBelowExposure`); `JobDispatch` enforces immutable start-binding (`StartBindingConflict`) and queue expiry through typed command/event transitions.
 - **Saga & External System**: `DispatchJob` executes multi-tier failover across tiers through the `RunnerBackend` `Domain.ExternalSystem` with compensation-safe slot release (`ReleaseBalancedSlot`) on provisioning or bind failures.
-- **Views & API**: `FleetCapacityView`, discriminated `RoutingAuditView` (`Unobserved | Queued | Bound | Completed | Failed | Expired`), and `CiFleetApi` expose materialized views and projections, snapshots, and read store queries alongside in-process and HTTP command dispatch.
+- **Views & API**: `StationCapacityView`, discriminated `RoutingAuditView` (`Unobserved | Queued | Bound | Completed | Failed | Expired`), and `CiFleetApi` expose materialized views and projections, snapshots, and read store queries alongside in-process and HTTP command dispatch.
 - **Superseded persistence removed**: `PostgresStrictFleetStore` and its Testcontainers harness were removed from `fleet-v2` in favor of the `CiFleet` domain model.
 
 ## Portable & Rivet Hosting (`@hobo/ci/host`)
@@ -946,8 +946,5 @@ yet, and no relay writes the provider-health file today. The wiring, in
 
 `@hobo/ci/cluster` coordinates multi-tier runner fleets using `effect/cluster`:
 
-- **`StationFleetCoordinator` Entity**: serializes allocation per station shard (`concurrency: 1`) with `ClusterSchema.Persisted` RPCs (`ConfigureBudget`, `RegisterPool`, `DispatchJob` keyed by `jobId`, `CompleteJob`, `ReapExpiredLeases`) and `FleetSnapshot`.
+- **`StationFleetCoordinator` Entity**: serializes allocation per station shard (`concurrency: 1`) with `ClusterSchema.Persisted` RPCs (`ConfigureBudget`, `RegisterPool`, `DispatchJob` keyed by `jobId`, `CompleteJob`, `ReapExpiredLeases`) and `StationSnapshot`.
 - **`createFleetLeaseReaperSingleton` (`Singleton.make`)** and **`createFleetHealthSweepCron` (`ClusterCron.make`)**: run single-active lease reaping and non-overlapping scheduled fleet sweeps.
-
-
-

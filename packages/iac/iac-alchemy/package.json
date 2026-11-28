@@ -19,6 +19,14 @@
 			"types": "./dist/cloudflare.d.ts",
 			"default": "./dist/cloudflare.js"
 		},
+		"./aws": {
+			"types": "./dist/aws.d.ts",
+			"default": "./dist/aws.js"
+		},
+		"./aws/vite": {
+			"types": "./dist/aws-vite.d.ts",
+			"default": "./dist/aws-vite.js"
+		},
 		"./cloudflare/runtime": {
 			"types": "./dist/cloudflare-runtime.d.ts",
 			"default": "./dist/cloudflare-runtime.js"
@@ -79,6 +87,26 @@
 			"types": "./dist/cloudflare-native-r2.d.ts",
 			"default": "./dist/cloudflare-native-r2.js"
 		},
+		"./aws/kv": {
+			"types": "./dist/aws-kv.d.ts",
+			"default": "./dist/aws-kv.js"
+		},
+		"./aws/kv-mapper": {
+			"types": "./dist/aws-kv-mapper.d.ts",
+			"default": "./dist/aws-kv-mapper.js"
+		},
+		"./aws/s3": {
+			"types": "./dist/aws-s3.d.ts",
+			"default": "./dist/aws-s3.js"
+		},
+		"./aws/s3-mapper": {
+			"types": "./dist/aws-s3-mapper.d.ts",
+			"default": "./dist/aws-s3-mapper.js"
+		},
+		"./aws/http-runtime": {
+			"types": "./dist/aws-http-runtime.d.ts",
+			"default": "./dist/aws-http-runtime.js"
+		},
 		"./runners": {
 			"types": "./dist/runners/index.d.ts",
 			"default": "./dist/runners/index.js"
@@ -110,14 +138,21 @@
 		"./vercel": {
 			"types": "./dist/vercel/index.d.ts",
 			"default": "./dist/vercel/index.js"
+		},
+		"./better-auth": {
+			"types": "./dist/better-auth/index.d.ts",
+			"default": "./dist/better-auth/index.js"
 		}
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
 	},
 	"peerDependencies": {
+		"@alchemy.run/aws": "2.0.0-beta.87",
+		"@alchemy.run/better-auth": "2.0.0-beta.87",
 		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/doppler": "2.0.0-beta.87",
 		"@alchemy.run/drizzle": "2.0.0-beta.87",
 		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
 		"@alchemy.run/git": "2.0.0-beta.87",
@@ -130,16 +165,28 @@
 		"@alchemy.run/sql": "2.0.0-beta.87",
 		"@alchemy.run/turso": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
+		"better-auth": "^1.7.5",
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
+		"kysely": "^0.29.4",
 		"rivetkit": "3.0.0",
-		"ws": "^8.21.0"
+		"ws": "^8.21.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"peerDependenciesMeta": {
+		"@alchemy.run/aws": {
+			"optional": true
+		},
+		"@alchemy.run/better-auth": {
+			"optional": true
+		},
 		"@alchemy.run/boat": {
 			"optional": true
 		},
 		"@alchemy.run/cloudflare": {
+			"optional": true
+		},
+		"@alchemy.run/doppler": {
 			"optional": true
 		},
 		"@alchemy.run/drizzle": {
@@ -175,13 +222,27 @@
 		"@alchemy.run/turso": {
 			"optional": true
 		},
+		"better-auth": {
+			"optional": true
+		},
+		"kysely": {
+			"optional": true
+		},
 		"rivetkit": {
+			"optional": true
+		},
+		"@distilled.cloud/aws": {
 			"optional": true
 		}
 	},
 	"devDependencies": {
+		"@hobo/identity": "workspace:*",
+		"@hobo/pack-better-auth": "workspace:*",
+		"@alchemy.run/aws": "2.0.0-beta.87",
+		"@alchemy.run/better-auth": "2.0.0-beta.87",
 		"@alchemy.run/boat": "2.0.0-beta.87",
 		"@alchemy.run/cloudflare": "2.0.0-beta.87",
+		"@alchemy.run/doppler": "2.0.0-beta.87",
 		"@alchemy.run/drizzle": "2.0.0-beta.87",
 		"@alchemy.run/effect-cluster": "2.0.0-beta.87",
 		"@alchemy.run/git": "2.0.0-beta.87",
@@ -193,21 +254,27 @@
 		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"@alchemy.run/sql": "2.0.0-beta.87",
 		"@alchemy.run/turso": "2.0.0-beta.87",
+		"@emulators/aws": "0.13.1",
+		"@emulators/core": "0.13.1",
 		"alchemy": "2.0.0-beta.87",
+		"better-auth": "1.7.28",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
+		"kysely": "0.29.9",
 		"rivetkit": "3.0.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
 		"@types/node": "^24.13.2",
-		"miniflare": "4.20260722.0"
+		"miniflare": "4.20260722.0",
+		"@distilled.cloud/aws": "1.0.0-rc.20"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.kv-actor-tests.json && tsc --noEmit -p tsconfig.kv-tests.json && tsc --noEmit -p tsconfig.http-kv-tests.json && tsc --noEmit -p tsconfig.http-queue-tests.json && tsc --noEmit -p tsconfig.capability-tests.json && tsc --noEmit -p tsconfig.aws-tests.json && tsc --noEmit -p tsconfig.cloudflare-storage-tests.json",
 		"test": "vitest run",
+		"test:aws-emulator": "node --experimental-strip-types test/run-official-aws-emulator.mts",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
 }

@@ -14,8 +14,10 @@ import {
 	releaseScopeBetween,
 	releaseScopeSinceLastRelease,
 } from "../ci/check-release-relevant-push.mts";
-
-const FILTERS = ["site/**", "scripts/ci/*release*"];
+import {
+	anyPathMatchesReleaseHoboFilters,
+	parseReleaseHoboPullRequestPathFilters,
+} from "../lib/release-hobo-path-filters.mts";
 
 const repos: string[] = [];
 afterEach(() => {
@@ -62,9 +64,9 @@ describe("main train release scope", () => {
 		commit("README.md");
 		git("tag", "-a", "v0.0.0-alpha.5", "-m", "release");
 		commit("site/index.html"); // its run was cancelled by the next push
-		const head = commit("docs/notes.md"); // the run that went green
-		expect(releaseScopeBetween(dir, `${head}^`, head, FILTERS).run).toBe(false);
-		const scope = releaseScopeSinceLastRelease(dir, head, FILTERS);
+		const head = commit(".github/ISSUE_TEMPLATE/notes.md");
+		expect(releaseScopeBetween(dir, `${head}^`, head).run).toBe(false);
+		const scope = releaseScopeSinceLastRelease(dir, head);
 		expect(scope).toMatchObject({ run: true, from: "v0.0.0-alpha.5" });
 		expect(scope.reason).toBe("release paths changed since v0.0.0-alpha.5");
 	});
@@ -73,8 +75,8 @@ describe("main train release scope", () => {
 		const { dir, git, commit } = repo();
 		commit("site/index.html");
 		git("tag", "-a", "v0.0.0-alpha.5", "-m", "release");
-		const head = commit("docs/notes.md");
-		expect(releaseScopeSinceLastRelease(dir, head, FILTERS)).toMatchObject({
+		const head = commit(".github/ISSUE_TEMPLATE/notes.md");
+		expect(releaseScopeSinceLastRelease(dir, head)).toMatchObject({
 			run: false,
 			from: "v0.0.0-alpha.5",
 		});
@@ -84,7 +86,7 @@ describe("main train release scope", () => {
 		const { dir, git, commit } = repo();
 		const head = commit("site/index.html");
 		git("tag", "v0.0.0-alpha.6");
-		expect(releaseScopeSinceLastRelease(dir, head, FILTERS).run).toBe(false);
+		expect(releaseScopeSinceLastRelease(dir, head).run).toBe(false);
 	});
 
 	it("measures from the newest release tag, and ignores sdk-v and cli-v tags", () => {
@@ -95,9 +97,9 @@ describe("main train release scope", () => {
 		git("tag", "v0.0.0-alpha.6");
 		commit("scripts/ci/push-release-thing.mts");
 		git("tag", "sdk-v1.0.0");
-		const head = commit("docs/notes.md");
+		const head = commit(".github/ISSUE_TEMPLATE/notes.md");
 		expect(lastReleaseTag(dir, head)).toBe("v0.0.0-alpha.6");
-		expect(releaseScopeSinceLastRelease(dir, head, FILTERS)).toMatchObject({
+		expect(releaseScopeSinceLastRelease(dir, head)).toMatchObject({
 			run: true,
 			from: "v0.0.0-alpha.6",
 		});
@@ -110,9 +112,9 @@ describe("main train release scope", () => {
 		commit("site/old.html");
 		git("tag", "v0.0.0-alpha.2");
 		git("checkout", "-q", "main");
-		const head = commit("docs/notes.md");
+		const head = commit(".github/ISSUE_TEMPLATE/notes.md");
 		expect(lastReleaseTag(dir, head)).toBeUndefined();
-		expect(releaseScopeSinceLastRelease(dir, head, FILTERS)).toMatchObject({
+		expect(releaseScopeSinceLastRelease(dir, head)).toMatchObject({
 			run: true,
 			reason: `no release tag (v[0-9]*) in the history of ${head}`,
 		});
@@ -145,9 +147,9 @@ describe("main train release scope", () => {
 			{ encoding: "utf8" },
 		);
 		expect(clone.status, clone.stderr).toBe(0);
-		expect(() =>
-			releaseScopeSinceLastRelease(shallow, "HEAD", FILTERS),
-		).toThrow(/checkout is shallow/);
+		expect(() => releaseScopeSinceLastRelease(shallow, "HEAD")).toThrow(
+			/checkout is shallow/,
+		);
 	});
 });
 
@@ -173,6 +175,30 @@ describe("as the release workflow runs it", () => {
 		return body.slice(start, runsOn);
 	}
 
+	it("includes SDK bundle sources and tests in the release scope", () => {
+		const filters = parseReleaseHoboPullRequestPathFilters(workflow);
+		for (const path of [
+			"scripts/ci/sdk-package-list.mts",
+			"scripts/ci/verify-cli-sdk-artifacts.mts",
+			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/bundle-cli-sdk.mts",
+			"scripts/ci/bundle-cli-declarations.mts",
+			"scripts/ci/run-cli-sdk-bundle.mts",
+			"scripts/ci/bundle-sqlite-sdk.mts",
+			"scripts/ci/vendor-runtime-grounding.mts",
+			"scripts/test/bundle-cli-sdk.test.ts",
+			"scripts/test/verify-cli-sdk-artifacts.test.ts",
+			"scripts/test/bundle-cli-declarations.test.ts",
+			"scripts/test/run-cli-sdk-bundle.test.ts",
+		])
+			expect(anyPathMatchesReleaseHoboFilters([path], filters), path).toBe(
+				true,
+			);
+		expect(
+			anyPathMatchesReleaseHoboFilters(["docs/unrelated.md"], filters),
+		).toBe(false);
+	});
+
 	it("asks since the last release, from the green commit", () => {
 		expect(workflow).toMatch(
 			/check-release-relevant-push\.mts \\\n\s+--since-last-release \\\n\s+--to "\$\{head_sha\}" \\\n\s+--github-output "\$GITHUB_OUTPUT"/,
@@ -194,6 +220,10 @@ describe("as the release workflow runs it", () => {
 			"release-hobo-cli":
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|needs\.release-pages-gate\.outputs\.deploy == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
 			"release-oci-build-tag":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-oci-build-cli":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-oci-build-mcp":
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
 			"release-images":
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
@@ -238,7 +268,7 @@ describe("as the release workflow runs it", () => {
 		);
 	});
 
-	it("fetches release tags where the Turbo base is measured and consumed", () => {
+	it("fetches release tags for the release scope gate without redundant image-base fetches", () => {
 		const gate = job("release-main-train-gate");
 		const checkout = gate.slice(
 			gate.indexOf("uses: actions/checkout@"),
@@ -249,13 +279,13 @@ describe("as the release workflow runs it", () => {
 			"git describe needs the tags a sparse build omits",
 		).toContain("fetch-depth: 0");
 		expect(checkout).toContain("fetch-tags: true");
-		for (const id of ["release-oci-build-tag", "release-publish"] as const) {
-			expect(
-				job(id),
-				`${id}: fetch the measured base before the scoped Turbo build`,
-			).toContain(
-				"run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts",
-			);
+		for (const id of [
+			"release-oci-build-tag",
+			"release-oci-build-cli",
+			"release-oci-build-mcp",
+			"release-publish",
+		] as const) {
+			expect(job(id)).not.toContain("scripts/ci/fetch-release-turbo-base.mts");
 		}
 	});
 
@@ -279,6 +309,11 @@ describe("as the release workflow runs it", () => {
 			pages,
 			"Pages writes a public surface, so a run whose route never decided must not publish it",
 		).not.toContain("needs.route.result == 'failure'");
+		const stable = jobIf("release-pages-stable");
+		expect(stable).toContain("needs.route.result == 'success'");
+		expect(stable).toContain("needs.release-pages.outputs.promoted == 'true'");
+		expect(stable).not.toContain("needs.route.result == 'failure'");
+		expect(stable).not.toMatch(/github\.event_name == 'pull_request'/u);
 	});
 
 	it("writes run= for the gate under plain node", () => {

@@ -75,8 +75,8 @@ export {
 	UnknownRunnerPool,
 } from "./StationFleet.aggregate.js";
 export {
-	FleetCapacityState,
-	FleetCapacityView,
 	RoutingAuditState,
 	RoutingAuditView,
+	StationCapacityState,
+	StationCapacityView,
 } from "./views.js";

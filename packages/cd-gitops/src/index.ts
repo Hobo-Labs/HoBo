@@ -5,6 +5,11 @@ export {
 	parsePublisherConfig,
 } from "./config.js";
 export {
+	cdEngineRegistrations,
+	createCdEngineRegistryFromGitops,
+	mergePublisherRegistryIntoCdEngines,
+} from "./engine-registry.js";
+export {
 	argoVerdict,
 	ENGINE_CREDENTIAL_SCOPE,
 	type EngineVerdict,
