@@ -124,6 +124,38 @@ describe("wireBetterAuthSigningSecret", () => {
 		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
 	});
 
+	it("accepts a valid leap-day wire timestamp", async () => {
+		const port = createMemorySecretsPort();
+		await port.put(
+			campSecretNameFromBetterAuthRef(PORTS.signingSecretRef, "camp-prod"),
+			SYNTHETIC_SIGNING,
+		);
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		const wire = await wireBetterAuthSigningSecret(bundlePlan, port, {
+			campAuthority: "camp-prod",
+			now: "2024-02-29T12:34:56.789Z",
+		});
+		expect(wire.resolvedAtIso).toBe("2024-02-29T12:34:56.789Z");
+	});
+
+	it.each([
+		"2026-02-30T00:00:00.000Z",
+		"2026-13-01T00:00:00.000Z",
+		"2026-01-01T24:00:00.000Z",
+	])("refuses an invalid calendar timestamp %s before accessing custody", async (now) => {
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		await expect(
+			wireBetterAuthSigningSecret(
+				bundlePlan,
+				unreadSecretsPort("secrets:memory"),
+				{
+					campAuthority: "camp-prod",
+					now,
+				},
+			),
+		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
+	});
+
 	it("refuses when the locator would carry the signing material", async () => {
 		const material = randomBytes(32).toString("hex");
 		const secretRef = `hobo-secret://camp-prod/auth/${material}`;
