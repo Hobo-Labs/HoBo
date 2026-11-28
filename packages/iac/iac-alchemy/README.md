@@ -218,6 +218,10 @@ provider effect. The preview test uses stub providers.
 The mapper creates `AWS.Lambda.WebFunction`; the listener starts the attested
 source on its supplied endpoint. The source resolves the exact mapped resource
 names from the function environment and fails closed if names or grants change.
+It rechecks resolved names around host verification before invoking a resource
+operation and before returning its result. These checks are not atomic with
+provider dispatch: a change between them can leave a charged operation with an
+unknown outcome, even though the result is withheld.
 `ApplicationManaged` is also available when the application itself
 authenticates every request. The host must independently enforce IAM and fence
 in-flight AWS operations across grant or resource ownership changes. The
@@ -1289,9 +1293,9 @@ host supplies an exact key, grant epochs, allowed operations and a synchronous
 verifier. Encrypt accepts at most 4,096 plaintext bytes and decrypt accepts at
 most 6,144 ciphertext bytes. Results are disclosed only while the grant remains
 valid. KMS calls are not retried automatically; an unknown outcome may have
-incurred a provider charge. The runtime does not itself admit each operation
-against a HoBo budget, bind the key into an application, or implement signing
-and verification.
+incurred a provider charge. The runtime does not admit each operation against
+a HoBo budget or implement signing and verification. The HTTP binding below
+connects the scoped runtime to an application.
 
 Select the symmetric runtime for declared crypto resources with
 `withAwsKmsCryptography(bindle, { key: true })` and map them with

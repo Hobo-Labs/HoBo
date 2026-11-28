@@ -20,7 +20,10 @@ import { inspectAwsQueueAtomicStore } from "./aws-queue-atomic-store.js";
 import { type AwsS3Store, inspectAwsS3Store } from "./aws-s3.js";
 import { type AwsSecretStore, inspectAwsSecretStore } from "./aws-secret.js";
 import type { BindleForAlchemy } from "./bindle.js";
-import { observeUnexpectedSynchronousResult } from "./synchronous-result.js";
+import {
+	acceptSynchronousTrue,
+	observeUnexpectedSynchronousResult,
+} from "./synchronous-result.js";
 
 export interface AwsHttpResolvedDependency {
 	readonly name: string;
@@ -136,6 +139,14 @@ export function defineAwsHttpSource<Requirements>(options: {
 		}
 		return freeze(result);
 	};
+	const namesUnchanged = (expected: readonly AwsHttpResolvedDependency[]) => {
+		const current = readNames();
+		if (current.length !== expected.length) return false;
+		for (let index = 0; index < current.length; index++)
+			if (current[index]?.physicalName !== expected[index]?.physicalName)
+				return false;
+		return true;
+	};
 	const source: AwsHttpSource = Object.freeze({
 		async fetch(request: Request): Promise<Response> {
 			try {
@@ -204,7 +215,17 @@ export function defineAwsHttpSource<Requirements>(options: {
 						bindle: graph.bindle,
 						applicationName,
 						stores,
-						verifyBinding,
+						verifyBinding: (claim) => {
+							try {
+								return (
+									namesUnchanged(current) &&
+									acceptSynchronousTrue(verifyBinding(claim)) &&
+									namesUnchanged(current)
+								);
+							} catch {
+								return false;
+							}
+						},
 					});
 					const after = readNames();
 					for (let i = 0; i < current.length; i++)
