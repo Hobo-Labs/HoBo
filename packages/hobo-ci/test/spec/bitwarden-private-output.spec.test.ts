@@ -262,6 +262,61 @@ describe("Bitwarden owner hand-off privacy", () => {
 		expect(provider.requests).toHaveLength(0);
 	});
 
+	it.each([
+		"has no choice form",
+		"gets no answer to the choice",
+	])("keeps organization details out of a silent private run's refusal when the owner channel %s", async (channel) => {
+		const fixture = setup();
+		const provider = fakeBitwarden({ organizations: 2 });
+		const result = await ensureBitwardenSignIn({
+			...fixture.options,
+			fetch: provider.fetch,
+			handOff: false,
+			silent: true,
+			owner: {
+				...basicOwner,
+				canConfirm: () => true,
+				confirm: async () => true,
+				...(channel === "gets no answer to the choice"
+					? { choose: async () => undefined }
+					: undefined),
+			},
+		});
+		expect(result).toMatchObject({
+			code: "HOBO_CD_BITWARDEN_ORGANIZATION",
+			remediation: [
+				"Run setup again and choose the organization in the private owner form.",
+			],
+		});
+		const output = JSON.stringify({ result, lines: fixture.lines });
+		for (const value of [ORG_ID, OTHER_ORG_ID, "Acme", "Side project"])
+			expect(output).not.toContain(value);
+		expect(provider.requests).toHaveLength(0);
+		expect(fixture.lines).toEqual([]);
+	});
+
+	it("keeps a self-hosted address out of a silent private run's rejected credential remediation", async () => {
+		const fixture = setup(true);
+		const result = await ensureBitwardenSignIn({
+			...fixture.options,
+			fetch: async () =>
+				Response.json({ error: "invalid_client" }, { status: 400 }),
+			handOff: false,
+			silent: true,
+			owner: {
+				...basicOwner,
+				canConfirm: () => true,
+				confirm: async () => true,
+			},
+		});
+		expect(result).toMatchObject({
+			code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED",
+			remediation: ["Run setup again to use the private owner form."],
+		});
+		expect(JSON.stringify(result)).not.toContain(VAULTWARDEN_ORIGIN);
+		expect(fixture.lines).toEqual([]);
+	});
+
 	it("preserves terminal approval for a local owner", async () => {
 		const fixture = setup();
 		const result = await ensureBitwardenSignIn({

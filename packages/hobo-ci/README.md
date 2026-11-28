@@ -95,6 +95,10 @@ Local owner-terminal setup continues to use the owner's CLI session.
 Private
 owner-channel failures return an explicit refusal without exposing channel
 errors.
+A silent run (`--json` or `-q`) that reaches the owner through the private
+approval form is held to the same rule for Bitwarden: the organization is
+chosen in that form, and a refusal names neither the organizations nor a
+self-hosted server address.
 
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password

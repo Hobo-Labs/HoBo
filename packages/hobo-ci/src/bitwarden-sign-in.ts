@@ -234,7 +234,7 @@ export async function ensureBitwardenSignIn(
 				: undefined),
 			fetch: fetchCurrent,
 			emit: options.emit,
-			privateOwner: options.handOff,
+			privateOwner: privateApproval,
 			...(options.locator.runStoreWrite !== undefined
 				? { runMutation: options.locator.runStoreWrite }
 				: undefined),
