@@ -1,5 +1,7 @@
 # @hobo/broker
 
+SDK releases stage this package as `@hobo-labs/broker`.
+
 The finite TLA+ models in `model/IacBudget.tla`,
 `../dispatcher/model/IacRouting.tla`, and `../cloud/model/IacTransitions.tla`
 check admission, fencing, recovery, transition ordering and disclosure

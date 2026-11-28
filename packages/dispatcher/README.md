@@ -1,5 +1,7 @@
 # @hobo/dispatcher
 
+SDK releases stage this package as `@hobo-labs/dispatcher`.
+
 The Dispatcher (ADR-0071): deterministic, credit/budget-aware selection across
 registered providers for placement (`match.Decided`), dispatch
 (`dispatch.Decided`), and traffic (`traffic-backend` category — consumed by the
