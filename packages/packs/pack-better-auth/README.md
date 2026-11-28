@@ -33,7 +33,10 @@ infrastructure inside the adapter.
   bundle init; the caller supplies the selected camp's authority, and only an
   unfragmented `hobo-secret` locator for that authority is accepted. Other
   providers need their own matching resolver. The wire record carries locators
-  only (ADR-0161 / ADR-0113).
+  only (ADR-0161 / ADR-0113). A caller-supplied instant must match
+  `YYYY-MM-DDTHH:mm:ss.sssZ` and be a valid calendar instant; material that would
+  appear on the record is
+  refused.
 
 ## HONEST SCOPE
 

@@ -51,6 +51,15 @@ export {
 	type RemoteFile,
 } from "./hosts/index.js";
 export {
+	type Call,
+	hostFailure,
+	ok,
+	parseJson,
+	send,
+	token,
+} from "./http.js";
+export { isJsonObject, isJsonString } from "./json.js";
+export {
 	createGitopsPublisher,
 	createPublisherRegistry,
 	type GitopsPublisherOptions,

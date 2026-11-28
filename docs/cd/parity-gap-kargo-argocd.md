@@ -65,9 +65,9 @@ they are scoped separately in that subsection.
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
 | pass | 11 | 2 | 4 |
-| partial | 4 | 5 | 5 |
+| partial | 4 | 5 | 6 |
 | built-not-proven | 0 | 4 | 0 |
-| not-built | 0 | 0 | 1 |
+| not-built | 0 | 0 | 0 |
 | met-differently | 2 | 2 | 0 |
 | intentional-gap | 3 | 0 | 2 |
 
@@ -158,7 +158,7 @@ below are **not** included in those counts.
 | `@hobo/cd-vercel` hosted runtime | **partial** | Tick schedule **and** `cd-api` (`/v1/cd/`, agent feed, probes); journal on Neon fleet |
 | `@hobo/hobo-cd` CD Bindle + `hobo cd up` | **partial** | Vercel connection/lifecycle ceremony; not `@hobo/cd/compose` |
 | `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) + flow router in `packages/cd/src/host/flow-router.ts` |
-| `@hobo/cd-argocd` native API adapter | **not-built** | Read/observe client currently lives in `@hobo/cd-gitops/src/engines/index.ts` (P3 split optional) |
+| `@hobo/cd-argocd` native API adapter | **partial** | Read/observe PACT + RUNBOOK sync observation (P3: `@hobo/cd-argocd`) plus read/observe client in `@hobo/cd-gitops/src/engines/index.ts`; no Argo write API |
 | Separate `@hobo/cd-kargo` promotion runtime | **intentional-gap** | Would duplicate `@hobo/cd` brain (ADR-0182) |
 | Separate `@hobo/cd-octopus` engine | **intentional-gap** | Supported as a pluggable `release-orchestrator` target via `CdEngineRegistry` + `createCdDeliveryFlowRouterLayer` |
 | Publisher registry lookup | **partial** | Unit test `createPublisherRegistry` in `packages/cd-gitops/test/publisher.test.ts` — not composition-suite wiring |
@@ -182,7 +182,7 @@ green before handoff. Later PRs update row states in this file when they land.
 | --- | --- | --- |
 | **P1** | `docs/cd/*` (this audit) + index links | Landed |
 | **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Landed (`engines.ts`, `cd-gitops` bridge) |
-| **P3** | `packages/cd-argocd` split (optional; read/observe already in `@hobo/cd-gitops`) | Open |
+| **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Landed (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
 | **P4** | Durable auto-promotion holds in `CdStage` (`@hobo/cd/domain`) | Landed |
 | **P5** | Named multi-origin Freight slots in `CdStage` (`@hobo/cd/domain`) | Landed |
 | **P6** | Argo `sync-wave` annotations in `@hobo/cd-gitops/src/render.ts` | Landed |

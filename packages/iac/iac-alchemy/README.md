@@ -116,7 +116,11 @@ headers; a stalled handler keeps one of 32 capacity slots until it settles.
 The host must authenticate HTTP requests, independently enforce IAM and fence
 in-flight AWS operations across grant or resource ownership changes. This host
 adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
-request bodies, stream responses, or provide connectors or session replay.
+request bodies, stream responses, or provide connectors or session replay. The
+bounded `AwsHttpBindings` model checks request retirement, grant revalidation
+and timed-out capacity. It assumes host verification and transport behavior;
+it does not prove AWS, HTTP parsing, byte limits or liveness.
+The model explores one application with two request slots.
 
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
@@ -814,8 +818,13 @@ On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator
 runs the mapped AWS resources and budget-routing scenarios against both the
 Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
 and verifies a pinned official package, starts an isolated loopback-only
-container, and removes it afterward. An existing copy of the same package may
-be supplied with `HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
+container, and removes it afterward. It bind-mounts the unpacked binary when
+the Docker daemon can see that path. A job container's `/tmp` is often a
+private tmpfs, and an Actions runner's daemon may be in another mount
+namespace, so the runner probes host-visible work directories and, when none
+of those paths are visible, copies the binary into a private image instead.
+An existing copy of the same package may be supplied with
+`HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
 The pricing workflow uses HoBo's routed CI runner for the simulator job, with
 the same hosted fallback as the other pricing checks and a 20-minute job limit.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated

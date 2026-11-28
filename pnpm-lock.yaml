@@ -910,6 +910,21 @@ importers:
         specifier: 3.0.0
         version: 3.0.0(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.4.3)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(kysely@0.29.9)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
 
+  packages/cd-argocd:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/cd-gitops':
+        specifier: workspace:*
+        version: link:../cd-gitops
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/cd-gitops:
     dependencies:
       '@bufbuild/protobuf':

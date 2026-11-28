@@ -13,6 +13,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
 - **Fleet probes follow ready PRs.** The probe receives ready PR events from the trusted base workflow and skips draft events. It ignores PR-triggered CI workflow runs, which exist even when all draft jobs were skipped. Main, merge-group and manual probes continue to measure the same runner labels.
 - **Hosted toolchain bootstrap uses the pinned mise installer.** GitHub-hosted jobs fetch the installer for the exact version in `mise-version.txt` and verify it against the release digest in `.github/actions/ci-runner-preflight/mise-installer.sha256` before executing it. That versioned installer verifies its archive using the embedded release checksum, so a transient failure to fetch the separate GitHub checksum file does not prevent installation. An explicit `MISE_INSTALL_PATH` selects that installation even if another mise is already on PATH. Update both pins together when changing the mise version.
 - **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one idle online Agent37 runner. When overflow runners are absent, offline-only, or unreadable, the run keeps the prior route unless verified public compute on `ubuntu-24.04` is available; the reason and the fallback warning record whether the route changed or was retained. A readable label list with zero online runners is normal ephemeral JIT idle and does not saturate the pool. An unreadable runner page never saturates on its own (R3). A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk` only when `runnerRouting.box.trunkLend` is `1`, then `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; with the committed `trunkLend: 0` it never lands on the cold trunk pool ([finding 167](../ci/findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)); the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
+- **Pricing model budget.** The bounded IaC model lane has 20 minutes so it can finish on a slower
+  runner. It still runs the same model checks and fails if they do not complete successfully.
 - **AWS emulator Docker context.** The Alchemy emulator lane builds a temporary image from the
   digest-verified emulator binary so a Docker daemon without the runner's temporary directory can
   start it. The container keeps its read-only filesystem, dropped capabilities and loopback port;
@@ -33,17 +35,17 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   matrix starts. `--resolve-digest` waits until the version tag is pullable from GHCR,
   pins the digest from that pulled image, and confirms the digest ref pulls, so release
   never races `ci-deps-publish.yml`'s
-  worker push on a green main run. A registry login failure during that wait is retried
+  worker push after a finished main run. A registry login failure during that wait is retried
   until the same deadline and, if it is still failing, reported as a GHCR login failure
   rather than a generic timeout. The digest confirmation pull still runs when the tag
   pull succeeds with less than a second of budget left. An unreadable manifest keeps the
   full pull budget and the default retries when that ref is the only source; the
   45-second one-attempt pull is only used when another source remains. `--published-status`
-  shares a 120-second budget across login, manifest inspection, and a pull when the
-  manifest is absent or unreadable. A confirmed manifest gets up to 540 seconds for
-  its pull. The publisher rebuilds only if both manifest inspection and pull report a
-  missing image; timeouts, network errors, or exhaustion before the pull are
-  inconclusive. That job's timeout is 15 minutes so the wait can
+  shares a 120-second budget across login, bounded manifest retries, and a fallback
+  pull. A confirmed manifest is published without a pull; the publisher rebuilds only
+  if both manifest inspection and the pull report a missing image. Timeouts, network
+  errors, or exhaustion before the pull remain inconclusive. That job's timeout is 15
+  minutes so the wait can
   use the full `HOBO_CI_WORKER_PULL_BUDGET_SEC`. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
   immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
   an empty or invalid value fails the job instead of falling back to the version

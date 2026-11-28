@@ -93,7 +93,7 @@ function lintFile(file: string, text: string): number | null {
 }
 
 const pullRequestOn =
-	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, labeled]\n";
+	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n";
 const routeJob =
 	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
