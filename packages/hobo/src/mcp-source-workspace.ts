@@ -33,6 +33,7 @@ export const turboBuild: WorkspaceBuild = (root, args, signal) =>
 	new Promise((resolve) => {
 		const child = spawn(turboAt(root), [...args], {
 			cwd: root,
+			env: { ...process.env, TURBO_TELEMETRY_DISABLED: "1" },
 			stdio: ["ignore", process.stderr, process.stderr],
 			signal,
 		});
