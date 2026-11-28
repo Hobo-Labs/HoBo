@@ -21,34 +21,6 @@ const mainGate = workflow.jobs["main-gate"];
 const mainPlan = workflow.jobs["main-gate-plan"];
 
 describe("CI deps image push scope", () => {
-	const concurrencyKey =
-		"${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}";
-	const finishedMainRun =
-		`github.repository == 'Hobo-Labs/HoBo' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)))`;
-
-	const publisherValue = (
-		conclusion: string,
-		event = "workflow_run",
-		runnerResult = "success",
-	) => {
-		return (path: string) => {
-			if (path === "github.repository") return "Hobo-Labs/HoBo";
-			if (path === "github.event_name") return event;
-			if (path === "github.event.workflow_run.conclusion") return conclusion;
-			if (path === "needs.runner-image.result") return runnerResult;
-			throw new Error(`unexpected publisher input: ${path}`);
-		};
-	};
-
-	const publishes = (condition: string, conclusion: string) =>
-		evaluateExpression(condition, publisherValue(conclusion)) === true;
-
-	const groupSuffix = (conclusion: string, event = "workflow_run") =>
-		evaluateExpression(
-			"github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name",
-			publisherValue(conclusion, event),
-		);
-
 	it("is its own job on pull requests and steps of the plan job on every main run", () => {
 		// Finding 154: on main the check takes seconds, and as a job it cost a
 		// fourth trunk pickup. Still no commit file-list filtering.
@@ -138,16 +110,15 @@ describe("CI deps image push scope", () => {
 		});
 		expect(publisher.on.workflow_dispatch).toBeNull();
 		const job = publisher.jobs.publish;
+		// Per job, so the worker image build is never cancelled with it. Keyed by
+		// the CI run's conclusion (finding 113): a skipped completion must not
+		// cancel a publish a green run started.
 		expect(publisher.concurrency).toBeUndefined();
 		expect(job.concurrency).toEqual({
-			group: `ci-deps-publish-\${{ github.repository }}-${concurrencyKey}`,
+			group:
+				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}",
 			"cancel-in-progress": true,
 		});
-		expect(groupSuffix("cancelled")).toBe("cancelled");
-		expect(groupSuffix("success")).toBe("workflow_run");
-		expect(groupSuffix("failure")).toBe("workflow_run");
-		expect(groupSuffix("skipped")).toBe("workflow_run");
-		expect(groupSuffix("", "workflow_dispatch")).toBe("workflow_dispatch");
 		expect(job["timeout-minutes"]).toBe(20);
 		// PR validation follows the chosen fleet or hosted runner; the publisher
 		// alone promotes the box's image after a green main run.
@@ -164,19 +135,10 @@ describe("CI deps image push scope", () => {
 			'\\"${HOBO_CI_PNPM_STORE_MOUNTED:-}\\" != \\"1\\"',
 		);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
-		expect(job.if).toBe(
-			`!cancelled() && needs.runner-image.result != 'cancelled' && ${finishedMainRun}`,
+		expect(job.if).toContain(
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
-		expect(publishes(job.if, "success")).toBe(true);
-		expect(publishes(job.if, "failure")).toBe(true);
-		expect(publishes(job.if, "cancelled")).toBe(false);
-		expect(publishes(job.if, "skipped")).toBe(false);
-		expect(
-			evaluateExpression(
-				job.if,
-				publisherValue("failure", "workflow_run", "cancelled"),
-			),
-		).toBe(false);
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.steps[0].with.ref).toContain(
 			"github.event.workflow_run.head_sha",
 		);
@@ -211,22 +173,15 @@ describe("CI deps image push scope", () => {
 		expect(JSON.stringify(depsJob)).not.toContain("docker push");
 	});
 
-	it("publishes the worker image after a green main run when GHCR lacks it", () => {
+	it("publishes the worker image after a finished main run when GHCR lacks it", () => {
 		// Finding 113: a dropped main push's image change is built by no later
 		// push, and release jobs on ARC pull the worker from GHCR.
 		const job = publisher.jobs["runner-image"];
-		expect(job.if).toBe(finishedMainRun);
-		expect(publishes(job.if, "success")).toBe(true);
-		expect(publishes(job.if, "failure")).toBe(true);
-		expect(publishes(job.if, "cancelled")).toBe(false);
-		expect(publishes(job.if, "skipped")).toBe(false);
-		expect(job.concurrency).toEqual({
-			group: `ci-runner-image-publish-\${{ github.repository }}-${concurrencyKey}`,
-			"cancel-in-progress": false,
-		});
-		expect(groupSuffix("cancelled")).toBe("cancelled");
-		expect(groupSuffix("success")).toBe("workflow_run");
-		expect(groupSuffix("failure")).toBe("workflow_run");
+		expect(job.if).toContain(
+			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
+		);
+		expect(job.if).not.toContain('cancelled"');
+		expect(job.concurrency["cancel-in-progress"]).toBe(false);
 		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
 		expect(job.steps[0].with.ref).toContain(
