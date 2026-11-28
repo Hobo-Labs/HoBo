@@ -199,7 +199,32 @@ function lintProbeWorkflow(errors: string[], text: string): void {
 		errors.push(`${probeFile}: the probe must hold no permissions`);
 }
 
-/** The health monitor's workflow holds its one hosted job and nothing else. */
+const ROUTING_SLIP_PROBE_JOB = `  routing-slip-probe:
+    name: Routing slip transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: routing-slip-probe
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/routing-slip-probe.mts
+            scripts/ci/runner-routing.mts
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - name: Write, read back and delete refs/hobo/routing-slip-probe
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
+        run: node scripts/ci/routing-slip-probe.mts --write`;
+
 function lintHealthWorkflow(errors: string[], text: string): void {
 	const lines = text.split("\n");
 	const jobsIndex = lines.indexOf("jobs:");
@@ -210,6 +235,15 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 		errors.push(`${healthFile}: the health monitor needs its ci-health job`);
 	for (const [position, start] of starts.entries()) {
 		const block = lines.slice(start, starts[position + 1] ?? lines.length);
+		if (lines[start] === "  routing-slip-probe:") {
+			const pinned = [...block];
+			while (pinned.length > 0 && pinned.at(-1)?.trim() === "") pinned.pop();
+			if (pinned.join("\n") !== ROUTING_SLIP_PROBE_JOB)
+				errors.push(
+					`${healthFile}:${start + 1}: the routing slip probe must run scripts/ci/routing-slip-probe.mts --write with its own token and contents: write, and nothing else`,
+				);
+			continue;
+		}
 		const runsOn = block
 			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
 			.find((value) => value !== undefined);

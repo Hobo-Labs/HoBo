@@ -21,8 +21,8 @@ computed and their numbers are not reused.
 | --- | --- |
 | Script (node builtins only, runs straight from a checkout) | [`scripts/ci/ci-health.mts`](../../scripts/ci/ci-health.mts) |
 | Tests and recorded fixtures | `scripts/test/ci-health.test.ts`, `scripts/test/fixtures/ci-health/` |
-| Workflow (every two hours and on dispatch) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
-| Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
+| Workflow (every two hours and on dispatch; a push to `main` runs only the transport probe) | [`.github/workflows/ci-health.yml`](../../.github/workflows/ci-health.yml) |
+| Lint allowance: one GitHub-hosted job, `ci-health`, that runs the monitor and nothing else, beside the pinned `routing-slip-probe` job | `scripts/lint-actions.ts` (`lintHealthWorkflow`) |
 
 The workflow holds `actions: read`, `checks: read`, `issues: write`, and `contents: read` for its sparse
 checkout of the monitor, `.hobo/ci.json`, `pnpm-lock.yaml` and the relay's input closure
@@ -69,11 +69,29 @@ fails the route job before it can emit a route notice or public-compute claim. F
 | **H2** routing slip unusable | route notices with `slip: fallback` for any reason but `no routing slip` or `slip expired`, over those plus `slip: used` | more than 5% of at least 20, or all of at least 5 | The `why` in the evidence: a malformed slip or an unknown label points at the box relay's writer; an HTTP status or `not read in time` at the Git API |
 | **H3** no routing slip | route notices with `slip: fallback` and `why` `no routing slip` or `slip expired` | any | The box relay: down, not restarted onto code that writes slips, or not the mesh leader; [finding 0149](findings/0149-routing-slip-facts-main-on-the-queue-rule-hosted-relay-down-box-on-c7ec8d449.md) |
 | **H6** stall | jobs on `hobo` or `hobo-trunk` that waited, or have been queued, more than `CI_HEALTH_STALL_MINUTES` (default 30) for a runner; **Main full gate** is left out (it waits on its concurrency group) | any | The box and ARC: a fleet that was refusing work its routing slip did not refuse |
-| **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the fleet probe's `local box enrolled` gate, the gates and this monitor; split by what refused the fleet (`slip`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
+| **H8** paid minutes | per job on `ubuntu-24.04`, started to completed rounded up to the minute, leaving out the route job, the fleet probe's `local box enrolled` gate, the gates, this monitor and its `Routing slip transport` job; split by what refused the fleet (`slip`, `queue`, `none`, `fallback`, `unrouted`) | more than `CI_HEALTH_PAID_MINUTES_PER_WINDOW` (default 150) | Which split carries the minutes |
 | **H11** relay stale | `/healthz` commit against the default branch, filtered to the relay's source directories | any relay source changed since the served commit | Deploy the relay from an owner store session: `hobo ci deploy --build prebuilt` after HoBo MCP's `choose_secret_store` ([CI.md](../../packages/hobo/CI.md#deploying-the-hosted-relay-with-hobo)) |
 
 `unrouted` minutes belong to runs with no route notice: workflows without a route job, and every run before
 the route step printed notices.
+
+**Route fallbacks by reason.** Besides the signals, every report counts the route decisions of the window
+that fell back to the queue rule because no routing slip could be used, by the `why` the route job gave
+(`no routing slip`, `slip expired`, `slip names a label not in runnerRouting.labels`, `slip names another
+repository`, `slip malformed`, an HTTP status, `the routing slip was not read in time`): the report's
+`slipFallbacks` (`total`, `byReason`, most frequent first), a `Route fallbacks to the queue rule` line in the
+step summary, and the absent-slip counts in H3's summary, for example `3 runs routed with no current routing
+slip (no routing slip 2, slip expired 1)`. A box relay that stopped writing shows as `no routing slip` or
+`slip expired` climbing from one report to the next ([ADR-0181](../design/adr/routing-slips.md#adr-0181)).
+
+**The transport itself** is proved by the workflow's second job, **Routing slip transport**
+(`routing-slip-probe`): it runs `scripts/ci/routing-slip-probe.mts --write` with its own `GITHUB_TOKEN` and
+`contents: write` (that job only), writing `refs/hobo/routing-slip-probe` through the same Git Data API calls
+the box relay uses, reading it back as the route job does, and deleting it. It fails when the read-back is
+not a valid slip or the probe ref cannot be deleted, so a GitHub change that breaks the slip's transport
+shows as a failed run, not as `no routing slip`. It runs on every push to `main` (where it is the only job
+that runs, in its own concurrency group) as well as on the schedule, one probe at a time. It never touches
+`refs/hobo/routing-slip`.
 
 ## Issues
 
