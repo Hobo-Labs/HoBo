@@ -255,6 +255,7 @@ jobs:
           node --experimental-strip-types scripts/check-durable-topic-model.ts
           node --experimental-strip-types packages/runtime/model/check-topic-policy.mts
           node --experimental-strip-types packages/runtime/model/check-topic-provisioning.mts
+          node --experimental-strip-types packages/runtime/model/check-topic-journal.mts
           node --experimental-strip-types packages/extension-alchemy-rivet/model/check-bindle-topic-mapping.mts
           node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
           node --experimental-strip-types packages/core/model/check-notification-submission.mts
