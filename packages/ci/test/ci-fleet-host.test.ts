@@ -81,7 +81,7 @@ describe("@hobo/ci/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 				const receipt = yield* client.RegisterRunnerPool(stationId, {
 					spec: LOCAL_POOL,
 				});
-				return yield* client.FleetCapacityView.get(stationId, {
+				return yield* client.StationCapacityView.get(stationId, {
 					atLeast: receipt,
 				});
 			}).pipe(Effect.scoped, Effect.provide(InMemoryWorld)),
@@ -119,7 +119,7 @@ describe("@hobo/ci/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 					},
 					deadlineSeconds: null,
 				});
-				const capacity = yield* client.FleetCapacityView.get(stationId, {
+				const capacity = yield* client.StationCapacityView.get(stationId, {
 					atLeast: poolReceipt,
 				});
 				const audit = yield* client.RoutingAuditView.get(jobId, {
@@ -152,7 +152,7 @@ describe("@hobo/ci/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 					const receipt = yield* client.RegisterRunnerPool(stationId, {
 						spec: LOCAL_POOL,
 					});
-					yield* client.FleetCapacityView.get(stationId, { atLeast: receipt });
+					yield* client.StationCapacityView.get(stationId, { atLeast: receipt });
 				}).pipe(Effect.scoped, Effect.provide(FirstWorld)),
 			);
 		} finally {
@@ -168,7 +168,7 @@ describe("@hobo/ci/host portable hosting (InMemory, HTTP, SQLite, Rivet)", () =>
 			const capacity = await Effect.runPromise(
 				Effect.gen(function* () {
 					const client = yield* CiFleetApi.clientInProcess;
-					return yield* client.FleetCapacityView.get(stationId);
+					return yield* client.StationCapacityView.get(stationId);
 				}).pipe(Effect.scoped, Effect.provide(ReopenedWorld)),
 			);
 

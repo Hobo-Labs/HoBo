@@ -18,7 +18,7 @@ import {
 	ConfigureStationBudget,
 	DispatchJob,
 	ExternalRunnerId,
-	FleetCapacityView,
+	StationCapacityView,
 	JobDispatch,
 	JobDispatchCompleted,
 	JobDispatchExpired,
@@ -574,7 +574,7 @@ describe("CiFleet Alchemy Domain model", () => {
 						attempts: PositiveAttempts.make(1),
 					}),
 				),
-				Story.view(FleetCapacityView, station, {
+				Story.view(StationCapacityView, station, {
 					exposureMicros: NonNegativeMicros.make(60_000),
 				}),
 				Story.view(RoutingAuditView, job7, {
@@ -743,7 +743,7 @@ describe("CiFleet Alchemy Domain model", () => {
 						settledMicros: NonNegativeMicros.make(24_000),
 					}),
 				),
-				Story.view(FleetCapacityView, station, {
+				Story.view(StationCapacityView, station, {
 					exposureMicros: NonNegativeMicros.make(24_000),
 				}),
 				Story.view(RoutingAuditView, job, {
@@ -918,7 +918,7 @@ describe("CiFleet Alchemy Domain model", () => {
 					stationId: station.id,
 					reason: NonEmptyReason.make("queue-deadline-elapsed"),
 				}),
-				Story.view(FleetCapacityView, station, {
+				Story.view(StationCapacityView, station, {
 					pools: [
 						{
 							poolId: LOCAL_POOL.poolId,

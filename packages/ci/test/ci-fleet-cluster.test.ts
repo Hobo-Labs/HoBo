@@ -122,7 +122,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 					nowMs: 1_500,
 				});
 
-				const snapshot = yield* client.FleetSnapshot();
+				const snapshot = yield* client.StationSnapshot();
 				return { dispatches, deduped, snapshot };
 			}).pipe(Effect.provide(clusterTestLayer)),
 		);
@@ -197,7 +197,7 @@ describe("@hobo/ci/cluster StationFleetCoordinator (Effect Cluster)", () => {
 					const manualReap = yield* client.ReapExpiredLeases({
 						nowMs: clockMs,
 					});
-					const after = yield* client.FleetSnapshot();
+					const after = yield* client.StationSnapshot();
 					return { lease, manualReap, after };
 				}).pipe(Effect.provide(clusterTestLayer)),
 			),

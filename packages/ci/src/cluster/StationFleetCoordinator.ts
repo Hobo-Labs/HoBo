@@ -28,17 +28,17 @@ export const ClusterRunnerPoolSpec = Schema.Struct({
 });
 export type ClusterRunnerPoolSpec = typeof ClusterRunnerPoolSpec.Type;
 
-export class FleetNoCapacityError extends Schema.TaggedError<
-	FleetNoCapacityError,
+export class StationNoCapacityError extends Schema.TaggedError<
+	StationNoCapacityError,
 	{ readonly brand: unique symbol }
->()("FleetNoCapacityError", {
+>()("StationNoCapacityError", {
 	reasons: Schema.Array(Schema.String),
 }) {}
 
-export class FleetBudgetExceededError extends Schema.TaggedError<
-	FleetBudgetExceededError,
+export class StationBudgetExceededError extends Schema.TaggedError<
+	StationBudgetExceededError,
 	{ readonly brand: unique symbol }
->()("FleetBudgetExceededError", {
+>()("StationBudgetExceededError", {
 	exposureMicros: Schema.Int,
 	requestedMicros: Schema.Int,
 	ceilingMicros: Schema.Int,
@@ -65,14 +65,14 @@ export const PoolUtilizationSchema = Schema.Struct({
 	enabled: Schema.Boolean,
 });
 
-export const FleetSnapshotSchema = Schema.Struct({
+export const StationSnapshotSchema = Schema.Struct({
 	stationId: Schema.String,
 	ceilingMicros: Schema.NullOr(Schema.Int),
 	exposureMicros: Schema.Int,
 	activeLeases: Schema.Int,
 	pools: Schema.Array(PoolUtilizationSchema),
 });
-export type FleetSnapshot = typeof FleetSnapshotSchema.Type;
+export type StationSnapshot = typeof StationSnapshotSchema.Type;
 
 export const ConfigureStationBudgetRpc = Rpc.make("ConfigureBudget", {
 	payload: {
@@ -96,7 +96,7 @@ export const DispatchJobRpc = Rpc.make("DispatchJob", {
 		nowMs: Schema.Int,
 	},
 	success: DispatchedLeaseSchema,
-	error: Schema.Union([FleetNoCapacityError, FleetBudgetExceededError]),
+	error: Schema.Union([StationNoCapacityError, StationBudgetExceededError]),
 	primaryKey: ({ jobId }) => jobId,
 }).annotate(ClusterSchema.Persisted, true);
 
@@ -117,8 +117,8 @@ export const ReapExpiredLeasesRpc = Rpc.make("ReapExpiredLeases", {
 	}),
 }).annotate(ClusterSchema.Persisted, true);
 
-export const FleetSnapshotRpc = Rpc.make("FleetSnapshot", {
-	success: FleetSnapshotSchema,
+export const StationSnapshotRpc = Rpc.make("StationSnapshot", {
+	success: StationSnapshotSchema,
 });
 
 export const StationFleetCoordinator = Entity.make("StationFleetCoordinator", [
@@ -127,7 +127,7 @@ export const StationFleetCoordinator = Entity.make("StationFleetCoordinator", [
 	DispatchJobRpc,
 	CompleteJobRpc,
 	ReapExpiredLeasesRpc,
-	FleetSnapshotRpc,
+	StationSnapshotRpc,
 ]);
 
 interface InternalPoolState {
@@ -199,7 +199,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 			DispatchJob: (envelope) =>
 				Effect.suspend<
 					DispatchedLease,
-					FleetNoCapacityError | FleetBudgetExceededError,
+					StationNoCapacityError | StationBudgetExceededError,
 					never
 				>(() => {
 					const { jobId, requirements, leaseTtlMs, nowMs } = envelope.payload;
@@ -295,9 +295,9 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 							budgetBlocked !== undefined &&
 							reasons.every((r) => r.endsWith("-budget"))
 						) {
-							return Effect.fail(new FleetBudgetExceededError(budgetBlocked));
+							return Effect.fail(new StationBudgetExceededError(budgetBlocked));
 						}
-						return Effect.fail(new FleetNoCapacityError({ reasons }));
+						return Effect.fail(new StationNoCapacityError({ reasons }));
 					}
 
 					eligible.sort((left, right) => {
@@ -326,7 +326,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 
 					const chosen = eligible[0];
 					if (chosen === undefined) {
-						return Effect.fail(new FleetNoCapacityError({ reasons }));
+						return Effect.fail(new StationNoCapacityError({ reasons }));
 					}
 
 					nextSeq += 1;
@@ -395,7 +395,7 @@ export const StationFleetCoordinatorLive = StationFleetCoordinator.toLayer(
 					}
 					return { reapedSlotIds };
 				}),
-			FleetSnapshot: () =>
+			StationSnapshot: () =>
 				Effect.sync(() => ({
 					stationId: String(address.entityId),
 					ceilingMicros,
