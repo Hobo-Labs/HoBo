@@ -146,6 +146,8 @@ describe("CI deps image push scope", () => {
 		// cancel a publish a green run started.
 		expect(publisher.concurrency).toBeUndefined();
 		expect(job.concurrency["cancel-in-progress"]).toBe(true);
+		expect(job.concurrency.group).toContain("ci-deps-publish-");
+		expect(job.concurrency.group).toContain("github.repository");
 		expect(publisherGroup(job.concurrency.group, "cancelled")).not.toBe(
 			publisherGroup(job.concurrency.group, "success"),
 		);
