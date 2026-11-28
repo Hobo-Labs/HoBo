@@ -869,14 +869,25 @@ describe("CI deps publisher contract", () => {
 		"packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 	);
 
-	it("runs only after a successful main fabric run or manually", () => {
+	it("runs after a finished main fabric run, green or failed, or manually", () => {
 		includes(workflow, 'workflows: ["HoBo CI Fabric"]');
 		includes(workflow, "types: [completed]");
 		includes(workflow, "branches: [main]");
 		includes(workflow, "workflow_dispatch:");
 		includes(workflow, "timeout-minutes: 20");
 		includes(workflow, "cancel-in-progress: true");
-		includes(workflow, "github.event.workflow_run.conclusion == 'success'");
+		includes(
+			workflow,
+			`contains(fromJSON('["success","failure"]'), github.event.workflow_run.conclusion)`,
+		);
+		assert.equal(
+			workflow.includes("github.event.workflow_run.conclusion == 'success'"),
+			false,
+		);
+		includes(
+			workflow,
+			"github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name",
+		);
 		includes(workflow, "github.event.workflow_run.head_sha");
 	});
 
