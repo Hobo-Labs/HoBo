@@ -9,6 +9,7 @@ description: Verify the shared policy feasibility boundary used by HoBo CI and h
 
 **Why:** A policy that accepts foreign scope, stale windows, excess exposure, or unauthenticated strict bounds can authorize work outside its budget.
 
+**Result at sync commit `06cc606cf1234ffbe8304614c5221a935fda7476`:** PASS for the stated model and generated real-code scenarios.
 **Review baseline:** `b2df563cab9d3dc1b59bd1ab7c979c1e8b60614b` plus the Unicode-boundary changes in this skill's commit.
 
 ## Covered code

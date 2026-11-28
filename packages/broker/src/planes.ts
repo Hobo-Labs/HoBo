@@ -13,6 +13,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
+import { createMeteredBillingPlane } from "./metering.js";
 import { normalizeDeliveryPolicy } from "./policies.js";
 
 import type {
@@ -64,6 +65,8 @@ export interface BillingPlane {
 	}): {
 		ok: boolean;
 		reasons: RejectionReason[];
+		reservationCreated?: boolean;
+		noReservationCreated?: true;
 	};
 	/** Only before a side effect has begun; uncertain effects retain funds. */
 	release?(requestId: string, confirmedUnused: true): void;
@@ -144,40 +147,7 @@ export function createGatekeeperGatePlane(
 }
 
 export function createBillingPlane(): BillingPlane {
-	return {
-		authorize({ spendEstimateUsd, billing }) {
-			const reasons: RejectionReason[] = [];
-			if (!Number.isFinite(spendEstimateUsd) || spendEstimateUsd < 0)
-				return {
-					ok: false,
-					reasons: [
-						{
-							plane: "billing",
-							code: "invalid-spend-estimate",
-							message: "estimated spend must be finite and nonnegative",
-						},
-					],
-				};
-			if (
-				!billing.spendCapUnlimited &&
-				spendEstimateUsd > billing.spendCapUsd
-			) {
-				reasons.push({
-					plane: "billing",
-					code: "spend-cap-exceeded",
-					message: `estimated spend ${spendEstimateUsd} USD exceeds per-resolution cap ${billing.spendCapUsd} USD`,
-				});
-			}
-			if (!billing.budgetUnlimited && spendEstimateUsd > billing.budgetUsd) {
-				reasons.push({
-					plane: "billing",
-					code: "budget-exceeded",
-					message: `estimated spend ${spendEstimateUsd} USD exceeds remaining budget ${billing.budgetUsd} USD`,
-				});
-			}
-			return { ok: reasons.length === 0, reasons };
-		},
-	};
+	return createMeteredBillingPlane([]);
 }
 
 // public-contract: typed delivery-plane failures with remediation.
@@ -188,11 +158,11 @@ export const DELIVERY_FAILURES = Object.freeze({
 	},
 	"delivery-refused": {
 		remediation:
-			"CD refused the promotion; the reasons name the gate, window, lineage or policy that refused it. Resolve those and deliver again; the request is idempotent per receipt.",
+			"CD refused the promotion; inspect the reasons and reconcile the delivery attempt before authorizing another one.",
 	},
 	"delivery-transport-failed": {
 		remediation:
-			"The CD control plane could not be reached. Check the CD service health and retry; nothing was applied.",
+			"The promotion may have been accepted before the response was lost. Reconcile its status with CD before authorizing another attempt.",
 	},
 } as const);
 

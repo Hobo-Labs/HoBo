@@ -135,6 +135,11 @@ export function toStatusPageModel(
 		);
 	}
 	const budgetMs = options.freshnessBudgetMs ?? DEFAULT_FRESHNESS_BUDGET_MS;
+	if (!Number.isSafeInteger(budgetMs) || budgetMs < 0) {
+		throw new RangeError(
+			"freshnessBudgetMs must be a nonnegative safe integer",
+		);
+	}
 	const recentWindowMs =
 		options.recentIncidentWindowMs ?? DEFAULT_RECENT_INCIDENT_WINDOW_MS;
 	const declared = new Map<string, ComponentSpec>(
@@ -186,8 +191,11 @@ export function toStatusPageModel(
 			component?.lastSignalAt !== undefined
 				? Date.parse(component.lastSignalAt)
 				: Number.NaN;
+		const signalAgeMs = evaluatedAtMs - lastSignalMs;
 		const fresh =
-			!Number.isNaN(lastSignalMs) && evaluatedAtMs - lastSignalMs <= budgetMs;
+			Number.isFinite(signalAgeMs) &&
+			signalAgeMs >= 0 &&
+			signalAgeMs <= budgetMs;
 		const delayed = !fresh;
 		if (delayed) staleComponentIds.push(id);
 		let status: ComponentStatus = fresh

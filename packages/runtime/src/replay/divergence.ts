@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { cloneAsJson } from "../json.js";
+import { isNonEmptyPrimitiveString } from "../workflow-value.js";
 import { stableStringify } from "./equivalence.js";
 import type { ReplayDivergenceRecord } from "./types.js";
 
@@ -20,22 +21,26 @@ export class ReplayDivergenceError extends Error {
 		firstDivergentEventKey?: string;
 	}) {
 		super("replay/live materialization mismatch");
+		if (!isNonEmptyPrimitiveString(input.runId))
+			throw new TypeError("replay runId must be a non-empty string");
+		const liveOrder = [...input.liveOrder];
+		const replayOrder = [...input.replayOrder];
 		this.name = "ReplayDivergenceError";
 		this.liveState = input.liveState;
 		this.replayState = input.replayState;
-		this.liveOrder = input.liveOrder;
-		this.replayOrder = input.replayOrder;
+		this.liveOrder = [...liveOrder];
+		this.replayOrder = [...replayOrder];
 		this.firstDivergentEventKey =
 			input.firstDivergentEventKey ??
-			findFirstDivergentKey(input.liveOrder, input.replayOrder);
-		this.divergence = {
+			findFirstDivergentKey(liveOrder, replayOrder);
+		this.divergence = Object.freeze({
 			runId: input.runId,
 			liveStateDigest: digest(input.liveState),
 			replayStateDigest: digest(input.replayState),
-			liveOrder: input.liveOrder,
-			replayOrder: input.replayOrder,
+			liveOrder: Object.freeze(liveOrder),
+			replayOrder: Object.freeze(replayOrder),
 			firstDivergentEventKey: this.firstDivergentEventKey,
-		};
+		});
 	}
 }
 

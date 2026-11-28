@@ -28,7 +28,7 @@ import {
 	type UsageMeasurement,
 	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
-import { hasV2BaselineCharges } from "./agreement-status.js";
+import { hasBaselineCharges } from "./agreement-status.js";
 import {
 	chargeSelectorValue,
 	resolveAgreement,
@@ -52,19 +52,9 @@ import {
 	subtractDecimal,
 } from "./decimal.js";
 import { hasExplicitFixedQuantity } from "./fixed-charge-coverage.js";
-import { legacyPricingOrder, type PricingOrder } from "./ordering.js";
-import {
-	LEGACY_TIME,
-	PricingFault,
-	scopeMatches,
-	type TemporalPolicy,
-	workingState,
-} from "./state.js";
-import {
-	legacyPricingTimeOrder,
-	type PricingTimeOrder,
-	utcPricingTimeOrder,
-} from "./time-order.js";
+import { codeUnitPricingOrder as order } from "./ordering.js";
+import { PricingFault, scopeMatches, workingState } from "./state.js";
+import { utcPricingTimeOrder as timeOrder } from "./time-order.js";
 import { convertQuantity } from "./units.js";
 
 export type RatedSnapshot = {
@@ -114,91 +104,6 @@ function moneyDecimal(money: Money | undefined, path: string): Decimal {
 		throw new PricingFault("INVALID_PRICING_INPUT", `${path} is missing`);
 	}
 	return requiredDecimal(money.decimal, path);
-}
-
-function validateTierRanges(tiered: TieredPrice): void {
-	const tiers = [...tiered.tiers].sort((a, b) =>
-		compareDecimal(
-			requiredDecimal(a.from, "tier.from"),
-			requiredDecimal(b.from, "tier.from"),
-		),
-	);
-	if (tiers.length === 0)
-		throw new PricingFault("INVALID_PRICING_INPUT", "tier list is empty");
-	for (const [index, tier] of tiers.entries()) {
-		const from = requiredDecimal(tier.from, "tier.from");
-		const next = tiers[index + 1];
-		if (
-			compareDecimal(from, DECIMAL_ZERO) < 0 ||
-			(index === 0 && compareDecimal(from, DECIMAL_ZERO) !== 0)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"tiers must begin at zero",
-			);
-		const to =
-			tier.to === undefined ? undefined : requiredDecimal(tier.to, "tier.to");
-		if (to !== undefined && compareDecimal(to, from) <= 0)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"tier endpoints must increase",
-			);
-		if (next !== undefined) {
-			const nextFrom = requiredDecimal(next.from, "tier.from");
-			if (
-				compareDecimal(nextFrom, from) <= 0 ||
-				(to !== undefined && compareDecimal(to, nextFrom) !== 0)
-			)
-				throw new PricingFault(
-					"INVALID_PRICING_INPUT",
-					"tier ranges must be contiguous and nonoverlapping",
-				);
-		}
-	}
-}
-
-function validateRateCardAmounts(
-	rateCard: RateCard,
-	strictTiers: boolean,
-): void {
-	const check = (amount: Money | undefined, path: string) => {
-		requireCurrency(amount, rateCard.currency, path);
-		if (compareDecimal(moneyDecimal(amount, path), DECIMAL_ZERO) < 0)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				`${path} cannot be negative`,
-			);
-	};
-	for (const charge of rateCard.charges) {
-		if (charge.variant.case === "fixed") {
-			check(charge.variant.value.amount, "fixed amount");
-		} else if (charge.variant.case === "usage") {
-			const price = charge.variant.value.price;
-			if (price.case === "perUnit") check(price.value, "per-unit price");
-			else if (price.case === "package")
-				check(price.value.packageAmount, "package amount");
-			else if (price.case === "graduated" || price.case === "volume") {
-				if (strictTiers) validateTierRanges(price.value);
-				for (const tier of price.value.tiers) {
-					check(tier.flatAmount, "tier flat amount");
-					check(tier.unitAmount, "tier unit amount");
-				}
-			}
-		}
-	}
-}
-
-function validateChargeIdentities(rateCard: RateCard): void {
-	const seen = new Set<string>();
-	for (const charge of rateCard.charges) {
-		const id = charge.base?.id;
-		if (!id || seen.has(id))
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"charge identities must be present and unique within a rate card",
-			);
-		seen.add(id);
-	}
 }
 
 function requireCurrency(
@@ -291,16 +196,9 @@ function roundQuantity(
 function aggregateMeasurements(
 	meter: MeterDefinition,
 	entries: readonly { delta: WorkloadDelta; measurement: UsageMeasurement }[],
-	timeOrder: PricingTimeOrder,
-	time: TemporalPolicy,
-	strictTimes: boolean,
-	rejectAmbiguousLatest: boolean,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
-		if (
-			timeOrder === utcPricingTimeOrder &&
-			entries.some((entry) => entry.delta.direction === "remove")
-		)
+		if (entries.some((entry) => entry.delta.direction === "remove"))
 			throw new PricingFault(
 				"PRICING_MODEL_UNSUPPORTED",
 				"unique-count removal requires source multiplicity",
@@ -321,8 +219,7 @@ function aggregateMeasurements(
 			decimalFromBigInt(BigInt(values.size)),
 			meter.unit,
 		);
-		if (timeOrder !== utcPricingTimeOrder || meter.rounding === undefined)
-			return quantity;
+		if (meter.rounding === undefined) return quantity;
 		if (meter.rounding.scope === "event") {
 			const multiple = requiredDecimal(
 				meter.rounding.multiple,
@@ -369,19 +266,13 @@ function aggregateMeasurements(
 	});
 	let aggregate: Quantity;
 	if (meter.aggregation === "latest") {
-		if (strictTimes)
-			for (const entry of roundedEntries)
-				time.parse(
-					entry.entry.measurement.observedAt,
-					"measurement.observedAt",
-				);
 		const latest = [...roundedEntries].sort((left, right) =>
 			timeOrder(
 				right.entry.measurement.observedAt,
 				left.entry.measurement.observedAt,
 			),
 		)[0];
-		if (latest !== undefined && timeOrder === utcPricingTimeOrder) {
+		if (latest !== undefined) {
 			const value = quantityDecimal(latest.quantity, "latest quantity");
 			if (
 				roundedEntries.some(
@@ -400,25 +291,6 @@ function aggregateMeasurements(
 					"PRICING_MODEL_UNSUPPORTED",
 					"latest measurements conflict at the same instant",
 				);
-		}
-		if (rejectAmbiguousLatest && latest !== undefined) {
-			const latestValue = quantityDecimal(latest.quantity, "latest quantity");
-			for (const candidate of roundedEntries) {
-				if (
-					timeOrder(
-						candidate.entry.measurement.observedAt,
-						latest.entry.measurement.observedAt,
-					) === 0 &&
-					compareDecimal(
-						quantityDecimal(candidate.quantity, "latest quantity"),
-						latestValue,
-					) !== 0
-				)
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						`conflicting latest measurements for ${meter.dimension}`,
-					);
-			}
 		}
 		aggregate = latest?.quantity ?? quantityOf(DECIMAL_ZERO, meter.unit);
 	} else if (meter.aggregation === "max") {
@@ -557,7 +429,6 @@ function priceUsage(
 	charge: RateCard["charges"][number],
 	quantity: Quantity,
 	currency: string,
-	strictTiers: boolean,
 ): Decimal {
 	if (charge.variant.case !== "usage") {
 		throw new PricingFault(
@@ -595,7 +466,7 @@ function priceUsage(
 		);
 	}
 	if (price.case === "graduated" || price.case === "volume") {
-		return priceTiers(price.value, value, currency, price.case, strictTiers);
+		return priceTiers(price.value, value, currency, price.case);
 	}
 	throw new PricingFault(
 		"PRICING_MODEL_UNSUPPORTED",
@@ -608,7 +479,6 @@ function priceTiers(
 	quantity: Decimal,
 	currency: string,
 	mode: "graduated" | "volume",
-	strictTiers: boolean,
 ): Decimal {
 	const tiers = [...tiered.tiers].sort((left, right) =>
 		compareDecimal(
@@ -620,14 +490,13 @@ function priceTiers(
 		throw new PricingFault("INVALID_PRICING_INPUT", "tier list is empty");
 	const last = tiers[tiers.length - 1];
 	if (
-		strictTiers &&
 		mode === "graduated" &&
 		last?.to !== undefined &&
 		compareDecimal(quantity, requiredDecimal(last.to, "tier.to")) > 0
 	)
 		throw new PricingFault(
 			"RATE_CARD_NOT_FOUND",
-			"quantity exceeds the final graduated tier",
+			"quantity is outside graduated tiers",
 		);
 	let total = DECIMAL_ZERO;
 	for (const [index, tier] of tiers.entries()) {
@@ -687,7 +556,6 @@ function applyCommitments(
 	lines: MutableLine[],
 	consumption: Consumption[],
 	scenario: QuoteScenario,
-	financialUnits: boolean,
 ): void {
 	for (const line of lines) {
 		for (const commitmentState of state.commitments) {
@@ -761,10 +629,7 @@ function applyCommitments(
 					sourceId: commitment.id,
 					kind: "commitment",
 					dimension: line.dimension,
-					quantity: quantityOf(
-						consumed,
-						financialUnits ? rateCard.currency : line.quantity.unit,
-					),
+					quantity: quantityOf(consumed, rateCard.currency),
 				}),
 			);
 		}
@@ -777,7 +642,6 @@ function applyCredits(
 	rateCard: RateCard,
 	lines: MutableLine[],
 	consumption: Consumption[],
-	strictBasis: boolean,
 ): void {
 	for (const line of lines) {
 		for (const creditState of state.credits) {
@@ -839,24 +703,20 @@ function applyCredits(
 					`credit ${grant.id} basis is unsupported`,
 				);
 			}
-			if (strictBasis) {
-				requireCurrency(
-					creditState.remainingBasis,
-					rateCard.currency,
-					"remaining basis",
+			requireCurrency(
+				creditState.remainingBasis,
+				rateCard.currency,
+				"remaining basis",
+			);
+			const availableBasis = moneyDecimal(
+				creditState.remainingBasis,
+				"remaining basis",
+			);
+			if (compareDecimal(basis, availableBasis) > 0)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					`credit ${grant.id} does not have enough remaining basis`,
 				);
-				if (
-					compareDecimal(
-						basis,
-						moneyDecimal(creditState.remainingBasis, "remaining basis"),
-					) > 0
-				) {
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						`credit ${grant.id} has insufficient remaining basis`,
-					);
-				}
-			}
 			line.billed = subtractDecimal(line.billed, consumed);
 			line.dueNow = maxDecimal(
 				subtractDecimal(line.dueNow, consumed),
@@ -876,13 +736,7 @@ function applyCredits(
 				},
 			});
 			creditState.remainingBasis = moneyOf(
-				maxDecimal(
-					subtractDecimal(
-						moneyDecimal(creditState.remainingBasis, "remaining basis"),
-						basis,
-					),
-					DECIMAL_ZERO,
-				),
+				maxDecimal(subtractDecimal(availableBasis, basis), DECIMAL_ZERO),
 				rateCard.currency,
 			);
 			line.grantIds.push(grant.id);
@@ -957,14 +811,6 @@ function finalizeLine(line: MutableLine, currency: string): QuoteLine {
 export function rateSnapshot(
 	scenario: QuoteScenario,
 	workloads: readonly WorkloadDelta[],
-	order: PricingOrder = legacyPricingOrder,
-	timeOrder: PricingTimeOrder = legacyPricingTimeOrder,
-	time: TemporalPolicy = LEGACY_TIME,
-	strictTimes = false,
-	strictSourceValues = true,
-	selectorPerWorkload = true,
-	rejectAmbiguousLatest = true,
-	strictTiers = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -974,18 +820,14 @@ export function rateSnapshot(
 			"state and catalog are required",
 		);
 	}
-	const state = workingState(stateView, order, timeOrder);
+	const state = workingState(stateView);
 	const lines: MutableLine[] = [];
 	const consumption: Consumption[] = [];
 	let nominal = DECIMAL_ZERO;
 	let currency = "";
 	const agreementIds = new Set([
 		...state.agreements
-			.filter((agreement) =>
-				timeOrder === utcPricingTimeOrder
-					? hasV2BaselineCharges(agreement.status)
-					: agreement.status === "active",
-			)
+			.filter((agreement) => hasBaselineCharges(agreement.status))
 			.map((agreement) => agreement.id),
 		...workloads.map((workload) => workload.agreementRef),
 	]);
@@ -997,13 +839,8 @@ export function rateSnapshot(
 			agreement,
 			scenario.at,
 			scenario.horizon,
-			timeOrder,
-			time,
 		);
-		if (strictSourceValues) validateRateCardAmounts(rateCard, strictTiers);
-		if (selectorPerWorkload) validateChargeIdentities(rateCard);
 		if (
-			timeOrder === utcPricingTimeOrder &&
 			rateCard.charges.some(
 				(charge) =>
 					charge.variant.case === "fixed" &&
@@ -1025,7 +862,6 @@ export function rateSnapshot(
 			(workload) => workload.agreementRef === agreementRef,
 		);
 		if (
-			selectorPerWorkload &&
 			agreementWorkloads.some(
 				(workload) => workload.productRef !== agreement.productId,
 			)
@@ -1034,15 +870,33 @@ export function rateSnapshot(
 				"INVALID_PRICING_INPUT",
 				`workload product does not match agreement ${agreementRef}`,
 			);
-		const workload = agreementWorkloads[0];
+		const dimensions = new Set<string>();
+		for (const meter of product.meters) {
+			if (!meter.dimension || !meter.unit || dimensions.has(meter.dimension))
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"meter dimensions and units must be present and unique",
+				);
+			dimensions.add(meter.dimension);
+		}
+		for (const delta of agreementWorkloads)
+			for (const measurement of delta.usage)
+				if (!dimensions.has(measurement.dimension))
+					throw new PricingFault(
+						"RATE_CARD_NOT_FOUND",
+						`no meter for ${measurement.dimension}`,
+					);
+		const contexts: readonly (WorkloadDelta | undefined)[] =
+			agreementWorkloads.length > 0 ? agreementWorkloads : [undefined];
 		if (
-			timeOrder === utcPricingTimeOrder &&
 			rateCard.charges.some(
 				(charge) =>
 					charge.variant.case === "fixed" &&
-					Object.keys(charge.base?.selectors ?? {}).some(
-						(key) =>
-							chargeSelectorValue(workload, key, undefined) === undefined,
+					Object.keys(charge.base?.selectors ?? {}).some((key) =>
+						contexts.some(
+							(context) =>
+								chargeSelectorValue(context, key, undefined) === undefined,
+						),
 					),
 			)
 		)
@@ -1050,75 +904,22 @@ export function rateSnapshot(
 				"PRICING_FIXED_SELECTOR_UNAVAILABLE",
 				`agreement ${agreementRef} needs explicit workload selectors for fixed charges`,
 			);
-		if (workload !== undefined && agreementWorkloads.length > 1) {
-			const selectors = new Set(
-				rateCard.charges.flatMap((charge) =>
-					Object.keys(charge.base?.selectors ?? {}),
-				),
-			);
-			for (const key of [...selectors].sort()) {
-				if (timeOrder !== utcPricingTimeOrder && key === "class") continue;
-				const selected = chargeSelectorValue(workload, key, undefined);
-				if (
-					agreementWorkloads.some(
-						(entry) => chargeSelectorValue(entry, key, undefined) !== selected,
-					)
-				)
-					throw new PricingFault(
-						"PRICING_MODEL_UNSUPPORTED",
-						`workloads sharing an agreement have different values for selector ${key}`,
-					);
-			}
-		}
-		if (selectorPerWorkload) {
-			const dimensions = new Set<string>();
-			for (const meter of product.meters) {
-				if (!meter.dimension || !meter.unit || dimensions.has(meter.dimension))
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"meter dimensions and units must be present and unique",
-					);
-				dimensions.add(meter.dimension);
-			}
-			for (const delta of agreementWorkloads) {
-				for (const measurement of delta.usage)
-					if (!dimensions.has(measurement.dimension))
-						throw new PricingFault(
-							"RATE_CARD_NOT_FOUND",
-							`no meter for ${measurement.dimension}`,
-						);
-			}
-		}
-		let fixedEntries: [ChargeComponent, WorkloadDelta[]][];
-		if (selectorPerWorkload) {
-			const fixedGroups = new Map<ChargeComponent, WorkloadDelta[]>();
-			const contexts =
-				agreementWorkloads.length > 0 ? agreementWorkloads : [undefined];
-			for (const context of contexts) {
-				for (const charge of selectChargeComponents(
-					rateCard,
-					context,
-					undefined,
-					"fixed",
-					order,
-				)) {
-					const group = fixedGroups.get(charge) ?? [];
-					if (context !== undefined) group.push(context);
-					fixedGroups.set(charge, group);
-				}
-			}
-			fixedEntries = [...fixedGroups.entries()].sort(([a], [b]) =>
-				order(a.base?.id ?? "", b.base?.id ?? ""),
-			);
-		} else {
-			fixedEntries = selectChargeComponents(
+		const fixedGroups = new Map<ChargeComponent, WorkloadDelta[]>();
+		for (const context of contexts) {
+			for (const charge of selectChargeComponents(
 				rateCard,
-				workload,
+				context,
 				undefined,
 				"fixed",
-				order,
-			).map((charge) => [charge, agreementWorkloads]);
+			)) {
+				const group = fixedGroups.get(charge) ?? [];
+				if (context !== undefined) group.push(context);
+				fixedGroups.set(charge, group);
+			}
 		}
+		const fixedEntries = [...fixedGroups.entries()].sort(([left], [right]) =>
+			order(left.base?.id ?? "", right.base?.id ?? ""),
+		);
 		for (const [charge, matchingWorkloads] of fixedEntries) {
 			if (charge.variant.case !== "fixed" || charge.base === undefined)
 				continue;
@@ -1127,10 +928,7 @@ export function rateSnapshot(
 					"PRICING_MODEL_UNSUPPORTED",
 					"proration is not supported in batch 1",
 				);
-			if (
-				timeOrder === utcPricingTimeOrder &&
-				!hasExplicitFixedQuantity(charge, agreement, agreementWorkloads)
-			)
+			if (!hasExplicitFixedQuantity(charge, agreement, matchingWorkloads))
 				throw new PricingFault(
 					"PRICING_FIXED_QUANTITY_UNAVAILABLE",
 					`fixed charge ${charge.base.id} needs explicit agreement and workload quantities`,
@@ -1165,78 +963,37 @@ export function rateSnapshot(
 		for (const meter of [...product.meters].sort((left, right) =>
 			order(left.dimension, right.dimension),
 		)) {
-			const entries = agreementWorkloads.flatMap((delta) =>
-				delta.usage
+			type MeterEntry = { delta: WorkloadDelta; measurement: UsageMeasurement };
+			const usageGroups = new Map<ChargeComponent, MeterEntry[]>();
+			for (const context of agreementWorkloads) {
+				const selectedEntries = context.usage
 					.filter((measurement) => measurement.dimension === meter.dimension)
-					.map((measurement) => ({ delta, measurement })),
-			);
-			let usageEntries: [ChargeComponent, typeof entries][];
-			let legacyMeasured: Quantity | undefined;
-			if (selectorPerWorkload) {
-				const usageGroups = new Map<ChargeComponent, typeof entries>();
-				for (const context of agreementWorkloads) {
-					const selectedEntries = context.usage
-						.filter((measurement) => measurement.dimension === meter.dimension)
-						.map((measurement) => ({ delta: context, measurement }));
-					if (selectedEntries.length === 0) continue;
-					const charges = selectChargeComponents(
-						rateCard,
-						context,
-						meter.dimension,
-						"usage",
-						order,
-					);
-					if (charges.length === 0)
-						throw new PricingFault(
-							"RATE_CARD_NOT_FOUND",
-							`no charge for ${meter.dimension}`,
-						);
-					for (const charge of charges)
-						usageGroups.set(charge, [
-							...(usageGroups.get(charge) ?? []),
-							...selectedEntries,
-						]);
-				}
-				usageEntries = [...usageGroups.entries()].sort(([a], [b]) =>
-					order(a.base?.id ?? "", b.base?.id ?? ""),
-				);
-			} else {
+					.map((measurement) => ({ delta: context, measurement }));
+				if (selectedEntries.length === 0) continue;
 				const charges = selectChargeComponents(
 					rateCard,
-					workload,
+					context,
 					meter.dimension,
 					"usage",
-					order,
 				);
-				if (entries.length === 0 && charges.length > 0) continue;
-				if (charges.length === 0 && entries.length > 0)
+				if (charges.length === 0)
 					throw new PricingFault(
 						"RATE_CARD_NOT_FOUND",
 						`no charge for ${meter.dimension}`,
 					);
-				legacyMeasured = aggregateMeasurements(
-					meter,
-					entries,
-					timeOrder,
-					time,
-					strictTimes,
-					rejectAmbiguousLatest,
-				);
-				usageEntries = charges.map((charge) => [charge, entries]);
+				for (const charge of charges)
+					usageGroups.set(charge, [
+						...(usageGroups.get(charge) ?? []),
+						...selectedEntries,
+					]);
 			}
+			const usageEntries = [...usageGroups.entries()].sort(([left], [right]) =>
+				order(left.base?.id ?? "", right.base?.id ?? ""),
+			);
 			for (const [charge, selectedEntries] of usageEntries) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;
-				const measured =
-					legacyMeasured ??
-					aggregateMeasurements(
-						meter,
-						selectedEntries,
-						timeOrder,
-						time,
-						strictTimes,
-						rejectAmbiguousLatest,
-					);
+				const measured = aggregateMeasurements(meter, selectedEntries);
 				const allowance = consumeAllowances(
 					state,
 					agreement,
@@ -1246,16 +1003,8 @@ export function rateSnapshot(
 					measured,
 					consumption,
 				);
-				const billed = priceUsage(
-					charge,
-					allowance.quantity,
-					currency,
-					strictTiers,
-				);
-				nominal = addDecimal(
-					nominal,
-					priceUsage(charge, measured, currency, strictTiers),
-				);
+				const billed = priceUsage(charge, allowance.quantity, currency);
+				nominal = addDecimal(nominal, priceUsage(charge, measured, currency));
 				lines.push({
 					chargeId: charge.base.id,
 					agreementRef,
@@ -1279,16 +1028,14 @@ export function rateSnapshot(
 			(line) => line.agreementRef === agreementRef,
 		);
 		if (
-			strictSourceValues &&
 			agreementLines.some(
 				(line) => compareDecimal(line.billed, DECIMAL_ZERO) < 0,
 			)
-		) {
+		)
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"gross charge cannot be negative",
 			);
-		}
 		applyCommitments(
 			state,
 			agreement,
@@ -1296,16 +1043,8 @@ export function rateSnapshot(
 			agreementLines,
 			consumption,
 			scenario,
-			strictSourceValues || timeOrder === utcPricingTimeOrder,
 		);
-		applyCredits(
-			state,
-			agreement,
-			rateCard,
-			agreementLines,
-			consumption,
-			strictSourceValues || timeOrder === utcPricingTimeOrder,
-		);
+		applyCredits(state, agreement, rateCard, agreementLines, consumption);
 	}
 	const finalized = lines.map((line) => finalizeLine(line, currency));
 	const total = (select: (line: MutableLine) => Decimal) =>

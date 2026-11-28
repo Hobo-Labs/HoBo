@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import {
 	BINDLE_DEPLOYMENT_REQUEST_SCHEMA,
 	buildDeploymentRequestFromParts,
@@ -16,6 +15,7 @@ import {
 	yardEvent,
 } from "../src/index.js";
 import { createLocalHostCatalog } from "../src/local-host.js";
+import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 describe("yard-first placement", () => {
 	it("matches an existing ready yard before generating", async () => {
@@ -42,6 +42,7 @@ describe("yard-first placement", () => {
 
 		const result = await resolveBindleDeployment(request, {
 			brokerId: "broker:test",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog,
 			seedLocalYard: false,
 			priorEvents,

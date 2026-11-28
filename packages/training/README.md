@@ -41,10 +41,20 @@ providers additionally never receive PII-classified trajectory content).
   the same seed over the same request replays the identical proposal
   trajectory, trace spans, and winner. Best score never regresses: a
   proposal only replaces the incumbent on a strict improvement.
+  Direct `createSeededPrng` calls require an unsigned 32-bit integer seed;
+  `nextInt` requires a positive safe-integer bound and leaves the stream
+  unchanged when it rejects a bound.
+  Iteration and demonstration counts follow the protobuf's positive `uint32`
+  range; callers still need practical resource limits for their workloads.
+  Reward scores are checked as finite values in `[0, 1]` before optimization
+  records any trace spans.
 - **Trace capture** — every step records one span (OpenInference span-kind
   label + attributes map, `sha256:` input digest, score, keep/reject
   decision) into the in-memory sink; spans are clockless so seeded runs
-  replay byte-identical. No external tracing dependency.
+  replay byte-identical. Recorded spans and attributes are detached snapshots;
+  a run adds its trace batch only after its candidate validates, and draining
+  returns the queued records once and clears the sink. No external tracing
+  dependency.
 
 ## Event architecture
 

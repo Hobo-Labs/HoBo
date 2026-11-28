@@ -7,6 +7,7 @@ import {
 	type BudgetLedgerSnapshot,
 	type BudgetReservation,
 	type BudgetSettlementEvidence,
+	compareFinancialTime,
 	EntitlementClaimSchema,
 	HostingQuoteComponentSchema,
 	HostingQuoteSchema,
@@ -137,7 +138,8 @@ export function createHostingBudgetAuthorityBridge(options: {
 		at: number,
 	): void {
 		const budget = input.budget,
-			identity = snapshot.identity;
+			identity = snapshot.identity,
+			atIso = iso(at);
 		if (
 			!identity ||
 			budget.tenantId !== identity.tenantId ||
@@ -166,8 +168,8 @@ export function createHostingBudgetAuthorityBridge(options: {
 			input.nowMs > at ||
 			input.horizonEndMs <= at ||
 			budget.validUntilMs <= at ||
-			budget.validUntilMs > Date.parse(snapshot.validUntil) ||
-			Date.parse(snapshot.observedAt) > at
+			compareFinancialTime(iso(budget.validUntilMs), snapshot.validUntil) > 0 ||
+			compareFinancialTime(snapshot.observedAt, atIso) > 0
 		)
 			throw new Error("hosting financial evidence is no longer current");
 		if (snapshot.providerAccounts.length !== input.providerBudgets.length)
@@ -195,7 +197,7 @@ export function createHostingBudgetAuthorityBridge(options: {
 			const normalized = scaleFor(entitlement, input),
 				bucket = snapshot.entitlements.find(
 					(row) =>
-						(row.kind === hostingFreeTierKind || row.kind === "") &&
+						row.kind === hostingFreeTierKind &&
 						row.bucketId === entitlement.id &&
 						row.unit === normalized.unit,
 				);
@@ -204,9 +206,10 @@ export function createHostingBudgetAuthorityBridge(options: {
 				bucket.periodId !== budget.periodId ||
 				baseUnits(entitlement.remainingQuantity, normalized.scale) !==
 					bucket.remainingUnits - bucket.reservedUnits ||
-				entitlement.validUntilMs > Date.parse(bucket.validUntil) ||
+				compareFinancialTime(iso(entitlement.validUntilMs), bucket.validUntil) >
+					0 ||
 				entitlement.validUntilMs <= at ||
-				Date.parse(bucket.observedAt) > at
+				compareFinancialTime(bucket.observedAt, atIso) > 0
 			)
 				throw new Error(
 					"entitlement exposure changed, expired or belongs to another period",
@@ -542,22 +545,9 @@ export function createHostingBudgetAuthorityBridge(options: {
 					{
 						...actual,
 						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) => {
-							const legacyFence =
-								!!row.fenceSettlementGuard &&
-								row.fenceSettlementPayloadVersion === "";
-							if (legacyFence) {
-								if (claim.kind !== "" && claim.kind !== hostingFreeTierKind)
-									throw new Error("unsupported hosting entitlement kind");
-								return create(EntitlementClaimSchema, { ...claim, kind: "" });
-							}
-							const normalized =
-								claim.kind === "" ? hostingFreeTierKind : claim.kind;
-							if (normalized !== hostingFreeTierKind)
+							if (claim.kind !== hostingFreeTierKind)
 								throw new Error("unsupported hosting entitlement kind");
-							return create(EntitlementClaimSchema, {
-								...claim,
-								kind: hostingFreeTierKind,
-							});
+							return create(EntitlementClaimSchema, claim);
 						}),
 					},
 				);

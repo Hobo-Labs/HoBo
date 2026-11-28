@@ -103,7 +103,7 @@ message BrokerRequest {
   string request_id = 2;
   TopologyScope scope = 3;
   repeated ResourceRequirement requirements = 4;
-  double spend_estimate_usd = 5;
+  optional double spend_estimate_usd = 5;
   // Anonymous/claimable resolution inputs (ADR-0151). Absent on a request
   // from an authenticated owner deploying into an owned Yard.
   GuestResolutionInput guest = 6;
@@ -151,6 +151,9 @@ message ResolutionReceipt {
   string rail_hash = 9;
   // Anonymous/claimable evidence (ADR-0151). Absent for an owned deployment.
   GuestResolutionEvidence guest = 10;
+  optional string quote_hash = 11;
+  optional string pricing_binding_digest = 12;
+  optional double authorized_usd = 13;
 }
 
 // The claim-relevant facts a receipt must pin so a deployment's ownership

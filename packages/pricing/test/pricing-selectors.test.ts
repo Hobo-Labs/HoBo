@@ -36,7 +36,7 @@ function successful(scenario: ReturnType<typeof makeScenario>) {
 	return quote;
 }
 
-it("rates mixed selectors against each workload and preserves old replay", () => {
+it("rates mixed selectors against each workload", () => {
 	const first = makeScenario({
 		charges: [
 			charge("cheap", "cheap", 1),
@@ -59,18 +59,6 @@ it("rates mixed selectors against each workload and preserves old replay", () =>
 		["expensive", "100"],
 	]);
 	expect(b.quoteHash).toBe(a.quoteHash);
-	const oldA = quoteScenario(first, {
-		ratingAlgorithmVersion: "pricing-rating/v5",
-	});
-	const oldB = quoteScenario(second, {
-		ratingAlgorithmVersion: "pricing-rating/v5",
-	});
-	if (!isQuoteVector(oldA) || !isQuoteVector(oldB))
-		throw new Error("old quote rejected");
-	expect([
-		oldA.incremental?.billed?.decimal,
-		oldB.incremental?.billed?.decimal,
-	]).toEqual(["2", "200"]);
 });
 
 it("rates generated selector groups independently of workload order", () => {
@@ -203,12 +191,15 @@ it("applies fixed quantity selectors to the matching workloads", () => {
 		usage: [],
 		attributes: { class: selector },
 	});
-	const result = successful(
-		makeScenario({
-			charges: [fixed("a", "a", "1"), fixed("b", "b", "100")],
-			candidate: [fixedJob("a", "2"), fixedJob("b", "3")],
-		}),
-	);
+	const scenario = makeScenario({
+		charges: [fixed("a", "a", "1"), fixed("b", "b", "100")],
+		baseline: [fixedJob("a", "0"), fixedJob("b", "0")],
+		candidate: [fixedJob("a", "2"), fixedJob("b", "3")],
+	});
+	const agreement = scenario.state?.agreements[0];
+	if (!agreement) throw new Error("missing agreement");
+	agreement.quantities.seats = "0";
+	const result = successful(rehashScenario(scenario));
 	expect(result.incremental?.billed?.decimal).toBe("302");
 });
 
@@ -253,10 +244,6 @@ it("rejects a workload whose product differs from its agreement", () => {
 	const result = quoteScenario(scenario);
 	if (isQuoteVector(result)) throw new Error("wrong-product workload accepted");
 	expect(result.code).toBe("INVALID_PRICING_INPUT");
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v5",
-	});
-	expect(isQuoteVector(old)).toBe(true);
 });
 
 it("rejects measurements for a dimension without a product meter", () => {
@@ -270,11 +257,6 @@ it("rejects measurements for a dimension without a product meter", () => {
 	const result = quoteScenario(scenario);
 	if (isQuoteVector(result)) throw new Error("unmetered workload accepted");
 	expect(result.code).toBe("RATE_CARD_NOT_FOUND");
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v5",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.incremental?.billed?.decimal).toBe("0");
 });
 
 it("rejects repeated meter dimensions rather than charging twice", () => {
@@ -289,11 +271,6 @@ it("rejects repeated meter dimensions rather than charging twice", () => {
 	const result = quoteScenario(rehashScenario(scenario));
 	if (isQuoteVector(result)) throw new Error("duplicate meter accepted");
 	expect(result.code).toBe("INVALID_PRICING_INPUT");
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v5",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.incremental?.billed?.decimal).toBe("2");
 });
 
 it.each([

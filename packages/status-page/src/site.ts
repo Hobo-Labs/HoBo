@@ -103,15 +103,18 @@ export function writeStatusSite(
 	options: WriteStatusSiteOptions,
 ): readonly WrittenStatusPage[] {
 	const slugs = new Set<string>();
-	const written: WrittenStatusPage[] = [];
-	const directory: { slug: string; model: StatusPageModel }[] = [];
-	mkdirSync(options.rootDir, { recursive: true });
-	for (const page of options.pages) {
+	const prepared = options.pages.map((page) => {
 		const slug = slugFor(page);
 		if (slugs.has(slug)) {
 			throw new TypeError(`duplicate status site slug "${slug}"`);
 		}
 		slugs.add(slug);
+		return { page, slug };
+	});
+	const written: WrittenStatusPage[] = [];
+	const directory: { slug: string; model: StatusPageModel }[] = [];
+	mkdirSync(options.rootDir, { recursive: true });
+	for (const { page, slug } of prepared) {
 		const pageDir = join(options.rootDir, slug);
 		const apiDir = join(pageDir, "api", "v2");
 		assertInside(options.rootDir, apiDir);

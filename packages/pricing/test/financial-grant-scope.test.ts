@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	allowanceState,
 	commitmentState,
@@ -37,7 +37,7 @@ describe("explicit financial grant scopes", () => {
 		if (!grant) throw new Error("missing grant fixture");
 		grant.scope = undefined;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -53,13 +53,13 @@ describe("explicit financial grant scopes", () => {
 		if (!scope) throw new Error("missing scope fixture");
 		scope[field].push("");
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
 
 	it("accepts a deliberately universal scope", () => {
-		expect(quoteScenarioV2(makeScopedScenario())).toMatchObject({
+		expect(quoteScenario(makeScopedScenario())).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 		});
 	});
@@ -74,12 +74,12 @@ describe("explicit financial grant scopes", () => {
 		if (!scope) throw new Error("missing scope fixture");
 		scope.productIds = ["other-product"];
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			candidate: { billed: { decimal: "4", currency: "USD" } },
 		});
 		scope.productIds = ["sandbox"];
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			candidate: { billed: { decimal: "0", currency: "USD" } },
 		});
 	});

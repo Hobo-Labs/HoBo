@@ -106,6 +106,7 @@ import (
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
 	financialPlanHash?: string
+	workDigest?:        string & =~"^sha256:[a-f0-9]{64}$"
 }
 #BudgetReservation: {
 	reservationId:   string & !=""
@@ -122,17 +123,16 @@ import (
 	if entitlementClaims != _|_ {
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
-	usageEvidenceRef?:              string
-	sourceStoppedEvidenceRef?:      string
-	settlementEvidence?:            #BudgetSettlementEvidence
-	executionDigest?:               string
-	financialPlanHash?:             string
-	fenceSettlementGuard?:          #BudgetFenceSettlementGuard
-	fenceSettlementPayloadVersion?: "v2"
-	unboundedExposure?:             bool
-	unpricedPolicyProof?:           #IacUnpricedPolicyProof
-	unpricedScopeProof?:            #IacUnpricedScopeProof
-	iacPricingPin?:                 #IacPricingPin
+	usageEvidenceRef?:         string
+	sourceStoppedEvidenceRef?: string
+	settlementEvidence?:       #BudgetSettlementEvidence
+	executionDigest?:          string
+	financialPlanHash?:        string
+	fenceSettlementGuard?:     #BudgetFenceSettlementGuard
+	unboundedExposure?:        bool
+	unpricedPolicyProof?:      #IacUnpricedPolicyProof
+	unpricedScopeProof?:       #IacUnpricedScopeProof
+	iacPricingPin?:            #IacPricingPin
 	if unboundedExposure == _|_ {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
 	if unboundedExposure != _|_ {
 		if unboundedExposure == false {quoteId: string & !="", reservedMicros: #Micros, actualMicros: #Micros}
@@ -150,39 +150,30 @@ import (
 	fenceOperationReceiptJson?: string
 	financeSignature?:          string
 }
-#HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
+#HostingPolicyProof: {requestDigest: string & !="", quoteId: string & !="", quoteDigest: string & =~"^[a-f0-9]{64}$", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool}
 #IacUnpricedPolicyProof: {requestDigest: string & !="", inventoryHash: string & !="", identity: #BudgetIdentity, policyHash: string & !="", effect: "allow" | "allow-degraded" | "deny" | "require-approval", evidenceRef: string & !="", obligationsSatisfied: bool, observedAt: string & !="", validUntil: string & !=""}
 #IacUnpricedScopeProof: {identity: #BudgetIdentity, providerAccountIds: [string & !="", ...string & !=""], authorityRef: string & !="", evidenceRef: string & !="", ownershipEpoch: string & !="", observedAt: string & !="", exclusiveUntilSettled: true, noSharedEntitlements: true, signature: string & !="", _limit: true & (len(providerAccountIds) <= 256)}
 #IacPricingPin: {planDigest: string & !="", inventoryHash: string & !="", modelHash: string & !="", quoteHash: string & !="", evidenceHash: string & !="", validUntil: string & !=""}
 #BudgetAuthorityEvent: {type: string & !="", snapshot: #BudgetLedgerSnapshot, reservations: [...#BudgetReservation], reconciliationEvidenceRef?: string}
 
 #IacTargetLiabilityEvidence: {
-	evidenceRef:         string & !=""
-	targetId:            string & !=""
-	tenantId:            string & !=""
-	planDigest:          string & =~"^sha256:[a-f0-9]{64}$"
-	inventoryHash:       string & =~"^sha256:[a-f0-9]{64}$"
-	modelHash:           string & =~"^sha256:[a-f0-9]{64}$"
-	quoteHash:           string & =~"^sha256:[a-f0-9]{64}$"
-	maximumMicros?:      #Micros
-	maximumMicrosExact?: #ProtoJSONMicros
-	observedAt:          string & !=""
-	validUntil:          string & !=""
+	evidenceRef:        string & !=""
+	targetId:           string & !=""
+	tenantId:           string & !=""
+	planDigest:         string & =~"^sha256:[a-f0-9]{64}$"
+	inventoryHash:      string & =~"^sha256:[a-f0-9]{64}$"
+	modelHash:          string & =~"^sha256:[a-f0-9]{64}$"
+	quoteHash:          string & =~"^sha256:[a-f0-9]{64}$"
+	maximumMicrosExact: #ProtoJSONMicros
+	observedAt:         string & !=""
+	validUntil:         string & !=""
 	providerAccounts: [#ProviderAccountExposure, ...#ProviderAccountExposure]
 	entitlementClaims?: [...#EntitlementClaim]
 	if entitlementClaims != _|_ {
 		_uniqueEntitlementClaims: #UniqueEntitlementClaims & {claims: entitlementClaims}
 	}
-	if maximumMicros != _|_ && maximumMicrosExact != _|_ {
-		maximumMicros: strconv.Atoi(maximumMicrosExact) & #Micros
-	}
-	if maximumMicrosExact != _|_ {
-		_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
-		_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
-	}
-	if maximumMicrosExact == _|_ {
-		maximumMicros: list.Sum([for account in providerAccounts {account.liabilityMicros}])
-	}
+	_exactBound: strconv.Atoi(maximumMicrosExact) & #Micros
+	_exactTotal: _exactBound & list.Sum([for account in providerAccounts {account.liabilityMicros}])
 	_limit: true & (len(providerAccounts) <= 256)
 	_unique: {
 		for i, left in providerAccounts
@@ -287,12 +278,7 @@ import (
 			modelHash:     iacDecision.modelHash
 			quoteHash:     iacDecision.quoteHash
 		}
-		if iacEvidence.maximumMicrosExact != _|_ {
-			iacEvidence: {maximumMicrosExact: strconv.FormatInt(iacDecision.quote.liabilityBoundMicros, 10)}
-		}
-		if iacEvidence.maximumMicrosExact == _|_ {
-			iacEvidence: {maximumMicros: iacDecision.quote.liabilityBoundMicros}
-		}
+		iacEvidence: {maximumMicrosExact: strconv.FormatInt(iacDecision.quote.liabilityBoundMicros, 10)}
 		iacEvidence: {entitlementClaims: [...#EntitlementClaim]}
 		_evidenceQuoteAccounts: #ProviderAccountRowsMatch & {
 			left:  iacEvidence.providerAccounts

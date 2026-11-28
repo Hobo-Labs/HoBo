@@ -49,6 +49,13 @@ const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 		},
 	],
 	[
+		"fleet-enrollment.yml:strict-store",
+		{
+			minutes: 40,
+			why: "HoBo Fleet: Postgres store conformance via Testcontainers and the start-fence suite share one job; the 40-minute limit leaves time for those database tests after a slow dependency install",
+		},
+	],
+	[
 		"pricing-ci.yml:aws-emulator",
 		{
 			minutes: 40,

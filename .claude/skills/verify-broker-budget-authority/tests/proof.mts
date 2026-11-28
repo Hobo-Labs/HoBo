@@ -10,12 +10,12 @@ const repoRoot = path.resolve(skillRoot, '../../..');
 const proofDir = path.join(skillRoot, 'proof');
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-budget-z3-'));
 const env: Record<string, string> = { ...process.env } as Record<string, string>;
-for (const key of ['BROKER_PROOF_MUTATION', 'BROKER_SCOPE_PROOF_MUTATION']) {
+for (const key of ['BROKER_PROOF_MUTATION', 'BROKER_SCOPE_PROOF_MUTATION', 'BROKER_QUOTE_PROOF_MUTATION']) {
 	delete env[key];
 }
 try {
 	ensureZ3(env, { proofDir, scratchDir: scratch });
-	for (const name of ['broker_induction.py', 'scope_induction.py']) {
+	for (const name of ['broker_induction.py', 'scope_induction.py', 'authorization_induction.py']) {
 		const proof = path.join(proofDir, name);
 		const result = spawnSync('python3', [proof], { env, stdio: 'inherit', cwd: repoRoot });
 		if (result.error) throw result.error;

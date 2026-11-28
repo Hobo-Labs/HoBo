@@ -322,6 +322,8 @@ it("cannot hide a sleep divergence by catching it", async () => {
 		nextEnvelope(stream, 2, "run.SleepScheduled", {
 			delayMs: 10,
 			index: 0,
+			scheduledAtMs: 0,
+			deadlineMs: 10,
 		}),
 		1,
 	);

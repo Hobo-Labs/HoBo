@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
+import { sourceDateEpochToUnixSeconds } from "@hobo/componentize";
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -206,14 +207,15 @@ export const buildContainerImage: ContainerBuildFn = async (input) => {
 			"HOBO_BUILD_USAGE",
 			"HOBO_CONTAINER_BUILDER must be docker or buildctl",
 		);
-	const epochSeconds = /^\d+$/u.test(input.sourceDateEpoch)
-		? Number(input.sourceDateEpoch)
-		: Math.floor(Date.parse(input.sourceDateEpoch) / 1000);
-	if (!Number.isSafeInteger(epochSeconds) || epochSeconds < 0)
+	let epochSeconds: string;
+	try {
+		epochSeconds = sourceDateEpochToUnixSeconds(input.sourceDateEpoch);
+	} catch {
 		throw new BuildError(
 			"HOBO_BUILD_USAGE",
-			"SOURCE_DATE_EPOCH must name nonnegative epoch seconds or an ISO timestamp",
+			"SOURCE_DATE_EPOCH must name supported nonnegative epoch seconds or an unambiguous ISO timestamp",
 		);
+	}
 	const scratch = await mkdtemp(join(tmpdir(), "hobo-container-build-"));
 	try {
 		const archive = join(scratch, "image.tar");

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { create, toJsonString } from "@bufbuild/protobuf";
+import fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	CiEventSchema,
@@ -117,6 +118,187 @@ function historicalSandbox(paidMicros = 0) {
 }
 
 describe("durable account policy and usage snapshots", () => {
+	it.each([
+		"account",
+		"provider",
+	] as const)("rejects a future sub-millisecond %s observation", async (kind) => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			const offer = account?.offers[0];
+			if (!account || !offer) throw new Error("fixture");
+			if (kind === "account")
+				account.usageObservedAt = "2026-10-27T12:00:00.0000009Z";
+			else offer.observedAt = "2026-10-27T12:00:00.0000009Z";
+			expect(() => store.configure(config, 0, NOW)).toThrow(/future/iu);
+			expect(store.configuration()).toBeUndefined();
+		} finally {
+			store.close();
+		}
+	});
+
+	it.each([
+		"account",
+		"provider",
+	] as const)("rejects a changed %s observation at the same instant with a different offset", async (kind) => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			const offer = account?.offers[0];
+			if (!account || !offer) throw new Error("fixture");
+			account.usageObservedAt = offer.observedAt;
+			store.configure(config, 0, NOW);
+			if (kind === "account") {
+				account.usageObservedAt = "2026-10-27T07:00:00-04:00";
+				account.spentMicros += 1;
+			} else {
+				offer.observedAt = "2026-10-27T07:00:00-04:00";
+				offer.freeMinutes += 1;
+			}
+			expect(() => store.configure(config, 1, NOW)).toThrow(
+				/newer observation/iu,
+			);
+			expect(store.configuration()?.revision).toBe(1);
+		} finally {
+			store.close();
+		}
+	});
+
+	it("checks generated sub-millisecond account history without rewriting failed revisions", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.integer({ min: 0, max: 999_999 }),
+				fc.integer({ min: 0, max: 999_999 }),
+				fc.boolean(),
+				async (previous, incoming, changed) => {
+					const store = new LeaseStore(":memory:");
+					try {
+						const config = await configuration();
+						const account = config.accounts[0];
+						if (!account) throw new Error("fixture");
+						const at = (value: number) =>
+							`2026-10-27T11:00:00.000${String(value).padStart(6, "0")}Z`;
+						account.usageObservedAt = at(previous);
+						store.configure(config, 0, NOW);
+						account.usageObservedAt = at(incoming);
+						if (changed) account.spentMicros += 1;
+						const valid =
+							incoming > previous || (incoming === previous && !changed);
+						if (valid) expect(store.configure(config, 1, NOW).revision).toBe(2);
+						else {
+							expect(() => store.configure(config, 1, NOW)).toThrow();
+							expect(store.configuration()?.revision).toBe(1);
+						}
+					} finally {
+						store.close();
+					}
+				},
+			),
+			{ seed: 614512, numRuns: 100 },
+		);
+	});
+
+	it("accepts genuinely newer financial facts within one millisecond", async () => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			const offer = account?.offers[0];
+			if (!account || !offer) throw new Error("fixture");
+			account.usageObservedAt = "2026-10-27T11:00:00.0000001Z";
+			offer.observedAt = account.usageObservedAt;
+			store.configure(config, 0, NOW);
+			account.usageObservedAt = "2026-10-27T11:00:00.0000009Z";
+			account.spentMicros += 1;
+			offer.observedAt = account.usageObservedAt;
+			offer.freeMinutes += 1;
+			expect(store.configure(config, 1, NOW).revision).toBe(2);
+		} finally {
+			store.close();
+		}
+	});
+
+	it("rejects backwards account observations within one millisecond", async () => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			if (!account) throw new Error("fixture");
+			account.usageObservedAt = "2026-10-27T11:00:00.0000008Z";
+			store.configure(config, 0, NOW);
+			account.usageObservedAt = "2026-10-27T11:00:00.0000001Z";
+			expect(() => store.configure(config, 1, NOW)).toThrow(/backwards/iu);
+		} finally {
+			store.close();
+		}
+	});
+
+	it.each([
+		"2026-09-31T00:00:00Z",
+		"2026-10-27T11:00:00",
+	])("rejects invalid or ambiguous financial timestamp %s", async (timestamp) => {
+		const config = await configuration();
+		const offer = config.accounts[0]?.offers[0];
+		if (!offer) throw new Error("fixture");
+		offer.observedAt = timestamp;
+		expect(() => clone(config)).toThrow(/evidence|timestamp/iu);
+	});
+	it("does not use free minutes after their precise expiration", async () => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			const offer = account?.offers[0];
+			if (!account || !offer) throw new Error("fixture");
+			account.offers = [offer];
+			offer.validUntil = "2026-10-27T12:10:00.0000001Z";
+			store.configure(config, 0, NOW);
+			const lease = store.reserve(account, original(), NOW);
+			if (!lease) throw new Error("reservation missing");
+			expect(lease.reservedFreeMinutes).toBeGreaterThan(0);
+			const completedAt = "2026-10-27T12:10:00.0000009Z";
+			const settled = store.settle(
+				lease.id,
+				0,
+				1,
+				completedAt,
+				undefined,
+				completedAt,
+			);
+			expect(settled?.billedFreeMinutes).toBe(0);
+			expect(settled?.paidMicros).toBe(offer.priceMicrosPerMinute);
+		} finally {
+			store.close();
+		}
+	});
+
+	it("refuses a settlement whose completion is in the future", async () => {
+		const store = new LeaseStore(":memory:");
+		try {
+			const config = await configuration();
+			const account = config.accounts[0];
+			if (!account) throw new Error("fixture");
+			store.configure(config, 0, NOW);
+			const lease = store.reserve(account, original(), NOW);
+			if (!lease) throw new Error("reservation missing");
+			expect(() =>
+				store.settle(
+					lease.id,
+					0,
+					1,
+					NOW,
+					undefined,
+					"2026-10-27T12:00:00.0000009Z",
+				),
+			).toThrow(/time|settlement/iu);
+			expect(store.get(lease.id)?.state).toBe("reserved");
+		} finally {
+			store.close();
+		}
+	});
+
 	it("re-attests zero-credit Sandbox rates without advancing usage evidence", async () => {
 		const store = new LeaseStore(":memory:");
 		try {
@@ -226,6 +408,8 @@ describe("durable account policy and usage snapshots", () => {
 				{ ...base, accountId: "other" },
 				{ ...base, sourceUrl: "https://example.com/" },
 				{ ...base, checkedAt: "2026-10-27T12:00:01Z" },
+				{ ...base, checkedAt: "2026-10-27T12:00:00.0000001Z" },
+				{ ...base, validUntil: "2026-10-28T12:00:00.0000001Z" },
 				{ ...base, checkedAt: "2026-10-27T11:54:59Z" },
 				{ ...base, validUntil: "2026-10-28T12:00:01Z" },
 				{ ...base, validUntil: offer.validUntil },

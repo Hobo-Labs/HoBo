@@ -1,8 +1,9 @@
 ------------------------- MODULE PricingCreditOrder -------------------------
 EXTENDS Naturals
+CONSTANTS LocaleIndependent
 VARIABLES version, basis, doneEn, doneSv, paidEn, promoEn, paidSv, promoSv, effectiveEn, effectiveSv
 vars == <<version, basis, doneEn, doneSv, paidEn, promoEn, paidSv, promoSv, effectiveEn, effectiveSv>>
-First(locale) == IF version # "v1" THEN "paid" ELSE IF locale = "en" THEN "promo" ELSE "paid"
+First(locale) == IF version # "v1" /\ LocaleIndependent THEN "paid" ELSE IF locale = "en" THEN "promo" ELSE "paid"
 Init == /\ version \in {"v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9"} /\ basis \in {1, 9}
         /\ doneEn = FALSE /\ doneSv = FALSE /\ paidEn = 1 /\ promoEn = 1 /\ paidSv = 1 /\ promoSv = 1
         /\ effectiveEn = 0 /\ effectiveSv = 0
@@ -26,5 +27,6 @@ CreditConservation == /\ (doneEn => paidEn + promoEn = 1) /\ (doneSv => paidSv +
 BasisMatchesConsumption == /\ (doneEn => effectiveEn = IF paidEn = 0 THEN basis ELSE 0)
                            /\ (doneSv => effectiveSv = IF paidSv = 0 THEN basis ELSE 0)
 NewQuoteStable == version # "v1" /\ doneEn /\ doneSv => /\ paidEn = paidSv /\ promoEn = promoSv /\ effectiveEn = effectiveSv
+QuotesStable == NewQuoteStable
 AllQuotesStable == doneEn /\ doneSv => /\ paidEn = paidSv /\ promoEn = promoSv /\ effectiveEn = effectiveSv
 =============================================================================

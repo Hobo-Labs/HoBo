@@ -146,8 +146,14 @@ export function dependencyRuntimeOf(
 export function collectRequiredRuntimes(
 	definition: BindleDefinition,
 ): readonly RequiredRuntimeKind[] {
+	return requiredRuntimesForResources(definition.resources);
+}
+
+export function requiredRuntimesForResources(
+	resources: BindleDefinition["resources"],
+): readonly RequiredRuntimeKind[] {
 	const required = new Set<RequiredRuntimeKind>();
-	for (const record of Object.values(definition.resources)) {
+	for (const record of Object.values(resources)) {
 		if (record.kind === "container") required.add("oci");
 		if (record.kind === "wasm-component") required.add("wasm");
 		for (const annotation of record.annotations) {

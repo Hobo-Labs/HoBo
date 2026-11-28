@@ -20,6 +20,37 @@ const prAffected = workflow.jobs.pr_affected;
 const mainGate = workflow.jobs["main-gate"];
 const mainPlan = workflow.jobs["main-gate-plan"];
 
+function publisherInputs(conclusion: string, event = "workflow_run") {
+	return (path: string) => {
+		switch (path) {
+			case "github.repository":
+				return "Hobo-Labs/HoBo";
+			case "github.event_name":
+				return event;
+			case "github.event.workflow_run.conclusion":
+				return conclusion;
+			case "needs.runner-image.result":
+				return "success";
+			default:
+				throw new Error(`unexpected publisher input: ${path}`);
+		}
+	};
+}
+
+function publisherCondition(
+	expression: string,
+	conclusion: string,
+	event?: string,
+) {
+	return evaluateExpression(expression, publisherInputs(conclusion, event));
+}
+
+function publisherGroup(group: string, conclusion: string) {
+	return group.replace(/\$\{\{(.*?)\}\}/gu, (_match, expression: string) =>
+		String(evaluateExpression(expression.trim(), publisherInputs(conclusion))),
+	);
+}
+
 describe("CI deps image push scope", () => {
 	it("is its own job on pull requests and steps of the plan job on every main run", () => {
 		// Finding 154: on main the check takes seconds, and as a job it cost a
@@ -114,6 +145,12 @@ describe("CI deps image push scope", () => {
 		// the CI run's conclusion (finding 113): a skipped completion must not
 		// cancel a publish a green run started.
 		expect(publisher.concurrency).toBeUndefined();
+		expect(job.concurrency["cancel-in-progress"]).toBe(true);
+		expect(job.concurrency.group).toContain("ci-deps-publish-");
+		expect(job.concurrency.group).toContain("github.repository");
+		expect(publisherGroup(job.concurrency.group, "cancelled")).not.toBe(
+			publisherGroup(job.concurrency.group, "success"),
+		);
 		expect(job.concurrency).toEqual({
 			group:
 				"ci-deps-publish-${{ github.repository }}-${{ github.event.workflow_run.conclusion == 'cancelled' && 'cancelled' || github.event_name }}",
@@ -135,6 +172,10 @@ describe("CI deps image push scope", () => {
 			'\\"${HOBO_CI_PNPM_STORE_MOUNTED:-}\\" != \\"1\\"',
 		);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
+		expect(publisherCondition(job.if, "success")).toBe(true);
+		expect(publisherCondition(job.if, "failure")).toBe(true);
+		expect(publisherCondition(job.if, "cancelled")).toBe(false);
+		expect(publisherCondition(job.if, "", "workflow_dispatch")).toBe(true);
 		expect(job.if).toContain(
 			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
@@ -177,6 +218,10 @@ describe("CI deps image push scope", () => {
 		// Finding 113: a dropped main push's image change is built by no later
 		// push, and release jobs on ARC pull the worker from GHCR.
 		const job = publisher.jobs["runner-image"];
+		expect(publisherCondition(job.if, "success")).toBe(true);
+		expect(publisherCondition(job.if, "failure")).toBe(true);
+		expect(publisherCondition(job.if, "cancelled")).toBe(false);
+		expect(publisherCondition(job.if, "", "workflow_dispatch")).toBe(true);
 		expect(job.if).toContain(
 			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);

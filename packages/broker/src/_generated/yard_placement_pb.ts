@@ -10,7 +10,76 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file yard_placement.proto.
  */
 export const file_yard_placement: GenFile = /*@__PURE__*/
-  fileDesc("ChR5YXJkX3BsYWNlbWVudC5wcm90bxITaG9iby5icm9rZXIueWFyZC52MSLRAQoJWWFyZFNoYXBlEhMKC3Byb3ZpZGVyX2lkGAEgASgJEhIKCnJ1bnRpbWVfaWQYAiABKAkSDwoHcmVnaW9ucxgDIAMoCRIPCgdyZXF1aXJlGAQgAygJEg4KBnByZWZlchgFIAMoCRI6CgZsYWJlbHMYBiADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRTaGFwZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIvoBChRZYXJkUGxhY2VtZW50UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKDnNlbGVjdGlvbl9tb2RlGAIgASgJEhkKEXJlcXVlc3RlZF95YXJkX2lkGAMgASgJEjcKD3JlcXVlc3RlZF9zaGFwZRgEIAEoCzIeLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZFNoYXBlEhwKFGJpbmRsZV9tYW5pZmVzdF9oYXNoGAUgASgJEiAKGGJpbmRsZV9yZXF1aXJlbWVudHNfaGFzaBgGIAEoCRIiChphbGxvd19nZW5lcmF0aW9uX3JlcXVlc3RlZBgHIAEoCCKvAQoYWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg8KB3lhcmRfaWQYAiABKAkSFwoPb3duZXJfdGVuYW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhIKCnJ1bnRpbWVfaWQYBSABKAkSDgoGc3RhdHVzGAYgASgJEhgKEHJlZ2lzdHJhdGlvbl9zZXEYByABKAQiowEKFVlhcmRJbnZlbnRvcnlTbmFwc2hvdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIRCglicm9rZXJfaWQYAiABKAkSCwoDc2VxGAMgASgEEhQKDGNvbnRlbnRfaGFzaBgEIAEoCRI8CgV5YXJkcxgFIAMoCzItLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uIsEBChdZYXJkUnVudGltZVJlZ2lzdHJhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpydW50aW1lX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAkSHgoWZ2VuZXJhdG9yX2Nvbm5lY3Rvcl9pZBgFIAEoCRIOCgZzdGF0dXMYBiABKAkSEAoIcHJpb3JpdHkYByABKAUSEgoKaXNfZGVmYXVsdBgIIAEoCCLyAQoXQmluZGxlRGVwbG95bWVudFJlcXVlc3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRITCgtiaW5kbGVfbmFtZRgDIAEoCRIVCg1tYW5pZmVzdF9oYXNoGAQgASgJEjcKBHlhcmQYBSABKAsyKS5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRQbGFjZW1lbnRSZXF1ZXN0EhEKCW9iamVjdGl2ZRgGIAEoCRIaChJzcGVuZF9lc3RpbWF0ZV91c2QYByABKAESFwoPb3duZXJfdGVuYW50X2lkGAggASgJIpoDChRZYXJkUGxhY2VtZW50UmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIYChBzZWxlY3RlZF95YXJkX2lkGAQgASgJEhwKFHNlbGVjdGVkX3Byb3ZpZGVyX2lkGAUgASgJEhgKEHNlbGVjdGVkX2NhbXBfaWQYBiABKAkSFgoOaW52ZW50b3J5X2hhc2gYByABKAkSFAoMY29udGVudF9oYXNoGAggASgJEkIKEmJ1ZGdldF9yZXNlcnZhdGlvbhgJIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SOAoNaG9zdGluZ19xdW90ZRgKIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEkUKFGhvc3RpbmdfcG9saWN5X3Byb29mGAsgASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YiYgoOQnVkZ2V0SWRlbnRpdHkSEQoJdGVuYW50X2lkGAEgASgJEhEKCWJ1ZGdldF9pZBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcG9saWN5X3JldmlzaW9uGAQgASgJIs8DChRCdWRnZXRMZWRnZXJTbmFwc2hvdBI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSCwoDc2VxGAIgASgNEhQKDGxpbWl0X21pY3JvcxgDIAEoARIUCgxzcGVudF9taWNyb3MYBCABKAESFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJEkUKEXByb3ZpZGVyX2FjY291bnRzGAggAygLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRQcm92aWRlckFjY291bnQSPAoMZW50aXRsZW1lbnRzGAkgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRFbnRpdGxlbWVudBIZChF1bnJlc29sdmVkX21pY3JvcxgKIAEoARIfChdyZWNvdmVyeV9yZXNlcnZlX21pY3JvcxgLIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAwgASgBEiAKGHVuYm91bmRlZF9leHBvc3VyZV9jb3VudBgNIAEoDSKcAQoVQnVkZ2V0UHJvdmlkZXJBY2NvdW50EhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSFAoMbGltaXRfbWljcm9zGAIgASgBEhQKDHNwZW50X21pY3JvcxgDIAEoARIXCg9yZXNlcnZlZF9taWNyb3MYBCABKAESIQoZZXh0ZXJuYWxfY29tbWl0dGVkX21pY3JvcxgFIAEoASKwAQoRQnVkZ2V0RW50aXRsZW1lbnQSEQoJYnVja2V0X2lkGAEgASgJEgwKBHVuaXQYAiABKAkSEQoJcGVyaW9kX2lkGAMgASgJEhcKD3JlbWFpbmluZ191bml0cxgEIAEoARIWCg5yZXNlcnZlZF91bml0cxgFIAEoARITCgtvYnNlcnZlZF9hdBgGIAEoCRITCgt2YWxpZF91bnRpbBgHIAEoCRIMCgRraW5kGAggASgJIlAKF1Byb3ZpZGVyQWNjb3VudEV4cG9zdXJlEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSGAoQbGlhYmlsaXR5X21pY3JvcxgCIAEoASJQChBFbnRpdGxlbWVudENsYWltEhEKCWJ1Y2tldF9pZBgBIAEoCRIMCgR1bml0GAIgASgJEg0KBXVuaXRzGAMgASgBEgwKBGtpbmQYBCABKAkiqAIKGEJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIaChJ1c2FnZV9ldmlkZW5jZV9yZWYYASABKAkSIwobc291cmNlX3N0b3BwZWRfZXZpZGVuY2VfcmVmGAIgASgJEkcKEXByb3ZpZGVyX2FjY291bnRzGAMgAygLMiwuaG9iby5icm9rZXIueWFyZC52MS5Qcm92aWRlckFjY291bnRFeHBvc3VyZRJBChJlbnRpdGxlbWVudF9jbGFpbXMYBCADKAsyJS5ob2JvLmJyb2tlci55YXJkLnYxLkVudGl0bGVtZW50Q2xhaW0SJAocZmVuY2Vfb3BlcmF0aW9uX3JlY2VpcHRfanNvbhgFIAEoCRIZChFmaW5hbmNlX3NpZ25hdHVyZRgGIAEoCSLZAQoVQnVkZ2V0RmVuY2VkUGxhY2VtZW50Eg8KB3lhcmRfaWQYASABKAkSDwoHY2FtcF9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEhUKDWRlcGxveW1lbnRfaWQYBiABKAkSFgoOaW5jYXJuYXRpb25faWQYByABKAkSFQoNbWFuaWZlc3RfaGFzaBgIIAEoCRIRCglwbGFuX2hhc2gYCSABKAkiyQQKGkJ1ZGdldEZlbmNlU2V0dGxlbWVudEd1YXJkEhAKCGNvbnRyYWN0GAEgASgJEg8KB2RhdGFzZXQYAiABKAkSFAoMc2NvcGVfdGVuYW50GAMgASgJEhQKDG9wZXJhdGlvbl9pZBgEIAEoCRIaChJmZW5jZV90b2tlbl9kaWdlc3QYBSABKAkSFwoPcmVjZWl2ZXJfa2V5X2lkGAYgASgJEhsKE3JlY2VpdmVyX3B1YmxpY19rZXkYByABKAkSFgoOZmluYW5jZV9rZXlfaWQYCCABKAkSGgoSZmluYW5jZV9wdWJsaWNfa2V5GAkgASgJEhcKD2xvZ2ljYWxfY2FtcF9pZBgKIAEoCRI6CgZzb3VyY2UYCyABKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlZFBsYWNlbWVudBI/CgtkZXN0aW5hdGlvbhgMIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VkUGxhY2VtZW50EhAKCGRlY2lzaW9uGA0gASgJEhgKEGV4ZWN1dGlvbl9kaWdlc3QYDiABKAkSFAoMcm91dGVfZGlnZXN0GA8gASgJEiEKGWV4cGVjdGVkX3JvdXRlX2dlbmVyYXRpb24YECABKAkSFgoOY3VycmVudF9zZXRfaWQYESABKAkSFgoOZGVzaXJlZF9zZXRfaWQYEiABKAkSFAoMbWlncmF0aW9uX2lkGBMgASgJEhUKDWRlY2lzaW9uX2hlYWQYFCABKAkiOgoVSG9zdGluZ1F1b3RlQ29tcG9uZW50EgwKBG5hbWUYASABKAkSEwoLY29zdF9taWNyb3MYAiABKAEi8gMKDEhvc3RpbmdRdW90ZRIQCghxdW90ZV9pZBgBIAEoCRIPCgd5YXJkX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhcKD293bmVyX3RlbmFudF9pZBgEIAEoCRIQCghjdXJyZW5jeRgFIAEoCRIUCgx0b3RhbF9taWNyb3MYBiABKAESEwoLb2JzZXJ2ZWRfYXQYByABKAkSEwoLdmFsaWRfdW50aWwYCCABKAkSPgoKY29tcG9uZW50cxgJIAMoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlQ29tcG9uZW50EhYKDnJlcXVlc3RfZGlnZXN0GAogASgJEiMKFmxpYWJpbGl0eV9ib3VuZF9taWNyb3MYCyABKAFIAIgBARJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYDiABKAlCGQoXX2xpYWJpbGl0eV9ib3VuZF9taWNyb3MisAcKEUJ1ZGdldFJlc2VydmF0aW9uEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEjUKCGlkZW50aXR5GAIgASgLMiMuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRJZGVudGl0eRIWCg5yZXF1ZXN0X2RpZ2VzdBgDIAEoCRIQCghxdW90ZV9pZBgEIAEoCRIXCg9yZXNlcnZlZF9taWNyb3MYBSABKAESDgoGc3RhdHVzGAYgASgJEhUKDWFjdHVhbF9taWNyb3MYByABKAESEgoKbGVkZ2VyX3NlcRgIIAEoDRIUCgxxdW90ZV9kaWdlc3QYCSABKAkSGgoSdXNhZ2VfZXZpZGVuY2VfcmVmGAogASgJEiMKG3NvdXJjZV9zdG9wcGVkX2V2aWRlbmNlX3JlZhgLIAEoCRJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEkoKE3NldHRsZW1lbnRfZXZpZGVuY2UYDiABKAsyLS5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIYChBleGVjdXRpb25fZGlnZXN0GA8gASgJEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYECABKAkSTwoWZmVuY2Vfc2V0dGxlbWVudF9ndWFyZBgSIAEoCzIvLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VTZXR0bGVtZW50R3VhcmQSGgoSdW5ib3VuZGVkX2V4cG9zdXJlGBMgASgIEkoKFXVucHJpY2VkX3BvbGljeV9wcm9vZhgUIAEoCzIrLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRQb2xpY3lQcm9vZhJIChR1bnByaWNlZF9zY29wZV9wcm9vZhgVIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRTY29wZVByb29mEjsKD2lhY19wcmljaW5nX3BpbhgWIAEoCzIiLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjUHJpY2luZ1BpbhIoCiBmZW5jZV9zZXR0bGVtZW50X3BheWxvYWRfdmVyc2lvbhgXIAEoCSLEAQoUQnVkZ2V0QXV0aG9yaXR5RXZlbnQSDAoEdHlwZRgBIAEoCRI7CghzbmFwc2hvdBgCIAEoCzIpLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0TGVkZ2VyU25hcHNob3QSPAoMcmVzZXJ2YXRpb25zGAMgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRSZXNlcnZhdGlvbhIjChtyZWNvbmNpbGlhdGlvbl9ldmlkZW5jZV9yZWYYBCABKAkizwEKEkhvc3RpbmdQb2xpY3lQcm9vZhIWCg5yZXF1ZXN0X2RpZ2VzdBgBIAEoCRIQCghxdW90ZV9pZBgCIAEoCRI1CghpZGVudGl0eRgDIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSEwoLcG9saWN5X2hhc2gYBCABKAkSDgoGZWZmZWN0GAUgASgJEhQKDGV2aWRlbmNlX3JlZhgGIAEoCRIdChVvYmxpZ2F0aW9uc19zYXRpc2ZpZWQYByABKAgigwIKFklhY1VucHJpY2VkUG9saWN5UHJvb2YSFgoOcmVxdWVzdF9kaWdlc3QYASABKAkSFgoOaW52ZW50b3J5X2hhc2gYAiABKAkSNQoIaWRlbnRpdHkYAyABKAsyIy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldElkZW50aXR5EhMKC3BvbGljeV9oYXNoGAQgASgJEg4KBmVmZmVjdBgFIAEoCRIUCgxldmlkZW5jZV9yZWYYBiABKAkSHQoVb2JsaWdhdGlvbnNfc2F0aXNmaWVkGAcgASgIEhMKC29ic2VydmVkX2F0GAggASgJEhMKC3ZhbGlkX3VudGlsGAkgASgJIpsCChVJYWNVbnByaWNlZFNjb3BlUHJvb2YSNQoIaWRlbnRpdHkYASABKAsyIy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldElkZW50aXR5EhwKFHByb3ZpZGVyX2FjY291bnRfaWRzGAIgAygJEhUKDWF1dGhvcml0eV9yZWYYAyABKAkSFAoMZXZpZGVuY2VfcmVmGAQgASgJEhcKD293bmVyc2hpcF9lcG9jaBgFIAEoCRITCgtvYnNlcnZlZF9hdBgGIAEoCRIfChdleGNsdXNpdmVfdW50aWxfc2V0dGxlZBgHIAEoCBIeChZub19zaGFyZWRfZW50aXRsZW1lbnRzGAggASgIEhEKCXNpZ25hdHVyZRgJIAEoCSKQAQoNSWFjUHJpY2luZ1BpbhITCgtwbGFuX2RpZ2VzdBgBIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgCIAEoCRISCgptb2RlbF9oYXNoGAMgASgJEhIKCnF1b3RlX2hhc2gYBCABKAkSFQoNZXZpZGVuY2VfaGFzaBgFIAEoCRITCgt2YWxpZF91bnRpbBgGIAEoCSLPAwoaSWFjVGFyZ2V0TGlhYmlsaXR5RXZpZGVuY2USFAoMZXZpZGVuY2VfcmVmGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIRCgl0ZW5hbnRfaWQYAyABKAkSEwoLcGxhbl9kaWdlc3QYBCABKAkSFgoOaW52ZW50b3J5X2hhc2gYBSABKAkSEgoKbW9kZWxfaGFzaBgGIAEoCRISCgpxdW90ZV9oYXNoGAcgASgJEhsKDm1heGltdW1fbWljcm9zGAggASgBSACIAQESEwoLb2JzZXJ2ZWRfYXQYCSABKAkSEwoLdmFsaWRfdW50aWwYCiABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYCyADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEiEKFG1heGltdW1fbWljcm9zX2V4YWN0GAwgASgDSAGIAQESQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltQhEKD19tYXhpbXVtX21pY3Jvc0IXChVfbWF4aW11bV9taWNyb3NfZXhhY3QiPgoTSWFjQnVkZ2V0RGlzY2xvc3VyZRISCgpldmFsdWF0aW9uGAEgASgJEhMKC3Jlc2VydmF0aW9uGAIgASgJIv4DChpJYWNUYXJnZXRBZG1pc3Npb25EZWNpc2lvbhISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIOCgZzdGF0dXMYAyABKAkSDAoEY29kZRgEIAEoCRIPCgdtZXNzYWdlGAUgASgJEjgKBmJ1ZGdldBgGIAEoCzIoLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjQnVkZ2V0RGlzY2xvc3VyZRIWCg5yZXF1ZXN0X2RpZ2VzdBgHIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgIIAEoCRISCgptb2RlbF9oYXNoGAkgASgJEhIKCnF1b3RlX2hhc2gYCiABKAkSMAoFcXVvdGUYCyABKAsyIS5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdRdW90ZRI7CgtyZXNlcnZhdGlvbhgMIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SPQoMcG9saWN5X3Byb29mGA0gASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YSSgoVdW5wcmljZWRfcG9saWN5X3Byb29mGA4gASgLMisuaG9iby5icm9rZXIueWFyZC52MS5JYWNVbnByaWNlZFBvbGljeVByb29mYgZwcm90bzM");
+  fileDesc("ChR5YXJkX3BsYWNlbWVudC5wcm90bxITaG9iby5icm9rZXIueWFyZC52MSIxChNQbGFjZW1lbnRMYWJlbEVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCSL8AQoTQ2FtcFBsYWNlbWVudExheW91dBIPCgJpZBgBIAEoCUgAiAEBEhAKA2VudhgCIAEoCUgBiAEBEhUKCGVudl90eXBlGAMgASgJSAKIAQESDwoHcmVxdWlyZRgEIAMoCRIOCgZwcmVmZXIYBSADKAkSHAoUcnVudGltZV9yZXF1aXJlbWVudHMYByADKAkSQgoQY2Fub25pY2FsX2xhYmVscxgIIAMoCzIoLmhvYm8uYnJva2VyLnlhcmQudjEuUGxhY2VtZW50TGFiZWxFbnRyeUIFCgNfaWRCBgoEX2VudkILCglfZW52X3R5cGVKBAgGEAdSBmxhYmVscyKFAwoJWWFyZFNoYXBlEhMKC3Byb3ZpZGVyX2lkGAEgASgJEhIKCnJ1bnRpbWVfaWQYAiABKAkSDwoHcmVnaW9ucxgDIAMoCRIPCgdyZXF1aXJlGAQgAygJEg4KBnByZWZlchgFIAMoCRIRCglyZXNpZGVuY3kYByADKAkSEQoJaXNvbGF0aW9uGAggAygJEg8KB25ldHdvcmsYCSADKAkSFwoPY29tcG9uZW50X2hvc3RzGAogAygJEjcKBWNhbXBzGAwgAygLMiguaG9iby5icm9rZXIueWFyZC52MS5DYW1wUGxhY2VtZW50TGF5b3V0EkIKEGNhbm9uaWNhbF9sYWJlbHMYDSADKAsyKC5ob2JvLmJyb2tlci55YXJkLnYxLlBsYWNlbWVudExhYmVsRW50cnkSHAoPcHJvcGVydGllc19qc29uGA4gASgJSACIAQFCEgoQX3Byb3BlcnRpZXNfanNvbkoECAYQB0oECAsQDFIGbGFiZWxzUgpwcm9wZXJ0aWVzIpUCChRZYXJkUGxhY2VtZW50UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKDnNlbGVjdGlvbl9tb2RlGAIgASgJEh4KEXJlcXVlc3RlZF95YXJkX2lkGAMgASgJSACIAQESNwoPcmVxdWVzdGVkX3NoYXBlGAQgASgLMh4uaG9iby5icm9rZXIueWFyZC52MS5ZYXJkU2hhcGUSHAoUYmluZGxlX21hbmlmZXN0X2hhc2gYBSABKAkSIAoYYmluZGxlX3JlcXVpcmVtZW50c19oYXNoGAYgASgJEiIKGmFsbG93X2dlbmVyYXRpb25fcmVxdWVzdGVkGAcgASgIQhQKEl9yZXF1ZXN0ZWRfeWFyZF9pZCKZAQoSQmluZGxlUmVxdWlyZW1lbnRzEg8KB3JlcXVpcmUYASADKAkSDgoGcHJlZmVyGAIgAygJEhAKCHJ1bnRpbWVzGAMgAygJEkIKEGNhbm9uaWNhbF9sYWJlbHMYBSADKAsyKC5ob2JvLmJyb2tlci55YXJkLnYxLlBsYWNlbWVudExhYmVsRW50cnlKBAgEEAVSBmxhYmVscyJqChNZYXJkUmVzb3VyY2VSZXF1ZXN0EhMKC3Jlc291cmNlX2lkGAEgASgJEgwKBHBvcnQYAiABKAkSEAoIZmVhdHVyZXMYAyADKAkSEwoGcmVnaW9uGAQgASgJSACIAQFCCQoHX3JlZ2lvbiKIAQoSQ2FtcFBsYWNlbWVudElucHV0EhYKDnNlbGVjdGlvbl9tb2RlGAEgASgJEhQKB2NhbXBfaWQYAiABKAlIAIgBARI4CgZsYXlvdXQYAyABKAsyKC5ob2JvLmJyb2tlci55YXJkLnYxLkNhbXBQbGFjZW1lbnRMYXlvdXRCCgoIX2NhbXBfaWQirwEKGFlhcmRJbnN0YW5jZVJlZ2lzdHJhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIPCgd5YXJkX2lkGAIgASgJEhcKD293bmVyX3RlbmFudF9pZBgDIAEoCRITCgtwcm92aWRlcl9pZBgEIAEoCRISCgpydW50aW1lX2lkGAUgASgJEg4KBnN0YXR1cxgGIAEoCRIYChByZWdpc3RyYXRpb25fc2VxGAcgASgEIqMBChVZYXJkSW52ZW50b3J5U25hcHNob3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEQoJYnJva2VyX2lkGAIgASgJEgsKA3NlcRgDIAEoBBIUCgxjb250ZW50X2hhc2gYBCABKAkSPAoFeWFyZHMYBSADKAsyLS5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRJbnN0YW5jZVJlZ2lzdHJhdGlvbiLBAQoXWWFyZFJ1bnRpbWVSZWdpc3RyYXRpb24SFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcnVudGltZV9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIPCgd2ZXJzaW9uGAQgASgJEh4KFmdlbmVyYXRvcl9jb25uZWN0b3JfaWQYBSABKAkSDgoGc3RhdHVzGAYgASgJEhAKCHByaW9yaXR5GAcgASgFEhIKCmlzX2RlZmF1bHQYCCABKAgi/AMKF0JpbmRsZURlcGxveW1lbnRSZXF1ZXN0EhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEwoLYmluZGxlX25hbWUYAyABKAkSFQoNbWFuaWZlc3RfaGFzaBgEIAEoCRI3CgR5YXJkGAUgASgLMikuaG9iby5icm9rZXIueWFyZC52MS5ZYXJkUGxhY2VtZW50UmVxdWVzdBIRCglvYmplY3RpdmUYBiABKAkSHwoSc3BlbmRfZXN0aW1hdGVfdXNkGAcgASgBSACIAQESFwoPb3duZXJfdGVuYW50X2lkGAggASgJEkQKE2JpbmRsZV9yZXF1aXJlbWVudHMYCSABKAsyJy5ob2JvLmJyb2tlci55YXJkLnYxLkJpbmRsZVJlcXVpcmVtZW50cxI7CglyZXNvdXJjZXMYCiADKAsyKC5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRSZXNvdXJjZVJlcXVlc3QSNQoEY2FtcBgLIAEoCzInLmhvYm8uYnJva2VyLnlhcmQudjEuQ2FtcFBsYWNlbWVudElucHV0EhYKDnJlcXVlc3RfZGlnZXN0GA0gASgJQhUKE19zcGVuZF9lc3RpbWF0ZV91c2RKBAgMEA1SFHdvcmtfYmluZGluZ192ZXJzaW9uIpoDChRZYXJkUGxhY2VtZW50UmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIYChBzZWxlY3RlZF95YXJkX2lkGAQgASgJEhwKFHNlbGVjdGVkX3Byb3ZpZGVyX2lkGAUgASgJEhgKEHNlbGVjdGVkX2NhbXBfaWQYBiABKAkSFgoOaW52ZW50b3J5X2hhc2gYByABKAkSFAoMY29udGVudF9oYXNoGAggASgJEkIKEmJ1ZGdldF9yZXNlcnZhdGlvbhgJIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SOAoNaG9zdGluZ19xdW90ZRgKIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEkUKFGhvc3RpbmdfcG9saWN5X3Byb29mGAsgASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YiYgoOQnVkZ2V0SWRlbnRpdHkSEQoJdGVuYW50X2lkGAEgASgJEhEKCWJ1ZGdldF9pZBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcG9saWN5X3JldmlzaW9uGAQgASgJIs8DChRCdWRnZXRMZWRnZXJTbmFwc2hvdBI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSCwoDc2VxGAIgASgNEhQKDGxpbWl0X21pY3JvcxgDIAEoARIUCgxzcGVudF9taWNyb3MYBCABKAESFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJEkUKEXByb3ZpZGVyX2FjY291bnRzGAggAygLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRQcm92aWRlckFjY291bnQSPAoMZW50aXRsZW1lbnRzGAkgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRFbnRpdGxlbWVudBIZChF1bnJlc29sdmVkX21pY3JvcxgKIAEoARIfChdyZWNvdmVyeV9yZXNlcnZlX21pY3JvcxgLIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAwgASgBEiAKGHVuYm91bmRlZF9leHBvc3VyZV9jb3VudBgNIAEoDSKcAQoVQnVkZ2V0UHJvdmlkZXJBY2NvdW50EhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSFAoMbGltaXRfbWljcm9zGAIgASgBEhQKDHNwZW50X21pY3JvcxgDIAEoARIXCg9yZXNlcnZlZF9taWNyb3MYBCABKAESIQoZZXh0ZXJuYWxfY29tbWl0dGVkX21pY3JvcxgFIAEoASKwAQoRQnVkZ2V0RW50aXRsZW1lbnQSEQoJYnVja2V0X2lkGAEgASgJEgwKBHVuaXQYAiABKAkSEQoJcGVyaW9kX2lkGAMgASgJEhcKD3JlbWFpbmluZ191bml0cxgEIAEoARIWCg5yZXNlcnZlZF91bml0cxgFIAEoARITCgtvYnNlcnZlZF9hdBgGIAEoCRITCgt2YWxpZF91bnRpbBgHIAEoCRIMCgRraW5kGAggASgJIlAKF1Byb3ZpZGVyQWNjb3VudEV4cG9zdXJlEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSGAoQbGlhYmlsaXR5X21pY3JvcxgCIAEoASJQChBFbnRpdGxlbWVudENsYWltEhEKCWJ1Y2tldF9pZBgBIAEoCRIMCgR1bml0GAIgASgJEg0KBXVuaXRzGAMgASgBEgwKBGtpbmQYBCABKAkiqAIKGEJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIaChJ1c2FnZV9ldmlkZW5jZV9yZWYYASABKAkSIwobc291cmNlX3N0b3BwZWRfZXZpZGVuY2VfcmVmGAIgASgJEkcKEXByb3ZpZGVyX2FjY291bnRzGAMgAygLMiwuaG9iby5icm9rZXIueWFyZC52MS5Qcm92aWRlckFjY291bnRFeHBvc3VyZRJBChJlbnRpdGxlbWVudF9jbGFpbXMYBCADKAsyJS5ob2JvLmJyb2tlci55YXJkLnYxLkVudGl0bGVtZW50Q2xhaW0SJAocZmVuY2Vfb3BlcmF0aW9uX3JlY2VpcHRfanNvbhgFIAEoCRIZChFmaW5hbmNlX3NpZ25hdHVyZRgGIAEoCSLZAQoVQnVkZ2V0RmVuY2VkUGxhY2VtZW50Eg8KB3lhcmRfaWQYASABKAkSDwoHY2FtcF9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEhUKDWRlcGxveW1lbnRfaWQYBiABKAkSFgoOaW5jYXJuYXRpb25faWQYByABKAkSFQoNbWFuaWZlc3RfaGFzaBgIIAEoCRIRCglwbGFuX2hhc2gYCSABKAkiyQQKGkJ1ZGdldEZlbmNlU2V0dGxlbWVudEd1YXJkEhAKCGNvbnRyYWN0GAEgASgJEg8KB2RhdGFzZXQYAiABKAkSFAoMc2NvcGVfdGVuYW50GAMgASgJEhQKDG9wZXJhdGlvbl9pZBgEIAEoCRIaChJmZW5jZV90b2tlbl9kaWdlc3QYBSABKAkSFwoPcmVjZWl2ZXJfa2V5X2lkGAYgASgJEhsKE3JlY2VpdmVyX3B1YmxpY19rZXkYByABKAkSFgoOZmluYW5jZV9rZXlfaWQYCCABKAkSGgoSZmluYW5jZV9wdWJsaWNfa2V5GAkgASgJEhcKD2xvZ2ljYWxfY2FtcF9pZBgKIAEoCRI6CgZzb3VyY2UYCyABKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlZFBsYWNlbWVudBI/CgtkZXN0aW5hdGlvbhgMIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VkUGxhY2VtZW50EhAKCGRlY2lzaW9uGA0gASgJEhgKEGV4ZWN1dGlvbl9kaWdlc3QYDiABKAkSFAoMcm91dGVfZGlnZXN0GA8gASgJEiEKGWV4cGVjdGVkX3JvdXRlX2dlbmVyYXRpb24YECABKAkSFgoOY3VycmVudF9zZXRfaWQYESABKAkSFgoOZGVzaXJlZF9zZXRfaWQYEiABKAkSFAoMbWlncmF0aW9uX2lkGBMgASgJEhUKDWRlY2lzaW9uX2hlYWQYFCABKAkiOgoVSG9zdGluZ1F1b3RlQ29tcG9uZW50EgwKBG5hbWUYASABKAkSEwoLY29zdF9taWNyb3MYAiABKAEihwQKDEhvc3RpbmdRdW90ZRIQCghxdW90ZV9pZBgBIAEoCRIPCgd5YXJkX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhcKD293bmVyX3RlbmFudF9pZBgEIAEoCRIQCghjdXJyZW5jeRgFIAEoCRIUCgx0b3RhbF9taWNyb3MYBiABKAESEwoLb2JzZXJ2ZWRfYXQYByABKAkSEwoLdmFsaWRfdW50aWwYCCABKAkSPgoKY29tcG9uZW50cxgJIAMoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlQ29tcG9uZW50EhYKDnJlcXVlc3RfZGlnZXN0GAogASgJEiMKFmxpYWJpbGl0eV9ib3VuZF9taWNyb3MYCyABKAFIAIgBARJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYDiABKAkSEwoLd29ya19kaWdlc3QYDyABKAlCGQoXX2xpYWJpbGl0eV9ib3VuZF9taWNyb3MirgcKEUJ1ZGdldFJlc2VydmF0aW9uEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEjUKCGlkZW50aXR5GAIgASgLMiMuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRJZGVudGl0eRIWCg5yZXF1ZXN0X2RpZ2VzdBgDIAEoCRIQCghxdW90ZV9pZBgEIAEoCRIXCg9yZXNlcnZlZF9taWNyb3MYBSABKAESDgoGc3RhdHVzGAYgASgJEhUKDWFjdHVhbF9taWNyb3MYByABKAESEgoKbGVkZ2VyX3NlcRgIIAEoDRIUCgxxdW90ZV9kaWdlc3QYCSABKAkSGgoSdXNhZ2VfZXZpZGVuY2VfcmVmGAogASgJEiMKG3NvdXJjZV9zdG9wcGVkX2V2aWRlbmNlX3JlZhgLIAEoCRJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEkoKE3NldHRsZW1lbnRfZXZpZGVuY2UYDiABKAsyLS5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIYChBleGVjdXRpb25fZGlnZXN0GA8gASgJEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYECABKAkSTwoWZmVuY2Vfc2V0dGxlbWVudF9ndWFyZBgSIAEoCzIvLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VTZXR0bGVtZW50R3VhcmQSGgoSdW5ib3VuZGVkX2V4cG9zdXJlGBMgASgIEkoKFXVucHJpY2VkX3BvbGljeV9wcm9vZhgUIAEoCzIrLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRQb2xpY3lQcm9vZhJIChR1bnByaWNlZF9zY29wZV9wcm9vZhgVIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRTY29wZVByb29mEjsKD2lhY19wcmljaW5nX3BpbhgWIAEoCzIiLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjUHJpY2luZ1BpbkoECBcQGFIgZmVuY2Vfc2V0dGxlbWVudF9wYXlsb2FkX3ZlcnNpb24ixAEKFEJ1ZGdldEF1dGhvcml0eUV2ZW50EgwKBHR5cGUYASABKAkSOwoIc25hcHNob3QYAiABKAsyKS5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldExlZGdlclNuYXBzaG90EjwKDHJlc2VydmF0aW9ucxgDIAMoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SIwobcmVjb25jaWxpYXRpb25fZXZpZGVuY2VfcmVmGAQgASgJIuUBChJIb3N0aW5nUG9saWN5UHJvb2YSFgoOcmVxdWVzdF9kaWdlc3QYASABKAkSEAoIcXVvdGVfaWQYAiABKAkSNQoIaWRlbnRpdHkYAyABKAsyIy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldElkZW50aXR5EhMKC3BvbGljeV9oYXNoGAQgASgJEg4KBmVmZmVjdBgFIAEoCRIUCgxldmlkZW5jZV9yZWYYBiABKAkSHQoVb2JsaWdhdGlvbnNfc2F0aXNmaWVkGAcgASgIEhQKDHF1b3RlX2RpZ2VzdBgIIAEoCSKDAgoWSWFjVW5wcmljZWRQb2xpY3lQcm9vZhIWCg5yZXF1ZXN0X2RpZ2VzdBgBIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgCIAEoCRI1CghpZGVudGl0eRgDIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSEwoLcG9saWN5X2hhc2gYBCABKAkSDgoGZWZmZWN0GAUgASgJEhQKDGV2aWRlbmNlX3JlZhgGIAEoCRIdChVvYmxpZ2F0aW9uc19zYXRpc2ZpZWQYByABKAgSEwoLb2JzZXJ2ZWRfYXQYCCABKAkSEwoLdmFsaWRfdW50aWwYCSABKAkimwIKFUlhY1VucHJpY2VkU2NvcGVQcm9vZhI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSHAoUcHJvdmlkZXJfYWNjb3VudF9pZHMYAiADKAkSFQoNYXV0aG9yaXR5X3JlZhgDIAEoCRIUCgxldmlkZW5jZV9yZWYYBCABKAkSFwoPb3duZXJzaGlwX2Vwb2NoGAUgASgJEhMKC29ic2VydmVkX2F0GAYgASgJEh8KF2V4Y2x1c2l2ZV91bnRpbF9zZXR0bGVkGAcgASgIEh4KFm5vX3NoYXJlZF9lbnRpdGxlbWVudHMYCCABKAgSEQoJc2lnbmF0dXJlGAkgASgJIpABCg1JYWNQcmljaW5nUGluEhMKC3BsYW5fZGlnZXN0GAEgASgJEhYKDmludmVudG9yeV9oYXNoGAIgASgJEhIKCm1vZGVsX2hhc2gYAyABKAkSEgoKcXVvdGVfaGFzaBgEIAEoCRIVCg1ldmlkZW5jZV9oYXNoGAUgASgJEhMKC3ZhbGlkX3VudGlsGAYgASgJIrUDChpJYWNUYXJnZXRMaWFiaWxpdHlFdmlkZW5jZRIUCgxldmlkZW5jZV9yZWYYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEhEKCXRlbmFudF9pZBgDIAEoCRITCgtwbGFuX2RpZ2VzdBgEIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgFIAEoCRISCgptb2RlbF9oYXNoGAYgASgJEhIKCnF1b3RlX2hhc2gYByABKAkSEwoLb2JzZXJ2ZWRfYXQYCSABKAkSEwoLdmFsaWRfdW50aWwYCiABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYCyADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEiEKFG1heGltdW1fbWljcm9zX2V4YWN0GAwgASgDSACIAQESQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltQhcKFV9tYXhpbXVtX21pY3Jvc19leGFjdEoECAgQCVIObWF4aW11bV9taWNyb3MiPgoTSWFjQnVkZ2V0RGlzY2xvc3VyZRISCgpldmFsdWF0aW9uGAEgASgJEhMKC3Jlc2VydmF0aW9uGAIgASgJIv4DChpJYWNUYXJnZXRBZG1pc3Npb25EZWNpc2lvbhISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIOCgZzdGF0dXMYAyABKAkSDAoEY29kZRgEIAEoCRIPCgdtZXNzYWdlGAUgASgJEjgKBmJ1ZGdldBgGIAEoCzIoLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjQnVkZ2V0RGlzY2xvc3VyZRIWCg5yZXF1ZXN0X2RpZ2VzdBgHIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgIIAEoCRISCgptb2RlbF9oYXNoGAkgASgJEhIKCnF1b3RlX2hhc2gYCiABKAkSMAoFcXVvdGUYCyABKAsyIS5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdRdW90ZRI7CgtyZXNlcnZhdGlvbhgMIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SPQoMcG9saWN5X3Byb29mGA0gASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YSSgoVdW5wcmljZWRfcG9saWN5X3Byb29mGA4gASgLMisuaG9iby5icm9rZXIueWFyZC52MS5JYWNVbnByaWNlZFBvbGljeVByb29mYgZwcm90bzM");
+
+/**
+ * @generated from message hobo.broker.yard.v1.PlacementLabelEntry
+ */
+export type PlacementLabelEntry = Message<"hobo.broker.yard.v1.PlacementLabelEntry"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string value = 2;
+   */
+  value: string;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.PlacementLabelEntry.
+ * Use `create(PlacementLabelEntrySchema)` to create a new message.
+ */
+export const PlacementLabelEntrySchema: GenMessage<PlacementLabelEntry> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 0);
+
+/**
+ * @generated from message hobo.broker.yard.v1.CampPlacementLayout
+ */
+export type CampPlacementLayout = Message<"hobo.broker.yard.v1.CampPlacementLayout"> & {
+  /**
+   * @generated from field: optional string id = 1;
+   */
+  id?: string | undefined;
+
+  /**
+   * @generated from field: optional string env = 2;
+   */
+  env?: string | undefined;
+
+  /**
+   * @generated from field: optional string env_type = 3;
+   */
+  envType?: string | undefined;
+
+  /**
+   * @generated from field: repeated string require = 4;
+   */
+  require: string[];
+
+  /**
+   * @generated from field: repeated string prefer = 5;
+   */
+  prefer: string[];
+
+  /**
+   * @generated from field: repeated string runtime_requirements = 7;
+   */
+  runtimeRequirements: string[];
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.PlacementLabelEntry canonical_labels = 8;
+   */
+  canonicalLabels: PlacementLabelEntry[];
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.CampPlacementLayout.
+ * Use `create(CampPlacementLayoutSchema)` to create a new message.
+ */
+export const CampPlacementLayoutSchema: GenMessage<CampPlacementLayout> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 1);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardShape
@@ -42,9 +111,39 @@ export type YardShape = Message<"hobo.broker.yard.v1.YardShape"> & {
   prefer: string[];
 
   /**
-   * @generated from field: map<string, string> labels = 6;
+   * @generated from field: repeated string residency = 7;
    */
-  labels: { [key: string]: string };
+  residency: string[];
+
+  /**
+   * @generated from field: repeated string isolation = 8;
+   */
+  isolation: string[];
+
+  /**
+   * @generated from field: repeated string network = 9;
+   */
+  network: string[];
+
+  /**
+   * @generated from field: repeated string component_hosts = 10;
+   */
+  componentHosts: string[];
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.CampPlacementLayout camps = 12;
+   */
+  camps: CampPlacementLayout[];
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.PlacementLabelEntry canonical_labels = 13;
+   */
+  canonicalLabels: PlacementLabelEntry[];
+
+  /**
+   * @generated from field: optional string properties_json = 14;
+   */
+  propertiesJson?: string | undefined;
 };
 
 /**
@@ -52,7 +151,7 @@ export type YardShape = Message<"hobo.broker.yard.v1.YardShape"> & {
  * Use `create(YardShapeSchema)` to create a new message.
  */
 export const YardShapeSchema: GenMessage<YardShape> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 0);
+  messageDesc(file_yard_placement, 2);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardPlacementRequest
@@ -71,9 +170,9 @@ export type YardPlacementRequest = Message<"hobo.broker.yard.v1.YardPlacementReq
   selectionMode: string;
 
   /**
-   * @generated from field: string requested_yard_id = 3;
+   * @generated from field: optional string requested_yard_id = 3;
    */
-  requestedYardId: string;
+  requestedYardId?: string | undefined;
 
   /**
    * @generated from field: hobo.broker.yard.v1.YardShape requested_shape = 4;
@@ -101,7 +200,98 @@ export type YardPlacementRequest = Message<"hobo.broker.yard.v1.YardPlacementReq
  * Use `create(YardPlacementRequestSchema)` to create a new message.
  */
 export const YardPlacementRequestSchema: GenMessage<YardPlacementRequest> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 1);
+  messageDesc(file_yard_placement, 3);
+
+/**
+ * @generated from message hobo.broker.yard.v1.BindleRequirements
+ */
+export type BindleRequirements = Message<"hobo.broker.yard.v1.BindleRequirements"> & {
+  /**
+   * @generated from field: repeated string require = 1;
+   */
+  require: string[];
+
+  /**
+   * @generated from field: repeated string prefer = 2;
+   */
+  prefer: string[];
+
+  /**
+   * @generated from field: repeated string runtimes = 3;
+   */
+  runtimes: string[];
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.PlacementLabelEntry canonical_labels = 5;
+   */
+  canonicalLabels: PlacementLabelEntry[];
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.BindleRequirements.
+ * Use `create(BindleRequirementsSchema)` to create a new message.
+ */
+export const BindleRequirementsSchema: GenMessage<BindleRequirements> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 4);
+
+/**
+ * @generated from message hobo.broker.yard.v1.YardResourceRequest
+ */
+export type YardResourceRequest = Message<"hobo.broker.yard.v1.YardResourceRequest"> & {
+  /**
+   * @generated from field: string resource_id = 1;
+   */
+  resourceId: string;
+
+  /**
+   * @generated from field: string port = 2;
+   */
+  port: string;
+
+  /**
+   * @generated from field: repeated string features = 3;
+   */
+  features: string[];
+
+  /**
+   * @generated from field: optional string region = 4;
+   */
+  region?: string | undefined;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.YardResourceRequest.
+ * Use `create(YardResourceRequestSchema)` to create a new message.
+ */
+export const YardResourceRequestSchema: GenMessage<YardResourceRequest> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 5);
+
+/**
+ * @generated from message hobo.broker.yard.v1.CampPlacementInput
+ */
+export type CampPlacementInput = Message<"hobo.broker.yard.v1.CampPlacementInput"> & {
+  /**
+   * @generated from field: string selection_mode = 1;
+   */
+  selectionMode: string;
+
+  /**
+   * @generated from field: optional string camp_id = 2;
+   */
+  campId?: string | undefined;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.CampPlacementLayout layout = 3;
+   */
+  layout?: CampPlacementLayout | undefined;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.CampPlacementInput.
+ * Use `create(CampPlacementInputSchema)` to create a new message.
+ */
+export const CampPlacementInputSchema: GenMessage<CampPlacementInput> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 6);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardInstanceRegistration
@@ -150,7 +340,7 @@ export type YardInstanceRegistration = Message<"hobo.broker.yard.v1.YardInstance
  * Use `create(YardInstanceRegistrationSchema)` to create a new message.
  */
 export const YardInstanceRegistrationSchema: GenMessage<YardInstanceRegistration> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 2);
+  messageDesc(file_yard_placement, 7);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardInventorySnapshot
@@ -187,7 +377,7 @@ export type YardInventorySnapshot = Message<"hobo.broker.yard.v1.YardInventorySn
  * Use `create(YardInventorySnapshotSchema)` to create a new message.
  */
 export const YardInventorySnapshotSchema: GenMessage<YardInventorySnapshot> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 3);
+  messageDesc(file_yard_placement, 8);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardRuntimeRegistration
@@ -241,7 +431,7 @@ export type YardRuntimeRegistration = Message<"hobo.broker.yard.v1.YardRuntimeRe
  * Use `create(YardRuntimeRegistrationSchema)` to create a new message.
  */
 export const YardRuntimeRegistrationSchema: GenMessage<YardRuntimeRegistration> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 4);
+  messageDesc(file_yard_placement, 9);
 
 /**
  * @generated from message hobo.broker.yard.v1.BindleDeploymentRequest
@@ -278,14 +468,34 @@ export type BindleDeploymentRequest = Message<"hobo.broker.yard.v1.BindleDeploym
   objective: string;
 
   /**
-   * @generated from field: double spend_estimate_usd = 7;
+   * @generated from field: optional double spend_estimate_usd = 7;
    */
-  spendEstimateUsd: number;
+  spendEstimateUsd?: number | undefined;
 
   /**
    * @generated from field: string owner_tenant_id = 8;
    */
   ownerTenantId: string;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.BindleRequirements bindle_requirements = 9;
+   */
+  bindleRequirements?: BindleRequirements | undefined;
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.YardResourceRequest resources = 10;
+   */
+  resources: YardResourceRequest[];
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.CampPlacementInput camp = 11;
+   */
+  camp?: CampPlacementInput | undefined;
+
+  /**
+   * @generated from field: string request_digest = 13;
+   */
+  requestDigest: string;
 };
 
 /**
@@ -293,7 +503,7 @@ export type BindleDeploymentRequest = Message<"hobo.broker.yard.v1.BindleDeploym
  * Use `create(BindleDeploymentRequestSchema)` to create a new message.
  */
 export const BindleDeploymentRequestSchema: GenMessage<BindleDeploymentRequest> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 5);
+  messageDesc(file_yard_placement, 10);
 
 /**
  * @generated from message hobo.broker.yard.v1.YardPlacementReceipt
@@ -360,7 +570,7 @@ export type YardPlacementReceipt = Message<"hobo.broker.yard.v1.YardPlacementRec
  * Use `create(YardPlacementReceiptSchema)` to create a new message.
  */
 export const YardPlacementReceiptSchema: GenMessage<YardPlacementReceipt> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 6);
+  messageDesc(file_yard_placement, 11);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetIdentity
@@ -392,7 +602,7 @@ export type BudgetIdentity = Message<"hobo.broker.yard.v1.BudgetIdentity"> & {
  * Use `create(BudgetIdentitySchema)` to create a new message.
  */
 export const BudgetIdentitySchema: GenMessage<BudgetIdentity> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 7);
+  messageDesc(file_yard_placement, 12);
 
 /**
  * USD integer microdollars. Zero is a hard zero allowance, never unlimited.
@@ -478,7 +688,7 @@ export type BudgetLedgerSnapshot = Message<"hobo.broker.yard.v1.BudgetLedgerSnap
  * Use `create(BudgetLedgerSnapshotSchema)` to create a new message.
  */
 export const BudgetLedgerSnapshotSchema: GenMessage<BudgetLedgerSnapshot> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 8);
+  messageDesc(file_yard_placement, 13);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetProviderAccount
@@ -515,7 +725,7 @@ export type BudgetProviderAccount = Message<"hobo.broker.yard.v1.BudgetProviderA
  * Use `create(BudgetProviderAccountSchema)` to create a new message.
  */
 export const BudgetProviderAccountSchema: GenMessage<BudgetProviderAccount> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 9);
+  messageDesc(file_yard_placement, 14);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetEntitlement
@@ -569,7 +779,7 @@ export type BudgetEntitlement = Message<"hobo.broker.yard.v1.BudgetEntitlement">
  * Use `create(BudgetEntitlementSchema)` to create a new message.
  */
 export const BudgetEntitlementSchema: GenMessage<BudgetEntitlement> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 10);
+  messageDesc(file_yard_placement, 15);
 
 /**
  * @generated from message hobo.broker.yard.v1.ProviderAccountExposure
@@ -591,7 +801,7 @@ export type ProviderAccountExposure = Message<"hobo.broker.yard.v1.ProviderAccou
  * Use `create(ProviderAccountExposureSchema)` to create a new message.
  */
 export const ProviderAccountExposureSchema: GenMessage<ProviderAccountExposure> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 11);
+  messageDesc(file_yard_placement, 16);
 
 /**
  * @generated from message hobo.broker.yard.v1.EntitlementClaim
@@ -625,7 +835,7 @@ export type EntitlementClaim = Message<"hobo.broker.yard.v1.EntitlementClaim"> &
  * Use `create(EntitlementClaimSchema)` to create a new message.
  */
 export const EntitlementClaimSchema: GenMessage<EntitlementClaim> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 12);
+  messageDesc(file_yard_placement, 17);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetSettlementEvidence
@@ -670,7 +880,7 @@ export type BudgetSettlementEvidence = Message<"hobo.broker.yard.v1.BudgetSettle
  * Use `create(BudgetSettlementEvidenceSchema)` to create a new message.
  */
 export const BudgetSettlementEvidenceSchema: GenMessage<BudgetSettlementEvidence> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 13);
+  messageDesc(file_yard_placement, 18);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetFencedPlacement
@@ -727,7 +937,7 @@ export type BudgetFencedPlacement = Message<"hobo.broker.yard.v1.BudgetFencedPla
  * Use `create(BudgetFencedPlacementSchema)` to create a new message.
  */
 export const BudgetFencedPlacementSchema: GenMessage<BudgetFencedPlacement> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 14);
+  messageDesc(file_yard_placement, 19);
 
 /**
  * Immutable, non-secret scope pinned at initial reservation, not retrofitted
@@ -843,7 +1053,7 @@ export type BudgetFenceSettlementGuard = Message<"hobo.broker.yard.v1.BudgetFenc
  * Use `create(BudgetFenceSettlementGuardSchema)` to create a new message.
  */
 export const BudgetFenceSettlementGuardSchema: GenMessage<BudgetFenceSettlementGuard> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 15);
+  messageDesc(file_yard_placement, 20);
 
 /**
  * @generated from message hobo.broker.yard.v1.HostingQuoteComponent
@@ -865,7 +1075,7 @@ export type HostingQuoteComponent = Message<"hobo.broker.yard.v1.HostingQuoteCom
  * Use `create(HostingQuoteComponentSchema)` to create a new message.
  */
 export const HostingQuoteComponentSchema: GenMessage<HostingQuoteComponent> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 16);
+  messageDesc(file_yard_placement, 21);
 
 /**
  * Complete incremental quote for one unsplittable request, including setup,
@@ -945,6 +1155,11 @@ export type HostingQuote = Message<"hobo.broker.yard.v1.HostingQuote"> & {
    * @generated from field: string financial_plan_hash = 14;
    */
   financialPlanHash: string;
+
+  /**
+   * @generated from field: string work_digest = 15;
+   */
+  workDigest: string;
 };
 
 /**
@@ -952,7 +1167,7 @@ export type HostingQuote = Message<"hobo.broker.yard.v1.HostingQuote"> & {
  * Use `create(HostingQuoteSchema)` to create a new message.
  */
 export const HostingQuoteSchema: GenMessage<HostingQuote> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 17);
+  messageDesc(file_yard_placement, 22);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetReservation
@@ -1069,11 +1284,6 @@ export type BudgetReservation = Message<"hobo.broker.yard.v1.BudgetReservation">
    * @generated from field: hobo.broker.yard.v1.IacPricingPin iac_pricing_pin = 22;
    */
   iacPricingPin?: IacPricingPin | undefined;
-
-  /**
-   * @generated from field: string fence_settlement_payload_version = 23;
-   */
-  fenceSettlementPayloadVersion: string;
 };
 
 /**
@@ -1081,7 +1291,7 @@ export type BudgetReservation = Message<"hobo.broker.yard.v1.BudgetReservation">
  * Use `create(BudgetReservationSchema)` to create a new message.
  */
 export const BudgetReservationSchema: GenMessage<BudgetReservation> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 18);
+  messageDesc(file_yard_placement, 23);
 
 /**
  * @generated from message hobo.broker.yard.v1.BudgetAuthorityEvent
@@ -1113,7 +1323,7 @@ export type BudgetAuthorityEvent = Message<"hobo.broker.yard.v1.BudgetAuthorityE
  * Use `create(BudgetAuthorityEventSchema)` to create a new message.
  */
 export const BudgetAuthorityEventSchema: GenMessage<BudgetAuthorityEvent> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 19);
+  messageDesc(file_yard_placement, 24);
 
 /**
  * @generated from message hobo.broker.yard.v1.HostingPolicyProof
@@ -1153,6 +1363,11 @@ export type HostingPolicyProof = Message<"hobo.broker.yard.v1.HostingPolicyProof
    * @generated from field: bool obligations_satisfied = 7;
    */
   obligationsSatisfied: boolean;
+
+  /**
+   * @generated from field: string quote_digest = 8;
+   */
+  quoteDigest: string;
 };
 
 /**
@@ -1160,7 +1375,7 @@ export type HostingPolicyProof = Message<"hobo.broker.yard.v1.HostingPolicyProof
  * Use `create(HostingPolicyProofSchema)` to create a new message.
  */
 export const HostingPolicyProofSchema: GenMessage<HostingPolicyProof> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 20);
+  messageDesc(file_yard_placement, 25);
 
 /**
  * Policy explicitly authorizes execution without financial budget evaluation.
@@ -1219,7 +1434,7 @@ export type IacUnpricedPolicyProof = Message<"hobo.broker.yard.v1.IacUnpricedPol
  * Use `create(IacUnpricedPolicyProofSchema)` to create a new message.
  */
 export const IacUnpricedPolicyProofSchema: GenMessage<IacUnpricedPolicyProof> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 21);
+  messageDesc(file_yard_placement, 26);
 
 /**
  * An independent financial-scope authority attests exclusive ownership until
@@ -1279,7 +1494,7 @@ export type IacUnpricedScopeProof = Message<"hobo.broker.yard.v1.IacUnpricedScop
  * Use `create(IacUnpricedScopeProofSchema)` to create a new message.
  */
 export const IacUnpricedScopeProofSchema: GenMessage<IacUnpricedScopeProof> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 22);
+  messageDesc(file_yard_placement, 27);
 
 /**
  * Inputs that made a priced IaC admission; immutable for the claimed effect.
@@ -1323,7 +1538,7 @@ export type IacPricingPin = Message<"hobo.broker.yard.v1.IacPricingPin"> & {
  * Use `create(IacPricingPinSchema)` to create a new message.
  */
 export const IacPricingPinSchema: GenMessage<IacPricingPin> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 23);
+  messageDesc(file_yard_placement, 28);
 
 /**
  * A trusted host verifies this separately from developer-authored pricing.
@@ -1367,13 +1582,6 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
   quoteHash: string;
 
   /**
-   * Legacy bound; maximum_micros_exact wins when both are present.
-   *
-   * @generated from field: optional double maximum_micros = 8;
-   */
-  maximumMicros?: number | undefined;
-
-  /**
    * @generated from field: string observed_at = 9;
    */
   observedAt: string;
@@ -1389,8 +1597,6 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
   providerAccounts: ProviderAccountExposure[];
 
   /**
-   * Exact bound; prefer this field alone for new payloads.
-   *
    * @generated from field: optional int64 maximum_micros_exact = 12;
    */
   maximumMicrosExact?: bigint | undefined;
@@ -1406,7 +1612,7 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
  * Use `create(IacTargetLiabilityEvidenceSchema)` to create a new message.
  */
 export const IacTargetLiabilityEvidenceSchema: GenMessage<IacTargetLiabilityEvidence> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 24);
+  messageDesc(file_yard_placement, 29);
 
 /**
  * @generated from message hobo.broker.yard.v1.IacBudgetDisclosure
@@ -1428,7 +1634,7 @@ export type IacBudgetDisclosure = Message<"hobo.broker.yard.v1.IacBudgetDisclosu
  * Use `create(IacBudgetDisclosureSchema)` to create a new message.
  */
 export const IacBudgetDisclosureSchema: GenMessage<IacBudgetDisclosure> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 25);
+  messageDesc(file_yard_placement, 30);
 
 /**
  * @generated from message hobo.broker.yard.v1.IacTargetAdmissionDecision
@@ -1510,5 +1716,5 @@ export type IacTargetAdmissionDecision = Message<"hobo.broker.yard.v1.IacTargetA
  * Use `create(IacTargetAdmissionDecisionSchema)` to create a new message.
  */
 export const IacTargetAdmissionDecisionSchema: GenMessage<IacTargetAdmissionDecision> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 26);
+  messageDesc(file_yard_placement, 31);
 

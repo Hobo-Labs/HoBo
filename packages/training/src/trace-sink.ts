@@ -49,7 +49,12 @@ export function createTraceSink(): OptimizerTraceSink {
 	let spans: OptimizerTraceSpan[] = [];
 	return {
 		record(span: OptimizerTraceSpan): void {
-			spans.push(span);
+			spans.push(
+				Object.freeze({
+					...span,
+					attributes: Object.freeze({ ...span.attributes }),
+				}),
+			);
 		},
 		drain(): readonly OptimizerTraceSpan[] {
 			const drained = spans;

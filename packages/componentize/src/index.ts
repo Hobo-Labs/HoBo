@@ -27,5 +27,7 @@ export {
 	REAL_COMPONENT_MIN_BYTES,
 	validateRealWasmComponent,
 } from "./real-componentize.js";
+export { sourceDateEpochToUnixSeconds } from "./source-date-epoch.js";
 
+// public-contract: package identity used by generated manifests and tooling.
 export const HOBO_COMPONENTIZE_PACKAGE = "@hobo/componentize";

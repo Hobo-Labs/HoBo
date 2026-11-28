@@ -117,9 +117,16 @@ import "strings"
 	"rollout" | "converged" | "after-converged" | "verification" | "qualified" |
 	"after-qualified" | "contracted" | "failed" | "compensated"
 
-// `saga.StepEmitted` on a promotion stream: `<scope>|<step>` plus its handle.
-#PromotionSagaStep: {
+#PromotionSagaStep: #PromotionProgressStep | #RollbackExecutionClaimStep
+
+#PromotionProgressStep: {
 	sagaId:      =~"^cd\\.promotion:(promo|rollback|preview)_[0-9a-f]{24}$"
 	step:        =~"^[A-Za-z0-9][A-Za-z0-9._/-]*\\|(resolved|gated|awaiting-window|approval-requested|approved|approval-denied|before-apply|expanded|applied|rollout|converged|after-converged|verification|qualified|after-qualified|contracted|failed|compensated)$"
 	emittedType: string & strings.MaxRunes(1024)
+}
+
+#RollbackExecutionClaimStep: {
+	sagaId:      =~"^cd\\.promotion:rollback_[0-9a-f]{24}$"
+	step:        =~"^[A-Za-z0-9][A-Za-z0-9._/-]*\\|rollback-execution-claimed$"
+	emittedType: "rollback execution claimed"
 }

@@ -1,16 +1,24 @@
 import { isDeepStrictEqual } from "node:util";
+import { cloneAsJson, isJsonString, type JsonValue } from "../json.js";
 import {
-	cloneAsJson,
-	isJsonObject,
-	isJsonString,
-	type JsonValue,
-} from "../json.js";
+	captureWorkflowInput,
+	isNonEmptyPrimitiveString,
+	parseRunStartedFact,
+	requireWorkflowRunId,
+} from "../workflow-value.js";
 import { readReplayCommandTree } from "./command-tree.js";
 import { createDeterministicContext } from "./context.js";
 import { digest } from "./divergence.js";
-import { hashReadSet, seqVector, stableStringify } from "./equivalence.js";
+import {
+	hashReadSet,
+	seqVector,
+	stableStringify,
+	toSeqVectorEntries,
+} from "./equivalence.js";
+import { validateJournalHistory } from "./journal-history.js";
+import { captureJournalStream, snapshotJournalData } from "./journal-stream.js";
 import type { EventStoreReader } from "./store.js";
-import type { EventEnvelope, ReplayReport } from "./types.js";
+import type { ReplayReport } from "./types.js";
 
 export interface WorkflowDefinition<S, A> {
 	name: string;
@@ -45,42 +53,43 @@ export async function replayRun<S, A>(
 	args: A,
 	options: ReplayOptions = {},
 ): Promise<ReplayResult<S>> {
-	const streamId = `run/${runId}`;
-	const events = await store.readStream(streamId);
-	const seed = options.seed ?? readSeed(events) ?? `run-${runId}`;
-	const started = events.find((event) => event.type === "run.Started");
-	if (!started) {
+	const id = requireWorkflowRunId(runId);
+	const input = captureWorkflowInput(args);
+	const suppliedSeed = options.seed;
+	const workflowName = workflow.name;
+	const initialState = workflow.initialState;
+	const execute = workflow.execute;
+	if (
+		!isJsonString(workflowName) ||
+		String(workflowName) !== workflowName ||
+		!workflowName
+	)
+		throw new TypeError("workflow name must be a non-empty string");
+	if (suppliedSeed !== undefined && !isNonEmptyPrimitiveString(suppliedSeed))
+		throw new TypeError("replay seed must be a non-empty string");
+	const streamId = `run/${id}`;
+	const events = captureJournalStream(
+		await store.readStream(streamId),
+		streamId,
+	);
+	validateJournalHistory(events, id);
+	const recordedVector = seqVector(events);
+	const started = events[0];
+	if (started?.type !== "run.Started") {
 		throw new Error(`missing run.Started for ${runId}`);
 	}
-	const version = isJsonObject(started.data)
-		? started.data.commandTreeVersion
-		: undefined;
-	if (
-		version !== undefined &&
-		version !== 1 &&
-		version !== 2 &&
-		version !== 3
-	) {
-		throw new Error("unsupported workflow command tree version");
-	}
-	const tree =
-		version === 1 || version === 2 || version === 3
-			? readReplayCommandTree(events, version >= 2, version === 3)
-			: undefined;
+	const startedFact = parseRunStartedFact(snapshotJournalData(started.data));
+	if (!isDeepStrictEqual(startedFact.args, input))
+		throw new Error(`workflow input differs from run.Started for ${runId}`);
+	if (startedFact.workflowName !== workflowName)
+		throw new Error(`workflow name differs from run.Started for ${runId}`);
+	if (suppliedSeed !== undefined && suppliedSeed !== startedFact.seed)
+		throw new Error(`workflow seed differs from run.Started for ${runId}`);
+	const seed = startedFact.seed;
+	const tree = readReplayCommandTree(events, id).roots;
 	let treeCursor = 0;
 
-	let state = workflow.initialState(args);
-	const stepResults = new Map<string, JsonValue>();
-	const hookResults = new Map<string, JsonValue>();
-	const timerResults = new Map<string, { delayMs: number }>();
-	const completedSteps = events.filter(
-		(event) => event.type === "run.StepCompleted",
-	);
-	const scheduledSleeps = events.filter(
-		(event) => event.type === "run.SleepScheduled",
-	);
-	let stepCounter = 0;
-	let sleepCounter = 0;
+	let state = Function.prototype.call.call(initialState, workflow, input);
 
 	const ctx: WorkflowReplayContext = {
 		runId,
@@ -98,70 +107,36 @@ export async function replayRun<S, A>(
 				eventKey: `${streamId}:orchestration:${label}`,
 			}).random(label),
 		async step<T>(name: string, _fn: () => Promise<T> | T): Promise<T> {
-			if (tree) {
-				const command = tree[treeCursor];
-				if (command?.kind !== "step" || command.name !== name) {
-					throw new Error(
-						`workflow command history diverged at index ${treeCursor}`,
-					);
-				}
-				if (command.terminal?.kind !== "completed") {
-					throw new Error(
-						`missing memoized step ${name} at index ${command.index}`,
-					);
-				}
-				treeCursor += 1;
-				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: memoized step results are the JSON values the step returned.
-				return command.terminal.result as T;
+			const command = tree[treeCursor];
+			if (command?.kind !== "step" || command.name !== name) {
+				throw new Error(
+					`workflow command history diverged at index ${treeCursor}`,
+				);
 			}
-			const stepId = `${name}:${stepCounter}`;
-			const completed = events.find(
-				(event) =>
-					event.type === "run.StepCompleted" &&
-					event.data &&
-					matchesStep(event.data, name, stepCounter),
-			);
-			if (completed) {
-				stepCounter += 1;
-				// SAFETY: assertion to `completed.data as { result: T }` is required at this boundary.
-				const result = (completed.data as { result: T }).result as T;
-				stepResults.set(stepId, cloneAsJson(result));
-				return result;
+			if (command.terminal?.kind !== "completed") {
+				throw new Error(
+					`missing memoized step ${name} at index ${command.index}`,
+				);
 			}
-			throw new Error(`missing memoized step ${name} at index ${stepCounter}`);
+			treeCursor += 1;
+			const result = command.terminal.result;
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the recorded JSON result has the workflow step's result type.
+			return (result === undefined ? undefined : cloneAsJson(result)) as T;
 		},
 		async sleep(delayMs) {
-			if (tree) {
-				const command = tree[treeCursor];
-				if (!command)
-					throw new Error(`missing run.SleepScheduled at index ${treeCursor}`);
-				if (command.kind !== "sleep" || command.delayMs !== delayMs) {
-					throw new Error("sleep schedule diverged");
-				}
-				if ((version === 2 || version === 3) && !command.completed) {
-					throw new Error("workflow sleep lacks completion evidence");
-				}
-				treeCursor += 1;
-				return;
-			}
-			const scheduled = scheduledSleeps[sleepCounter];
-			if (!scheduled) {
-				throw new Error(`missing run.SleepScheduled at index ${sleepCounter}`);
-			}
-			if (
-				!isJsonObject(scheduled.data) ||
-				scheduled.data.delayMs !== delayMs ||
-				(scheduled.data.index !== undefined &&
-					scheduled.data.index !== sleepCounter)
-			) {
+			const command = tree[treeCursor];
+			if (!command)
+				throw new Error(`missing run.SleepScheduled at index ${treeCursor}`);
+			if (command.kind !== "sleep" || command.delayMs !== delayMs) {
 				throw new Error("sleep schedule diverged");
 			}
-			timerResults.set(`sleep:${sleepCounter}`, { delayMs });
-			sleepCounter += 1;
+			if (!command.completed) {
+				throw new Error("workflow sleep lacks completion evidence");
+			}
+			treeCursor += 1;
 		},
 		async emit(type, data) {
-			if (version !== 3) return 0;
-			const command = tree?.[treeCursor];
+			const command = tree[treeCursor];
 			if (
 				command?.kind !== "emit" ||
 				command.type !== type ||
@@ -181,64 +156,38 @@ export async function replayRun<S, A>(
 				throw new Error("missing run.HookResumed");
 			}
 			// SAFETY: assertion to `resumed.data as { payload: T }` is required at this boundary.
-			const payload = (resumed.data as { payload: T }).payload as T;
-			hookResults.set("hook", cloneAsJson(payload));
-			return payload;
+			return (resumed.data as { payload: T }).payload as T;
 		},
 	};
 
-	state = await workflow.execute(ctx, state, args);
-	if (tree) {
-		const remaining = tree[treeCursor];
-		if (remaining) {
-			const type =
-				remaining.kind === "step"
-					? "run.StepCompleted"
-					: remaining.kind === "sleep"
-						? "run.SleepScheduled"
-						: "application event";
-			throw new Error(`unconsumed ${type} at index ${treeCursor}`);
-		}
-	} else {
-		if (stepCounter !== completedSteps.length) {
-			throw new Error(`unconsumed run.StepCompleted at index ${stepCounter}`);
-		}
-		if (sleepCounter !== scheduledSleeps.length) {
-			throw new Error(`unconsumed run.SleepScheduled at index ${sleepCounter}`);
-		}
+	state = await Function.prototype.call.call(
+		execute,
+		workflow,
+		ctx,
+		state,
+		input,
+	);
+	const remaining = tree[treeCursor];
+	if (remaining) {
+		const type =
+			remaining.kind === "step"
+				? "run.StepCompleted"
+				: remaining.kind === "sleep"
+					? "run.SleepScheduled"
+					: "application event";
+		throw new Error(`unconsumed ${type} at index ${treeCursor}`);
 	}
 
-	const report: ReplayReport = {
+	const report: ReplayReport = Object.freeze({
 		runId,
-		seqVector: Object.entries(seqVector(events))
-			.map(([streamIdEntry, seq]) => ({ streamId: streamIdEntry, seq }))
-			.sort((left, right) => left.streamId.localeCompare(right.streamId)),
+		seqVector: toSeqVectorEntries(recordedVector),
 		readSetHash: hashReadSet(events),
 		stateDigest: digest(cloneAsJson(state)),
 		mode: "replay",
 		seed,
-	};
+	});
 
 	return { state, report };
-}
-
-function readSeed(events: EventEnvelope[]): string | undefined {
-	const started = events.find((event) => event.type === "run.Started");
-	if (!started?.data || !isJsonObject(started.data)) {
-		return undefined;
-	}
-	// SAFETY: assertion to `started.data as { seed?: JsonValue }` is required at this boundary.
-	const seed = (started.data as { seed?: JsonValue }).seed;
-	return isJsonString(seed) ? seed : undefined;
-}
-
-function matchesStep(data: JsonValue, name: string, index: number): boolean {
-	if (!data || !isJsonObject(data)) {
-		return false;
-	}
-	// SAFETY: assertion to `data as { name?: string; index?: number }` is required at this boundary.
-	const record = data as { name?: string; index?: number };
-	return record.name === name && record.index === index;
 }
 
 export function canonicalStateBytes<S>(state: S): string {

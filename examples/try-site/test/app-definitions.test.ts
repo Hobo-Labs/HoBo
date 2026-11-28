@@ -90,7 +90,7 @@ describe("try-site app definitions", () => {
 		expect(helloMeta.entry).toBe("app.ts");
 		expect(hello.resources.web?.kind).toBe("web");
 		expect(hello.requirements.require).toEqual(["http"]);
-		expect(hello.requirements.runtimes).toEqual(["wasm"]);
+		expect(hello.requirements.runtimes).toEqual([]);
 		expect(runtime.routes.map(({ action }) => action)).toEqual(["health", "greet"]);
 	});
 
@@ -107,7 +107,7 @@ describe("try-site app definitions", () => {
 		expect(todos.resources.web?.kind).toBe("web");
 		expect(todos.resources.todos?.kind).toBe("kv");
 		expect(todos.requirements.require).toEqual(expect.arrayContaining(["http", "kv"]));
-		expect(todos.requirements.runtimes).toContain("wasm");
+		expect(todos.requirements.runtimes).toEqual([]);
 		const makeWeb = todos.entrypoint("web");
 		expect(Object.prototype.toString.call(makeWeb)).toBe("[object Function]");
 		if (makeWeb === undefined) {

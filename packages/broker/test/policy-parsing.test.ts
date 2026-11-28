@@ -418,6 +418,7 @@ describe("broker requests", () => {
 		requestId: "r1",
 		scope: { bindleId: "app" },
 		requirements: [{ resourceId: "db", port: "hobo:sql" }],
+		spendEstimateUsd: 0,
 		...over,
 	});
 
@@ -467,7 +468,7 @@ describe("broker requests", () => {
 		).toBe("unsupported-schema");
 	});
 
-	it("defaults the scope to bindle-only and the estimate to zero", () => {
+	it("retains a bindle-only scope and an explicit zero estimate", () => {
 		const parsed = parseBrokerRequest(request({ scope: { bindleId: "app" } }));
 		expect(parsed.scope.campId).toBeUndefined();
 		expect(parsed.spendEstimateUsd).toBe(0);

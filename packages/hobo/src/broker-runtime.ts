@@ -24,6 +24,7 @@ import {
 	type BrokerPolicySet,
 	type BrokerResolution,
 	buildDeploymentRequestFromParts,
+	contentHashOf,
 	createBroker,
 	type HoboBroker,
 	LOCAL_HOST_PROVIDER_ID,
@@ -70,6 +71,16 @@ export const WASM_SANDBOX_PROVIDER_ID = RUNTIME_WASM_SANDBOX_ID;
 export const LOCAL_PROCESS_PROVIDER_ID = LOCAL_HOST_PROVIDER_ID;
 export { OCI_PROVIDER_ID };
 
+const EMBEDDED_LOCAL_FEE_POLICY_HASH = contentHashOf({
+	schema: "hobo.embedded-local-service-fee/v1",
+	ownerTenantId: "local",
+	providerId: LOCAL_PROCESS_PROVIDER_ID,
+	region: LOCAL_HOST_REGION,
+	unit: "hour",
+	marginalPrice: "0.00",
+	liabilityBoundMicros: 0,
+});
+
 export interface EmbeddedBrokerState {
 	readonly schemaVersion: typeof EMBEDDED_BROKER_SCHEMA;
 	readonly brokerId: string;
@@ -92,6 +103,7 @@ export interface PlacementResult {
 	readonly yardPlacement?: YardPlacementReceipt;
 	readonly message: string;
 	readonly remediation?: readonly string[];
+	readonly workloadDigest?: `sha256:${string}`;
 }
 
 function brokerStatePath(hoboHome: string): string {
@@ -165,19 +177,19 @@ export function createYardBrokerCatalog(options: {
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:http`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "hobo:http-service",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 		definitionEntry({
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:web`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "hobo:web-app",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 		definitionEntry({
 			id: `${LOCAL_PROCESS_PROVIDER_ID}:*`,
 			providerId: LOCAL_PROCESS_PROVIDER_ID,
 			port: "*",
-			marginalPrice: "0.02",
+			marginalPrice: "0.00",
 		}),
 	];
 	if (options.includeWasmSandbox) {
@@ -470,14 +482,21 @@ export async function resolveBindlePlacement(options: {
 	readonly campId?: string;
 	readonly yardId?: string;
 	readonly providerId?: string;
+	readonly workloadDigest?: `sha256:${string}`;
 	readonly selectionMode?: "exact" | "compatible" | "compatible-or-generate";
 	readonly emitProgress?: (message: string) => void;
 	/** Where a runtime host comes from; defaults to the composition's registry. */
 	readonly runtimeHost?: (kind: ComponentHostKind) => HoboRuntimeHost;
 }): Promise<PlacementResult> {
+	const requestedCampId = options.campId;
 	const hoboHome = options.hoboHome ?? defaultHoboHome();
 	const emit = options.emitProgress ?? (() => {});
 	const yardConfig = options.yard ?? loadBareMetalYardConfig(hoboHome) ?? null;
+	if (
+		options.workloadDigest !== undefined &&
+		!/^sha256:[a-f0-9]{64}$/u.test(options.workloadDigest)
+	)
+		throw new Error("Invalid project input digest");
 
 	// Fail fast: Bindle must not select providers.
 	try {
@@ -487,7 +506,7 @@ export async function resolveBindlePlacement(options: {
 		return {
 			outcome: "rejected",
 			brokerId: "uninitialized",
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName: yardConfig?.name ?? "local",
 			componentHost: yardConfig?.componentHost ?? DEFAULT_COMPONENT_HOST,
 			providerId: "none",
@@ -523,7 +542,38 @@ export async function resolveBindlePlacement(options: {
 	}
 
 	// Fail fast on missing runtimes before equipping toolchains / downloading wasmtime.
-	const requiredRuntimes = collectRequiredRuntimes(options.definition);
+	const declaredRuntimeRequirements = () =>
+		[...new Set(options.definition.requirements?.runtimes ?? [])].sort();
+	const runtimeKinds = (): readonly RequiredRuntimeKind[] =>
+		[
+			...new Set([
+				...collectRequiredRuntimes(options.definition),
+				...declaredRuntimeRequirements().filter(
+					(runtime): runtime is RequiredRuntimeKind =>
+						runtime === "oci" || runtime === "wasm",
+				),
+			]),
+		].sort();
+	const declaredRuntimes = declaredRuntimeRequirements();
+	const requiredRuntimes = runtimeKinds();
+	const runtimeRequirementsCurrent = () => {
+		try {
+			const current = runtimeKinds();
+			const currentDeclared = declaredRuntimeRequirements();
+			return (
+				current.length === requiredRuntimes.length &&
+				current.every(
+					(runtime, index) => runtime === requiredRuntimes[index],
+				) &&
+				currentDeclared.length === declaredRuntimes.length &&
+				currentDeclared.every(
+					(runtime, index) => runtime === declaredRuntimes[index],
+				)
+			);
+		} catch {
+			return false;
+		}
+	};
 	const missingRuntimes = requiredRuntimes.filter(
 		(runtime) => !isRuntimeInstalled(runtime, hoboHome),
 	);
@@ -532,7 +582,7 @@ export async function resolveBindlePlacement(options: {
 		return {
 			outcome: "rejected",
 			brokerId: "uninitialized",
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName: yardConfig?.name ?? "local",
 			componentHost: yardConfig?.componentHost ?? DEFAULT_COMPONENT_HOST,
 			providerId: "none",
@@ -599,16 +649,18 @@ export async function resolveBindlePlacement(options: {
 		labels: {},
 	};
 
-	const deploymentRequest = buildDeploymentRequestFromParts({
+	const baseRequest = buildDeploymentRequestFromParts({
 		bindleName: options.definition.name,
-		manifestHash: `sha256:${createHash("sha256")
-			.update(
-				JSON.stringify({
-					name: options.definition.name,
-					resources: Object.keys(options.definition.resources).sort(),
-				}),
-			)
-			.digest("hex")}`,
+		manifestHash:
+			options.workloadDigest ??
+			`sha256:${createHash("sha256")
+				.update(
+					JSON.stringify({
+						name: options.definition.name,
+						resources: Object.keys(options.definition.resources).sort(),
+					}),
+				)
+				.digest("hex")}`,
 		requirements: {
 			require: [...requirements.require],
 			prefer: [...requirements.prefer],
@@ -623,6 +675,22 @@ export async function resolveBindlePlacement(options: {
 		ownerTenantId: "local",
 		objective: "min-cost",
 	});
+	const deploymentRequest =
+		requestedCampId === undefined
+			? baseRequest
+			: {
+					...baseRequest,
+					camp: {
+						selectionMode: "exact" as const,
+						campId: requestedCampId,
+						layout: {
+							require: [],
+							prefer: [],
+							labels: {},
+							runtimeRequirements: [],
+						},
+					},
+				};
 
 	emit(
 		`hobo broker-runtime: yard-first placement for bindle:${options.definition.name} → ${yardId}`,
@@ -633,16 +701,62 @@ export async function resolveBindlePlacement(options: {
 		catalog,
 		ownerTenantId: "local",
 		seedLocalYard: true,
+		authorizeLocalHosting(input) {
+			if (
+				input.ownerTenantId !== "local" ||
+				input.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
+				!runtimeRequirementsCurrent() ||
+				requiredRuntimes.length !== 0 ||
+				declaredRuntimes.some((runtime) => runtime !== "local") ||
+				input.catalogHash !== catalog.catalogHash ||
+				input.request.spendEstimateUsd !== 0 ||
+				input.placements.some(
+					(placement) =>
+						placement.providerId !== LOCAL_PROCESS_PROVIDER_ID ||
+						!placement.definitionId.startsWith(
+							`${LOCAL_PROCESS_PROVIDER_ID}:`,
+						) ||
+						placement.region !== LOCAL_HOST_REGION ||
+						placement.unit !== "hour" ||
+						placement.marginalPrice !== "0.00",
+				)
+			)
+				return undefined;
+			return {
+				schemaVersion: "hobo.local-hosting-proof/v1",
+				bindingDigest: input.bindingDigest,
+				effect: "allow",
+				obligationsSatisfied: true,
+				policyHash: EMBEDDED_LOCAL_FEE_POLICY_HASH,
+				evidenceRef: "embedded-local-host:service-fee-only",
+				liabilityBoundMicros: 0,
+			};
+		},
 	});
 
-	if (yardFirst.outcome === "rejected" || !yardFirst.receipt) {
+	const runtimeRequirementsChanged = !runtimeRequirementsCurrent();
+	if (
+		yardFirst.outcome === "rejected" ||
+		!yardFirst.receipt ||
+		runtimeRequirementsChanged
+	) {
+		const rejectionReasons = runtimeRequirementsChanged
+			? [
+					{
+						plane: "placement",
+						code: "runtime-requirements-changed",
+						message:
+							"runtime requirements changed while placement was being resolved",
+					},
+				]
+			: (yardFirst.reasons ?? []);
 		const reasons =
-			yardFirst.reasons?.map((r) => r.message).join("; ") ??
+			rejectionReasons.map((r) => r.message).join("; ") ||
 			"yard-first placement rejected";
 		return {
 			outcome: "rejected",
 			brokerId: state.brokerId,
-			campId: options.campId ?? "unplaced",
+			campId: requestedCampId ?? "unplaced",
 			yardName,
 			componentHost: state.preferredComponentHost,
 			providerId: "none",
@@ -655,7 +769,7 @@ export async function resolveBindlePlacement(options: {
 					policyHash: broker.policyHash,
 					stationId: pins.stationId,
 					railHash: pins.railHash,
-					reasons: (yardFirst.reasons ?? []).map((r) => ({
+					reasons: rejectionReasons.map((r) => ({
 						// SAFETY: assertion required at this I/O or test boundary.
 						plane: r.plane as "placement",
 						code: r.code,
@@ -676,7 +790,7 @@ export async function resolveBindlePlacement(options: {
 	}
 
 	const receipt = yardFirst.receipt;
-	const campId = options.campId ?? receipt.selectedCampId;
+	const campId = receipt.selectedCampId;
 	const providerId = receipt.selectedProviderId;
 	let componentHost = componentHostForProvider(
 		providerId,
@@ -714,6 +828,9 @@ export async function resolveBindlePlacement(options: {
 		explicitProviders: [],
 		requiredRuntimes,
 		yardPlacement: receipt,
+		...(options.workloadDigest !== undefined
+			? { workloadDigest: deploymentRequest.manifestHash }
+			: undefined),
 		message: `broker placed ${options.definition.name} on yard ${receipt.selectedYardId} provider ${providerId} (componentHost=${componentHost}, camp=${campId})`,
 	};
 }

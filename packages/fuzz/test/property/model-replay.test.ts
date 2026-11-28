@@ -9,6 +9,7 @@
  * a real event-sourced aggregate unrecoverable — and it is silent, because
  * both halves keep working on their own.
  */
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { dockerAvailable, schemathesisAvailable } from "../../src/env.js";
 import { ALL_VERBS, ControlModel, type Verb } from "../../src/model.js";
@@ -123,6 +124,209 @@ describe("replay reproduces the live fingerprint", () => {
 	});
 });
 
+describe("event history ownership", () => {
+	it("captures event payloads and returns detached history snapshots", () => {
+		fc.assert(
+			fc.property(fc.string({ maxLength: 40 }), (detail) => {
+				const model = new ControlModel();
+				const payload = { detail };
+				model.note(TENANT, "audit.observed", payload);
+				payload.detail = "changed by caller";
+				const view = model.events;
+				const event = view[0];
+				if (!event) throw new Error("missing event");
+				expect(event.payload.detail).toBe(detail);
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test mutates a returned snapshot to verify isolation.
+				(event.payload as Record<string, string>).detail = "changed in view";
+				view.splice(0, view.length);
+				expect(model.events).toHaveLength(1);
+				expect(model.events[0]?.payload.detail).toBe(detail);
+				expect(model.replay()).toBe(model.fingerprint());
+			}),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("orders a public custom append with later snapshots and rollback", () => {
+		const model = new ControlModel();
+		model.append(TENANT, "audit.observed", { detail: "before snapshot" });
+		expect(model.clock).toBe(1);
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "later", "sha256:a");
+		model.rollback(TENANT, checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("rejects non-string payloads before changing state or history", () => {
+		const model = new ControlModel();
+		const before = model.serialize();
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these cases deliberately cross the typed event boundary.
+		for (const invalid of [
+			null,
+			[],
+			{ detail: { nested: true } },
+			{ detail: 3 },
+		] as never[]) {
+			expect(() => model.note(TENANT, "audit.observed", invalid)).toThrow(
+				"fuzz.invalid_event_payload",
+			);
+			expect(() => model.append(TENANT, "audit.observed", invalid)).toThrow(
+				"fuzz.invalid_event_payload",
+			);
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual([]);
+		}
+	});
+
+	it("rejects replay-owned event kinds as free-form notes or appends", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "existing", "sha256:a");
+		const before = model.serialize();
+		const history = model.events;
+		for (const kind of [
+			"clock.advanced",
+			"clock.set",
+			"snapshot.taken",
+			"rollback",
+			"model.restored",
+			"bindle.created",
+			"capability.added",
+			"capability.attenuated",
+			"resource.applied",
+			"resource.interrupted",
+			"bindle.destroyed",
+		]) {
+			expect(() => model.note(TENANT, kind, {})).toThrow(
+				"fuzz.reserved_event_kind",
+			);
+			expect(() => model.append(TENANT, kind, {})).toThrow(
+				"fuzz.reserved_event_kind",
+			);
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(history);
+		}
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+});
+
+describe("public clock replay", () => {
+	it("replays a forward clock assignment before a checkpoint", () => {
+		const model = new ControlModel();
+		model.clock = 5;
+		const history = model.events;
+		model.clock = 5;
+		expect(model.events).toEqual(history);
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "b1", "sha256:a");
+		model.rollback(TENANT, checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("replays direct ticks and forward clock assignments across checkpoints", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.integer({ min: 1, max: 4 }), {
+					minLength: 1,
+					maxLength: 8,
+				}),
+				(steps) => {
+					const model = new ControlModel();
+					for (const [index, step] of steps.entries()) {
+						if (index % 2 === 0) model.tick();
+						else model.clock += step;
+						const checkpoint = model.snapshot();
+						model.createBindle(TENANT, `b${index}`, `hash${index}`);
+						model.rollback(TENANT, checkpoint);
+						expect(model.replay()).toBe(model.fingerprint());
+					}
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("rejects invalid or backward assignments without changing history", () => {
+		const model = new ControlModel();
+		model.clock = 5;
+		const before = model.serialize();
+		const history = model.events;
+		for (const invalid of [
+			-1,
+			4,
+			0.5,
+			Number.NaN,
+			Infinity,
+			Number.MAX_SAFE_INTEGER + 1,
+		]) {
+			expect(() => {
+				model.clock = invalid;
+			}).toThrow("fuzz.invalid_model_clock");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(history);
+		}
+	});
+});
+
+describe("oracle state view ownership", () => {
+	it("interrupts the stored resource rather than a detached lookup result", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "b1", "sha256:a");
+		model.apply(TENANT, "b1", "k1");
+		model.interruptApply(TENANT, "k1");
+		expect(model.findByKey(TENANT, "k1")?.status).toBe("failed");
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("keeps generated state and checkpoints isolated from returned views", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.constantFrom(...ALL_VERBS), { maxLength: 8 }),
+				fc.boolean(),
+				(verbs, fail) => {
+					const model = new ControlModel();
+					model.createBindle(TENANT, "b1", "sha256:a");
+					model.addCapability(TENANT, "c1", verbs);
+					const returned = model.apply(TENANT, "b1", "k1", { fail });
+					const retried = model.apply(TENANT, "b1", "k1", { fail });
+					const checkpoint = model.snapshot();
+					const savedCheckpoint = model.snapshots.get(checkpoint);
+					const before = model.serialize();
+					const history = model.events;
+					const bindles = model.bindles;
+					const capabilities = model.capabilities;
+					const resources = model.resources;
+					const snapshots = model.snapshots;
+					const slot = bindles.get("b1");
+					const capability = capabilities.get("c1");
+					const resource = resources.get(returned.id);
+					const found = model.findByKey(TENANT, "k1");
+					if (!slot || !capability || !resource || !found)
+						throw new Error("missing state");
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these edits deliberately mutate returned snapshots.
+					(slot as { manifestHash: string }).manifestHash = "changed";
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this exercises a runtime caller mutating a readonly list.
+					(capability.verbs as string[]).push("query");
+					resource.applyCount += 10;
+					found.status = fail ? "ready" : "failed";
+					returned.applyCount += 100;
+					retried.applyCount += 1000;
+					snapshots.set(checkpoint, "corrupt");
+					bindles.clear();
+					capabilities.clear();
+					resources.clear();
+					expect(model.serialize()).toBe(before);
+					expect(model.events).toEqual(history);
+					expect(model.snapshots.get(checkpoint)).toBe(savedCheckpoint);
+					expect("restoreTenant" in model).toBe(false);
+					expect(model.rollback(TENANT, checkpoint).ok).toBe(true);
+					expect(model.replay()).toBe(model.fingerprint());
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+});
+
 describe("command dispatch", () => {
 	function drive(model: ControlModel, commands: unknown[]) {
 		for (const command of commands) {
@@ -199,6 +403,164 @@ describe("command dispatch", () => {
 });
 
 describe("serialize / restore", () => {
+	it("keeps rollback metadata read-only and preserves restore replay", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		const model = new ControlModel();
+		expect(model.lastRollbackTarget).toBeNull();
+		expect(() => Object.assign(model, { lastRollbackTarget: 99 })).toThrow(
+			TypeError,
+		);
+		model.restore(source.serialize());
+		const checkpoint = model.snapshot();
+		model.createBindle(TENANT, "later", "sha256:b");
+		model.rollback(TENANT, checkpoint);
+		expect(model.lastRollbackTarget).toBe(checkpoint);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("does not expose its replay baseline as writable instance data", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		const model = new ControlModel();
+		model.restore(source.serialize());
+		expect("replayBaseline" in model).toBe(false);
+		Object.assign(model, { replayBaseline: "invalid" });
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("starts replay from a restored baseline and retains it through later operations", () => {
+		const source = new ControlModel();
+		source.createBindle(TENANT, "b1", "sha256:a");
+		source.apply(TENANT, "b1", "k1");
+		const restored = new ControlModel();
+		restored.restore(source.serialize());
+		expect(restored.clock).toBe(source.clock);
+		expect(restored.replay()).toBe(restored.fingerprint());
+		const checkpoint = restored.snapshot();
+		restored.apply(TENANT, "b1", "k1", { fail: true });
+		expect(restored.replay()).toBe(restored.fingerprint());
+		restored.rollback(TENANT, checkpoint);
+		expect(restored.replay()).toBe(restored.fingerprint());
+	});
+
+	it("restores into an existing history at a new clock and replays the replacement", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }),
+				(failures) => {
+					const source = new ControlModel();
+					source.createBindle(TENANT, "new", "sha256:new");
+					source.apply(TENANT, "new", "new-key");
+					for (const fail of failures)
+						source.apply(TENANT, "new", "new-key", { fail });
+					const model = new ControlModel();
+					model.createBindle(TENANT, "old", "sha256:old");
+					const oldCheckpoint = model.snapshot();
+					const oldClock = model.clock;
+					model.restore(source.serialize());
+					expect(model.clock).toBeGreaterThan(Math.max(oldClock, source.clock));
+					expect(model.fingerprint()).toBe(source.fingerprint());
+					expect(model.replay()).toBe(model.fingerprint());
+					const newCheckpoint = model.snapshot();
+					expect(newCheckpoint).toBeGreaterThan(oldCheckpoint);
+					model.rollback(TENANT, oldCheckpoint);
+					expect(model.bindles.has("old")).toBe(true);
+					expect(model.replay()).toBe(model.fingerprint());
+					model.rollback(TENANT, newCheckpoint);
+					expect(model.fingerprint()).toBe(source.fingerprint());
+					expect(model.replay()).toBe(model.fingerprint());
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
+	it("does not partially replace a model for a malformed or exhausted restore", () => {
+		const model = new ControlModel();
+		model.createBindle(TENANT, "old", "sha256:old");
+		model.snapshot();
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		const snapshots = [...model.snapshots];
+		const empty = {
+			clock: 0,
+			fingerprint: "##",
+			bindles: [],
+			capabilities: [],
+			resources: [],
+		};
+		const malformed = [
+			"not-json",
+			JSON.stringify({ ...empty, clock: -1 }),
+			JSON.stringify({ ...empty, capabilities: null }),
+			JSON.stringify({ ...empty, bindles: [["b1", { id: "b1" }]] }),
+			JSON.stringify({
+				...empty,
+				fingerprint: "#c1:unknown#",
+				capabilities: [
+					["c1", { id: "c1", tenantId: TENANT, verbs: ["unknown"] }],
+				],
+			}),
+			JSON.stringify({ ...empty, fingerprint: "incorrect" }),
+			JSON.stringify({
+				...empty,
+				fingerprint: "different:h##",
+				bindles: [
+					[
+						"x",
+						{
+							id: "different",
+							tenantId: TENANT,
+							manifestHash: "h",
+							createdAt: 0,
+						},
+					],
+				],
+			}),
+			JSON.stringify({
+				...empty,
+				fingerprint: "x:h##",
+				bindles: Array.from({ length: 2 }, () => [
+					"x",
+					{ id: "x", tenantId: TENANT, manifestHash: "h", createdAt: 0 },
+				]),
+			}),
+			JSON.stringify({
+				...empty,
+				fingerprint: "##k:r:unknown",
+				resources: [
+					[
+						"r",
+						{
+							id: "r",
+							tenantId: TENANT,
+							bindleId: "b",
+							idempotencyKey: "k",
+							createdAt: 0,
+							status: "unknown",
+							applyCount: 1,
+						},
+					],
+				],
+			}),
+		];
+		for (const raw of malformed) {
+			expect(() => model.restore(raw)).toThrow("fuzz.invalid_snapshot");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(events);
+			expect([...model.snapshots]).toEqual(snapshots);
+		}
+		const exhausted = new ControlModel();
+		exhausted.clock = Number.MAX_SAFE_INTEGER;
+		expect(() => model.restore(exhausted.serialize())).toThrow(
+			"fuzz.model_clock_exhausted",
+		);
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual(events);
+		expect([...model.snapshots]).toEqual(snapshots);
+	});
+
 	it("round-trips to the same fingerprint", () => {
 		const model = new ControlModel();
 		model.createBindle(TENANT, "b1", "sha256:a");
@@ -265,6 +627,50 @@ describe("capability vocabulary", () => {
 		expect(model.replay()).toBe(model.fingerprint());
 	});
 
+	it("rejects invalid verbs before changing state or history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read", "write"]);
+		const before = model.serialize();
+		const history = structuredClone(model.events);
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these cases deliberately cross the typed input boundary.
+		for (const invalid of [["read", "admin"], null, "read"] as never[]) {
+			expect(() => model.addCapability(TENANT, "c1", invalid)).toThrow(
+				"invalid capability verb",
+			);
+			expect(() => model.attenuate(TENANT, "c1", invalid)).toThrow(
+				"invalid capability verb",
+			);
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(history);
+		}
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("captures supplied verb arrays and preserves replay across generated attenuations", () => {
+		fc.assert(
+			fc.property(
+				fc.array(fc.constantFrom(...ALL_VERBS), { maxLength: 8 }),
+				fc.array(fc.constantFrom(...ALL_VERBS), { maxLength: 8 }),
+				(verbs, keep) => {
+					const model = new ControlModel();
+					const original = [...verbs];
+					const supplied = [...verbs];
+					model.addCapability(TENANT, "c1", supplied);
+					supplied.splice(0, supplied.length, "query");
+					expect(model.capabilities.get("c1")?.verbs).toEqual(original);
+					expect(model.replay()).toBe(model.fingerprint());
+					const expected = keep.filter((verb) => original.includes(verb));
+					const suppliedKeep = [...keep];
+					model.attenuate(TENANT, "c1", suppliedKeep);
+					suppliedKeep.splice(0, suppliedKeep.length, "get");
+					expect(model.capabilities.get("c1")?.verbs).toEqual(expected);
+					expect(model.replay()).toBe(model.fingerprint());
+				},
+			),
+			{ numRuns: 100 },
+		);
+	});
+
 	it("does not retain the caller's mutable verb array", () => {
 		const model = new ControlModel();
 		const verbs: Verb[] = ["read"];
@@ -325,24 +731,30 @@ describe("capability vocabulary", () => {
 			const model = new ControlModel();
 			model.addCapability(TENANT, "c1", ["read"]);
 			if (kind === "capability.attenuated") model.attenuate(TENANT, "c1", []);
-			const index = model.events.findIndex((event) => event.kind === kind);
-			const event = model.events[index];
+			const recorded = model.events;
+			const history = structuredClone(recorded);
+			const index = recorded.findIndex((event) => event.kind === kind);
+			const event = recorded[index];
 			if (!event) throw new Error("missing capability event");
-			model.events[index] = { ...event, payload: { capabilityId: "c1" } };
-			expect(() => model.replay()).toThrow("missing capability verbs");
+			recorded[index] = { ...event, payload: { capabilityId: "c1" } };
+			expect(() => model.replay(recorded)).toThrow("missing capability verbs");
+			expect(model.events).toEqual(history);
 		}
 	});
 
 	it("rejects invalid verbs in recorded history", () => {
 		const model = new ControlModel();
 		model.addCapability(TENANT, "c1", ["read"]);
-		const event = model.events[0];
+		const recorded = model.events;
+		const event = recorded[0];
 		if (!event) throw new Error("missing capability event");
-		model.events[0] = {
+		const history = structuredClone(recorded);
+		recorded[0] = {
 			...event,
 			payload: { ...event.payload, verbs: "read,admin" },
 		};
-		expect(() => model.replay()).toThrow("invalid capability verb");
+		expect(() => model.replay(recorded)).toThrow("invalid capability verb");
+		expect(model.events).toEqual(history);
 	});
 
 	it("round-trips every valid verb", () => {

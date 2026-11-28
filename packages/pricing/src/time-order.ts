@@ -5,15 +5,11 @@ import type {
 	Evidence,
 	QuoteScenario,
 } from "./_generated/pricing_pb.js";
-import { legacyPricingOrder } from "./ordering.js";
 
 export type PricingTimeOrder = (
 	left: string | undefined,
 	right: string | undefined,
 ) => number;
-
-export const legacyPricingTimeOrder: PricingTimeOrder = (left, right) =>
-	legacyPricingOrder(left ?? "9999", right ?? "9999");
 
 export function utcMillis(value: string): number {
 	const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,3})?Z$/u.exec(
@@ -38,7 +34,7 @@ export const utcPricingTimeOrder: PricingTimeOrder = (left, right) => {
 	return a < b ? -1 : a > b ? 1 : 0;
 };
 
-export function validateV2ScenarioTimes(scenario: QuoteScenario): void {
+export function validateScenarioTimes(scenario: QuoteScenario): void {
 	const time = (value: string | undefined) => {
 		if (value !== undefined && value !== "") utcMillis(value);
 	};

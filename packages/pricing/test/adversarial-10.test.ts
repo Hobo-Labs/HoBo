@@ -204,7 +204,7 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		).toMatchObject({ decimal: "3", unit: "user" });
 	});
 
-	it("10.6 rates migration source removal and target addition jointly", () => {
+	it("10.6 refuses a migration whose source-side costs are not modeled", () => {
 		const scenario = quoteScenarioFixture({
 			meters: [
 				{ dimension: "minute", unit: "minute", aggregation: "sum" },
@@ -248,31 +248,9 @@ describe("section 13 adversarial commercial-term fixtures", () => {
 		removal.direction = "remove";
 		addSecondaryAgreement(scenario, "0.01");
 
-		const quote = successfulQuote(rehashScenario(scenario));
-
-		expect(quote.baseline?.billed).toMatchObject({ decimal: "2" });
-		expect(quote.migrationAndTermination).toMatchObject({ decimal: "5" });
-		expect(quote.lines.map((line) => line.chargeId)).toEqual(
-			expect.arrayContaining(["egress", "dual-run"]),
-		);
-		expect(
-			quote.lines.find((line) => line.chargeId === "egress")?.billed,
-		).toMatchObject({ decimal: "10" });
-		expect(
-			quote.lines.find((line) => line.chargeId === "dual-run")?.billed,
-		).toMatchObject({ decimal: "2.5" });
-		expect(quote.lines).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					agreementRef: "agreement-a",
-					billed: expect.objectContaining({ decimal: "0" }),
-				}),
-				expect.objectContaining({
-					agreementRef: "agreement-b",
-					billed: expect.objectContaining({ decimal: "1" }),
-				}),
-			]),
-		);
+		expect(quoteScenario(rehashScenario(scenario))).toMatchObject({
+			code: "PRICING_MODEL_UNSUPPORTED",
+		});
 	});
 
 	it("10.7 enforces a free plan hard limit without billing overage", () => {

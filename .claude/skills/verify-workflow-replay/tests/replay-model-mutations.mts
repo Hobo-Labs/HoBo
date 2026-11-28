@@ -10,7 +10,7 @@ const scratch = mkdtempSync(path.join(os.tmpdir(), 'hobo-workflow-replay-model-'
 const cases = [
   ['WorkflowReplay', String.raw`IF journaled`, String.raw`IF FALSE`, 'NoJournaledReexecution', 'CONSTANT MaxCalls = 2'],
   ['WorkflowRunIds', String.raw`/\ proposed[w] \notin occupied`, String.raw`/\ TRUE`, 'UniqueRunIds', 'CONSTANTS Workers = {"a", "b"}\n          RunIds = {"one", "two"}'],
-  ['WorkflowRunIds', String.raw`/\ proposed[w] \notin occupied`, String.raw`/\ TRUE`, 'NoLegacyReuse', 'CONSTANTS Workers = {"a", "b"}\n          RunIds = {"one", "two"}'],
+  ['WorkflowRunIds', String.raw`/\ proposed[w] \notin occupied`, String.raw`/\ TRUE`, 'NoExistingReuse', 'CONSTANTS Workers = {"a", "b"}\n          RunIds = {"one", "two"}'],
   ['WorkflowRunIds', String.raw`occupied' = occupied \cup {proposed[w]}`, String.raw`occupied' = occupied`, 'ClaimedIdsAreOccupied', 'CONSTANTS Workers = {"a", "b"}\n          RunIds = {"one", "two"}'],
   ['WorkflowResume', String.raw`Allowed == exists /\ sameInput /\ (~nameRecorded \/ sameWorkflow)`, String.raw`Allowed == TRUE /\ sameInput /\ (~nameRecorded \/ sameWorkflow)`, 'NoEffectFromWrongRun', ''],
   ['WorkflowResume', String.raw`Allowed == exists /\ sameInput /\ (~nameRecorded \/ sameWorkflow)`, String.raw`Allowed == exists /\ TRUE /\ (~nameRecorded \/ sameWorkflow)`, 'NoEffectFromWrongRun', ''],

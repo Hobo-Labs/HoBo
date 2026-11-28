@@ -100,6 +100,9 @@ Start with the symptom index in [`docs/runbooks/cd/`](../../docs/runbooks/cd/ind
 Every refusal carries a `ReasonRecord` with `code` and `remediation`; the code
 names the owning module, whose README has the detailed procedure.
 
+Recurring change windows accept the weekday codes `MO` through `SU` in `BYDAY`;
+unknown or incomplete weekday codes are refused.
+
 - **A promotion is stuck.** `hobo deploy status` shows its state. `AWAITING_WINDOW`
   means a closed Change window (override with `hobo deploy window override`, a
   governed action); `lineage-unsatisfied` means upstream has not qualified or

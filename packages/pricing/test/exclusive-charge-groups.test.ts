@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	fixedCharge,
 	makeScenario,
@@ -38,7 +38,7 @@ function regional(withFallback: boolean, region: string) {
 
 describe("exclusive charge groups", () => {
 	it("refuses an unmatched group even when an independent charge would otherwise price the meter", () => {
-		expect(quoteScenarioV2(regional(false, "west"))).toMatchObject({
+		expect(quoteScenario(regional(false, "west"))).toMatchObject({
 			code: "MISSING_EXCLUSIVE_FALLBACK",
 		});
 	});
@@ -47,7 +47,7 @@ describe("exclusive charge groups", () => {
 		["west", "16"],
 		["east", "404"],
 	] as const)("selects the one applicable group charge for %s", (region, expected) => {
-		expect(quoteScenarioV2(regional(true, region))).toMatchObject({
+		expect(quoteScenario(regional(true, region))).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: expected, currency: "USD" } },
 		});
@@ -90,7 +90,7 @@ describe("exclusive charge groups", () => {
 		charges[0].base.exclusiveGroup = "plan";
 		charges[1].base.exclusiveGroup = "plan";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -101,7 +101,7 @@ describe("exclusive charge groups", () => {
 		if (!fallback) throw new Error("missing fallback fixture");
 		Reflect.deleteProperty(fallback, "exclusiveGroup");
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

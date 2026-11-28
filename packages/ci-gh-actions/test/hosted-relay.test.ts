@@ -765,6 +765,7 @@ it("runs a durable async reservation through provider dispatch, JIT and settleme
 	});
 	h.api.host.status = "completed";
 	h.api.jobStatus = "completed";
+	h.clock.now = h.api.host.updated_at;
 	await h.relay.reconcile(lease.id, 22);
 	expect(h.store.get(lease.id)).toMatchObject({
 		state: "completed",
@@ -809,6 +810,7 @@ it("never settles when a concurrent JIT claim starts during host verification", 
 	const lease = await reserve(h);
 	await h.relay.dispatchPending();
 	h.api.host.status = "completed";
+	h.clock.now = h.api.host.updated_at;
 	const request = h.api.request.bind(h.api);
 	h.api.request = async (installation, path, method, body) => {
 		const result = await request(installation, path, method, body);

@@ -200,6 +200,51 @@ async function listen(handler: FetchLikeHandler): Promise<{
 	return { server, endpoint: `http://127.0.0.1:${address.port}` };
 }
 
+type InProcessResources = Pick<
+	InProcessDeployment,
+	| "servers"
+	| "queues"
+	| "topics"
+	| "secrets"
+	| "data"
+	| "schedules"
+	| "kv"
+	| "buckets"
+	| "flags"
+	| "rollouts"
+	| "experiments"
+>;
+
+export class InProcessStartupCleanupError extends Error {
+	readonly cleanupCause: unknown;
+	readonly #order: readonly string[];
+	readonly #resources: InProcessResources;
+
+	/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: JavaScript permits throwing any value; both causes are retained as diagnostic evidence. */
+	constructor(
+		startupCause: unknown,
+		cleanupCause: unknown,
+		order: readonly string[],
+		resources: InProcessResources,
+	) {
+		super("in-process startup failed and listener cleanup is incomplete", {
+			cause: startupCause,
+		});
+		this.name = "InProcessStartupCleanupError";
+		this.cleanupCause = cleanupCause;
+		this.#order = order;
+		this.#resources = resources;
+		Object.freeze(this);
+	}
+	/* oxlint-enable anti-slop/no-unknown-parameters */
+
+	async retryCleanup(): Promise<void> {
+		const errors = await closeResources(this.#order, this.#resources);
+		if (errors.length > 0)
+			throw new AggregateError(errors, "in-process listener cleanup failed");
+	}
+}
+
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this is the parse boundary for untyped JavaScript factory results; it checks the port, clock, close and fidelity before exposure. */
 function validateFactories(value: unknown): void {
 	if (
@@ -569,14 +614,14 @@ export async function deployInProcess(
 			});
 		}
 	} catch (cause) {
-		const cleanupErrors = await closeResources(
-			order.slice().reverse(),
-			resources,
-		);
+		const cleanupOrder = order.slice().reverse();
+		const cleanupErrors = await closeResources(cleanupOrder, resources);
 		if (cleanupErrors.length > 0) {
-			throw new AggregateError(
-				[cause, ...cleanupErrors],
-				"deployment failed and cleanup also failed",
+			throw new InProcessStartupCleanupError(
+				cause,
+				new AggregateError(cleanupErrors, "in-process listener cleanup failed"),
+				cleanupOrder,
+				resources,
 			);
 		}
 		throw cause;
@@ -611,8 +656,14 @@ export async function destroyInProcess(
 		return order;
 	})();
 	teardownRuns.set(deployment, pending);
+	pending.catch(() => {
+		if (teardownRuns.get(deployment) === pending)
+			teardownRuns.delete(deployment);
+	});
 	return pending;
 }
+
+const closedEmulators = new WeakMap<InProcessResources, Set<string>>();
 
 const teardownRuns = new WeakMap<
 	InProcessDeployment,
@@ -621,22 +672,11 @@ const teardownRuns = new WeakMap<
 
 async function closeResources(
 	order: readonly string[],
-	resources: Pick<
-		InProcessDeployment,
-		| "servers"
-		| "queues"
-		| "topics"
-		| "secrets"
-		| "data"
-		| "schedules"
-		| "kv"
-		| "buckets"
-		| "flags"
-		| "rollouts"
-		| "experiments"
-	>,
+	resources: InProcessResources,
 ): Promise<unknown[]> {
 	const errors: unknown[] = [];
+	const closed = closedEmulators.get(resources) ?? new Set<string>();
+	closedEmulators.set(resources, closed);
 	const {
 		servers,
 		queues,
@@ -666,13 +706,24 @@ async function closeResources(
 		try {
 			if (server?.listening) {
 				await new Promise<void>((resolve, reject) => {
-					server.closeAllConnections?.();
-					server.close((error) => (error ? reject(error) : resolve()));
+					let closeConnectionsFailure: { cause: unknown } | undefined;
+					server.close((error) => {
+						if (error) reject(error);
+						else if (closeConnectionsFailure)
+							reject(closeConnectionsFailure.cause);
+						else resolve();
+					});
+					try {
+						server.closeAllConnections?.();
+					} catch (cause) {
+						closeConnectionsFailure = { cause };
+					}
 				});
 			}
 		} catch (error) {
 			errors.push(error);
 		}
+		if (closed.has(alias)) continue;
 		try {
 			// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: cleanup also handles an invalid JavaScript factory result.
 			if (typeof emulator?.close === "function") await emulator.close();
@@ -682,6 +733,7 @@ async function closeResources(
 				// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the invalid factory result has not passed port validation.
 				if (typeof binding?.close === "function") await binding.close();
 			}
+			closed.add(alias);
 		} catch (error) {
 			errors.push(error);
 		}

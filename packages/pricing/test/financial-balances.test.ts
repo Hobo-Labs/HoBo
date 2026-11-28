@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	allowanceState,
 	commitmentState,
@@ -76,13 +76,13 @@ describe("financial balances", () => {
 		if (!value) throw new Error(`missing ${field} fixture`);
 		value.decimal = "-1";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
 
 	it("accepts valid zero and positive balances", () => {
-		expect(quoteScenarioV2(scenarioWithBalances())).toMatchObject({
+		expect(quoteScenario(scenarioWithBalances())).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 		});
 	});
@@ -102,7 +102,7 @@ describe("financial balances", () => {
 		if (field === "invalid-currency") credit.remainingBasis.currency = "usd";
 		if (field === "empty-unit") used.unit = "";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

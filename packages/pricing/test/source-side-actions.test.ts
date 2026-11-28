@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { MoneySchema } from "../src/_generated/pricing_pb.js";
-import { quoteScenario, quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -25,9 +25,6 @@ describe("source-side pricing actions", () => {
 		if (!candidate) throw new Error("missing workload fixture");
 		candidate.direction = "remove";
 		expect(quoteScenario(scenario)).toMatchObject({
-			incremental: { billed: { decimal: "-4", currency: "USD" } },
-		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -43,9 +40,6 @@ describe("source-side pricing actions", () => {
 		scenario.action = action;
 		scenario.sourceProviderAgreementIds = ["agreement-a"];
 		expect(quoteScenario(scenario)).toMatchObject({
-			incremental: { billed: { decimal: "4", currency: "USD" } },
-		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -57,14 +51,11 @@ describe("source-side pricing actions", () => {
 		});
 		scenario.action = "rebalance";
 		expect(quoteScenario(scenario)).toMatchObject({
-			incremental: { billed: { decimal: "4", currency: "USD" } },
-		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
 
-	it("rates explicit non-canceling destroy costs while v1 rejects destroy", () => {
+	it("rates explicit non-canceling destroy costs", () => {
 		const scenario = Object.assign(
 			makeScenario({
 				charges: [perUnitCharge("teardown", "minute", "0.25")],
@@ -73,10 +64,7 @@ describe("source-side pricing actions", () => {
 			{ action: "destroy", destroyCancelsAgreement: false },
 		);
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "INVALID_PRICING_INPUT",
-		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
-			ratingAlgorithmVersion: "pricing-rating/v2",
+			ratingAlgorithmVersion: "pricing-rating/v1",
 			incremental: { billed: { decimal: "1", currency: "USD" } },
 		});
 	});
@@ -89,7 +77,7 @@ describe("source-side pricing actions", () => {
 			}),
 			{ action: "destroy", destroyCancelsAgreement: false },
 		);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			incremental: { billed: { decimal: "0", currency: "USD" } },
 		});
 	});
@@ -113,7 +101,7 @@ describe("source-side pricing actions", () => {
 			if (!candidate) throw new Error("missing workload fixture");
 			candidate.direction = "remove";
 		}
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code:
 				cancellation === undefined
 					? "INCOMPLETE_FINANCIAL_STATE"
@@ -130,12 +118,12 @@ describe("source-side pricing actions", () => {
 			{ action: "destroy", destroyCancelsAgreement: false },
 		);
 		scenario.sourceProviderAgreementIds = ["agreement-a"];
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 		scenario.sourceProviderAgreementIds = [];
 		scenario.action = "place";
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -163,9 +151,6 @@ describe("source-side pricing actions", () => {
 		rehashScenario(scenario);
 
 		expect(quoteScenario(scenario)).toMatchObject({
-			migrationAndTermination: { decimal: "5", currency: "USD" },
-		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});

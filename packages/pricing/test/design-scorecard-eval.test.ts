@@ -7,7 +7,7 @@ import { checkDesignScorecardEvidence } from "./support/design-scorecard-evidenc
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const rows = parseDesignScorecard(
 	readFileSync(
-		resolve(repoRoot, "docs/design/provider-pricing-scorecard.md"),
+		resolve(repoRoot, "docs/pricing/provider-pricing-scorecard.md"),
 		"utf8",
 	),
 );

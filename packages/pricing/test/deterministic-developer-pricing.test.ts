@@ -61,7 +61,7 @@ describe("deterministic developer pricing", () => {
 		expect(quoteTargetPricing(inventory, pricing)).toMatchObject({
 			ok: true,
 			quote: {
-				ratingAlgorithmVersion: "pricing-rating/v2",
+				ratingAlgorithmVersion: "pricing-rating/v1",
 				incremental: { effective: { decimal: "0", currency: "USD" } },
 				consumption: [{ sourceId: "Z-credit", kind: "credit" }],
 			},
@@ -83,7 +83,7 @@ describe("deterministic developer pricing", () => {
 		expect(quoteAvailablePricing("sandbox", availability)).toMatchObject({
 			ok: true,
 			quote: {
-				ratingAlgorithmVersion: "pricing-rating/v2",
+				ratingAlgorithmVersion: "pricing-rating/v1",
 				incremental: { effective: { decimal: "0", currency: "USD" } },
 				consumption: [{ sourceId: "Z-credit", kind: "credit" }],
 			},

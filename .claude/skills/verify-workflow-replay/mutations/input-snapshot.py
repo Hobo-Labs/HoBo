@@ -9,9 +9,9 @@ source = repo / 'packages/runtime'
 config = repo / '.agents/skills/verify-workflow-replay/models/vitest.config.mts'
 test = 'test/authoring/workflow-input-snapshot.test.ts'
 cases = [
-    ('start snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 3, 1),
-    ('resume snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 3, 2),
-    ('input validation', 'src/workflow-value.ts', 'if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();', 'if (false) throw new TypeError();', 1, 0),
+    ('start snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 2, 0),
+    ('resume snapshot', 'src/workflow.ts', 'const input = captureWorkflowInput(args);', 'const input = args;', 2, 1),
+    ('input validation', 'src/workflow-value.ts', 'if (!isReproducibleJsonValue(value, new Set()))', 'if (false)', 1, 0),
     ('input aliases', 'src/workflow-value.ts', 'types.isProxy(object) || seen.has(object)', 'types.isProxy(object)', 1, 0),
     ('input proxies', 'src/workflow-value.ts', 'types.isProxy(object) || seen.has(object)', 'seen.has(object)', 1, 0),
 ]

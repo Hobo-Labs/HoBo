@@ -47,42 +47,38 @@ fixed charges. An unavailable model remains explicit through
 `targetPricingUnavailable`. Inventory completeness and developer-supplied
 usage still need independent verification at admission.
 
-Developer-supplied single-offering and whole-target models use
-`pricing-rating/v2`, which orders identifiers by UTF-16 code units instead of
-locale collation. The version is included in the quote and its hash. Callers
-must use the same algorithm for their baseline entitlement calculation.
-`quoteScenario` and `quoteScenarioJson` retain the v1 ordering and rating
-formula, but added input, tenancy, product and selector checks can reject
-historical v1 inputs. Exact historical replay requires the original
-implementation. `quoteScenarioV2` is the explicit deterministic entry point
-for new target pricing. Reassess and reconcile outstanding reservations before
-changing the algorithm used for an existing financial operation.
-V2 validates supplied UTC timestamps to millisecond precision and orders rate
+Pricing has one rating algorithm, identified in each quote as
+`pricing-rating/v1` and included in its hash. `quoteScenario`,
+`quoteScenarioJson` and the developer-supplied single-offering and
+whole-target models all use it. It orders identifiers by UTF-16 code units
+instead of locale collation. Callers must use the same algorithm for their
+baseline entitlement calculation.
+Pricing validates supplied UTC timestamps to millisecond precision and orders rate
 schedules, grant expiries and latest measurements by instant. It rejects invalid
 calendar dates, finer precision, and conflicting latest measurements at the same
 instant. If different rate cards start at the same selected instant, it rejects
 that ambiguity as well; input order cannot silently select a cheaper value.
-V2 rejects a baseline or candidate that references a suspended or cancelled
+Pricing rejects a baseline or candidate that references a suspended or cancelled
 provider agreement with `PRICING_AGREEMENT_UNAVAILABLE`. It also rejects any
 agreement with an unknown status and an unreferenced trial agreement, because
 their baseline liability cannot be determined. Active and past-due agreements
 remain quotable; referenced trial agreements still require the applicable
 new-agreement permission. An unrelated suspended or cancelled agreement does
-not by itself prevent a quote. The legacy V1 behavior is unchanged.
+not by itself prevent a quote.
 `model/IacAgreementStatus.tla` checks this decision over one agreement and six
 abstract statuses; it does not prove the TypeScript implementation or the
 provider's reported agreement state.
-V2 includes existing active and past-due agreements in the baseline, including
+Pricing includes existing active and past-due agreements in the baseline, including
 their effect on shared credits. Every selected fixed charge with a quantity
 dimension requires an explicit agreement quantity and an explicit quantity on
 each workload for that agreement, even when the value is zero. A missing value
 returns `PRICING_FIXED_QUANTITY_UNAVAILABLE`; the developer-pricing helpers
 report an incomplete model. A selected rate card with conditional fixed charges
-requires a baseline workload with their selector values; otherwise V2 returns
+requires a baseline workload with their selector values; otherwise pricing returns
 `PRICING_FIXED_SELECTOR_UNAVAILABLE` instead of assuming no charge applies.
 `model/IacSharedFixedQuantity.tla` checks a bounded
 two-agreement shared-credit decision; it is not a proof of the implementation.
-V2 also requires distinct, bounded IDs across financial-state allowances,
+Pricing also requires distinct, bounded IDs across financial-state allowances,
 credits and commitments. Those IDs identify reservation buckets, so a model
 cannot count the same bucket twice or alias different types of entitlement.
 Allowance, credit and commitment balances must be present and nonnegative,
@@ -101,7 +97,7 @@ it is not a refinement proof of the implementation or provider evidence.
 Every selected rate card must have explicit charges, each with a unique bounded
 ID, a base and a supported charge variant. An absent charge is incomplete;
 a zero price must be expressed by an explicit zero-valued charge.
-V2 checks fixed, per-unit, package and tier amounts for valid nonnegative
+Pricing checks fixed, per-unit, package and tier amounts for valid nonnegative
 decimals in the rate-card currency before any charge is selected.
 Tier intervals must start at zero and be contiguous without overlap. A finite
 last tier is allowed, but usage beyond it is rejected rather than left unpriced;
@@ -110,7 +106,7 @@ pricing.
 Package pricing supports positive package sizes and period rounding to whole
 packages with `ceil`, `floor` or `half-up`. Event-scoped or other multiples are
 rejected; aggregating events before rounding would otherwise change the price.
-V2 rates one billing period at a time. A horizon reaching the next period, an
+Pricing rates one billing period at a time. A horizon reaching the next period, an
 unsupported calendar anchor, or an instant before the anchor is rejected until
 period splitting and the provider's renewal conventions are implemented.
 Daily and weekly periods use fixed UTC durations. Monthly anchors after day 28
@@ -121,18 +117,32 @@ agreement's billing cadence.
 An exclusive charge group must select an applicable charge. Groups spanning
 different charge variants or usage dimensions are rejected until their selection
 can be rated as a single decision.
-For unique-count meters, V2 applies period rounding after deduplication. It
+For unique-count meters, pricing applies period rounding after deduplication. It
 accepts event rounding only for a unit multiple, and rejects removals until the
 model includes source multiplicity for values shared by multiple workloads.
-V2 reports spend-commitment consumption in the rate-card currency. Callers must
+Pricing reports spend-commitment consumption in the rate-card currency. Callers must
 require that currency for credit and commitment consumption before converting
 those claims to ledger micros.
-V2 refuses rebalancing, migration and cancellation scenarios, candidate
+Pricing refuses rebalancing, migration and cancellation scenarios, candidate
 removals, and source agreement references until source-side obligations, fees
 and any allowed refunds can be included in the amounts used for routing and
-budget admission. A cancellation denied by policy remains denied. For inputs
-that it accepts, V1 retains its former source-action calculation; it is not
-sufficient for new budget admission.
+budget admission. A cancellation denied by policy remains denied.
+Each allowance, credit and commitment must belong to the financial state's
+tenant, and each agreement must name a provider account. A financial state
+with financial sources and agreements for more than one provider account is
+rejected: grants have no field identifying their account. Used plus remaining
+must not exceed the declared amount plus rollover for allowances and credits,
+or the declared amount for forfeiting commitments. Paid-credit rollover and
+commitment rollover or true-up fail closed because their carried basis or
+bucket semantics are not represented. A negative gross charge is rejected
+before any financial source is applied. These checks do not verify that the
+provider's reported capacity, prior usage, or basis is authentic.
+
+A quote from an explicitly allowed partial financial state is informational:
+it is marked ineligible for automatic selection, and unknown completeness
+values reject. The broker's quote-based authorization requires the complete
+quote and checks eligibility.
+
 Whole-target pricing requires a separate `action: "destroy"` scenario for a
 destroy operation. It must explicitly set `destroyCancelsAgreement: false`,
 have no source agreement IDs, and represent all destroy charges as added
@@ -198,71 +208,15 @@ paid/promotional credits, and provider-actual spend commitments. Baseline and
 candidate snapshots use the same pinned state; incremental amounts are
 `F(baseline + candidate) - F(baseline)`.
 
+Rating selects charges for each workload and groups matching measurements for
+each charge before applying its pricing model, so workloads sharing an
+agreement with different selector values are rated against their own charges.
+A workload whose selector values match no charge for a measured dimension
+returns `RATE_CARD_NOT_FOUND`. Each measurement must have a product meter, and
+meter dimensions must be present and unique.
 Every baseline and candidate workload must name its agreement's product;
 a mismatch returns `INVALID_PRICING_INPUT` rather than rating a different
-product's usage against that agreement. Through `pricing-rating/v5`, rating
-aggregated workloads by provider agreement and returned
-`PRICING_MODEL_UNSUPPORTED` when two workloads in a snapshot had different
-values for a selector used by that agreement's rate card. Versions 1–5
-retain that aggregated behavior; the v2 target and availability surfaces
-keep the check.
-
-New quotes use `pricing-rating/v9`. It orders ties by string code units,
-compares UTC instants without truncating fractional seconds, rejects impossible
-calendar dates, and requires each allowance, credit, and commitment to have a
-unique nonempty identity within its kind and the financial state's tenant. This
-also requires a provider account on each agreement and rejects financial sources
-in any state containing agreements for more than one account: grants currently
-have no field identifying their account. This conservative check includes unused
-and inactive agreements. It cannot establish that the supplied identities and
-tenant truly correspond to provider records. The change to the algorithm version
-and quote hash can change credit, rate-card,
-or latest-observation choices. To rerate an old record, pass its stored version, for example
-`quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
-Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
-requires its original locale. Versions 1 and 2 also retain their previous
-timestamp comparison and millisecond validation behavior. Versions 1–3 do not
-enforce the new source identity checks. Versions 1–4 also retain earlier source
-amount, basis and commitment-unit behavior. Versions 1–5 retain earlier
-workload-selector and meter behavior. Versions 1–6 also retain the earlier
-handling of conflicting latest measurements. Preserve the original quote as evidence
-rather than treating a new v9 quote as the old one, and reconcile affected old
-expiry, evidence, observation, and financial-source decisions before use.
-
-V9 marks quotes from explicitly allowed partial financial states as
-informational and ineligible for automatic selection. Unknown completeness
-values reject. Dispatcher v2 also requires explicit positive eligibility.
-Versions 1–8 retain their prior eligibility on replay; reconcile old quotes
-before using them for decisions. The broker's separate raw-estimate helper
-does not receive a quote or its eligibility and requires trusted caller checks.
-
-V8 requires graduated and volume tier schedules to begin at zero, increase,
-and have neither gaps nor overlaps. A missing intermediate end is inferred
-from the next tier's start. A finite final graduated tier cannot rate usage
-beyond its end; a finite volume tier excludes its upper endpoint. Versions 1–7
-retain the previous tier behavior for historical replay.
-
-V6 selects charges for each workload and groups matching measurements for each
-charge before applying its pricing model. A workload's product must match its
-agreement, each measurement must have a product meter, and meter dimensions and
-charge IDs must be present and unique. The earlier algorithm selected charges
-from the first workload and could apply its price to other workloads, or ignore
-an unmetered measurement entirely.
-
-V7 rejects a `latest` meter when different quantities share its latest instant.
-Equal quantities are accepted after unit conversion and event-level rounding;
-conflicts at older instants do not prevent selecting a later value. The input
-must supply enough ordering information to distinguish conflicting observations.
-
-V5 requires nonnegative source amounts and rate-card prices and compatible units.
-For allowances and credits it bounds used plus remaining by the declared amount plus rollover; for
-forfeiting commitments it bounds them by the declared amount. These checks treat
-used and remaining as belonging to the same grant and bucket. Derived credits
-must have no additional basis, and consumed credit basis cannot exceed recorded
-remaining basis. Paid-credit rollover and commitment rollover or true-up fail
-closed because their carried basis or bucket semantics are not represented.
-Commitment consumption is recorded in its currency. These checks do not verify
-that the provider's reported capacity, prior usage, or basis is authentic.
+product's usage against that agreement.
 
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
@@ -273,10 +227,10 @@ that the provider's reported capacity, prior usage, or basis is authentic.
   zero additional economic basis; purchased-credit basis is allocated pro rata.
 - Upfront provider-actual commitments support billing-period and single-UTC-hour
   buckets; cross-hour consumption fails closed.
-- No wall clock, network, environment, or live provider calls. V2 ordering
-  does not depend on locale; v1 retains its historical locale collation.
+- No wall clock, network, environment, or live provider calls. Ordering
+  does not depend on locale.
 - New agreements are denied unless explicitly enabled. Cancellation also
-  requires explicit permission; V2 currently refuses it even when permitted.
+  requires explicit permission; pricing currently refuses it even when permitted.
 
 `@hobo/pricing/legacy` exports the moved CI allocation and sandbox translators.
 Their function bodies are unchanged, and `legacy_ci.proto` mirrors the two
@@ -324,29 +278,41 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1 through v8 quote outputs. The replay test parses
-each scenario through protobuf JSON, rerates it with the recorded version, and
-compares the stable JSON result, including the quote hash. The quote-boundary
+`corpus/golden-replay-baseline.json` pins a complete quote output. The replay
+test parses its scenario through protobuf JSON, rerates it, and compares the
+stable JSON result, including the deterministic quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.
+
+## Architecture boundaries
+
+Parse, don't validate starts at `parseJson` and `parseQuoteScenario`: untrusted
+JSON becomes a generated `QuoteScenario` before rating. `parseDecimal` derives
+the scaled-integer `Decimal` parsed type, and rating functions accept generated
+messages plus these derived domain types rather than raw DTOs.
+
+The quote kernel remains a pure query, so it has no command handler, actor,
+event-store write, materialized view projection, persisted snapshot, or read store.
+`rateSnapshot` builds only an ephemeral rating snapshot and never mutates a read
+model. The declared `pricing.*` events belong to later actor integrations; those
+integrations must consume commands, append events to an event store, and build
+materialized-view projections and snapshots in a read store outside this pure
+rating path.
 
 ## Credit-order verification
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
 bounded TLA+ models, and abstract balance proofs. The credit model explores 72 states and hides eighteen
-same-state transitions; a separate counterexample shows that legacy v1 quotes
-can differ by locale.
+same-state transitions.
 
 ```mermaid
 stateDiagram-v2
   s0: Same credit state
   s1: One host rated
-  s2: Legacy quotes may differ
-  s3: New quotes agree
+  s3: Quotes agree
   [*] --> s0
   s0 --> s1: rate on Swedish host or rate on English host
-  s1 --> s2: rate on English host or rate on Swedish host
   s1 --> s3: rate on English host or rate on Swedish host
 ```
 
@@ -389,23 +355,20 @@ stateDiagram-v2
 
 The [pricing time skill](../../.agents/skills/verify-pricing-time/SKILL.md)
 checks UTC validity, evidence coverage and time ordering. Its model explores
-256 states and hides 64 same-state transitions. `parseUtc` returns milliseconds;
-use `compareUtcExact` when fractional ordering matters.
+256 states and hides 64 same-state transitions. Timestamps are limited to
+millisecond precision, so `parseUtc` milliseconds order instants exactly.
 
 ```mermaid
 stateDiagram-v2
   s0: Inputs loaded
   s1: Expiry ordered
   s2: Evidence checked
-  s3: Exact checks complete
-  s4: Legacy checks complete
+  s3: Checks complete
   [*] --> s0
   s0 --> s1: order credit expiry
   s0 --> s2: check evidence interval
   s1 --> s3: check evidence interval
-  s1 --> s4: check evidence interval
   s2 --> s3: order credit expiry
-  s2 --> s4: order credit expiry
 ```
 
 The latest-measurement model checks both input orders for two abstract

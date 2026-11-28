@@ -1,10 +1,8 @@
-import {
-	evaluateResidency,
-	parseDataClassification,
-	parseJurisdictionId,
-} from "@hobo/core";
+import { evaluateResidency } from "@hobo/core";
 import { first } from "@hobo/core/total-access";
-import type { JsonObject } from "../json.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "../json.js";
+import { hasUnverifiedYardCamps } from "./camp-constraints.js";
+import { parseYardResidencyTag } from "./residency.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -37,6 +35,11 @@ export function matchYard(
 ): YardMatchDecision {
 	// SAFETY: assertion required at this I/O or test boundary.
 	const layoutHash = contentHashOf(request.requestedLayout) as ContentHash;
+	if (hasUnverifiedYardCamps(request.requestedLayout))
+		return decision(request, layoutHash, inventory, [], options, {
+			outcome: "rejected",
+			rationale: "requested Camp layouts cannot yet be verified",
+		});
 	const candidates: YardCandidateDecision[] = inventory.yards
 		.map((yard) => {
 			const candidate = evaluateCandidate(yard, request, {
@@ -204,8 +207,10 @@ function evaluateCandidate(
 		}
 	}
 	for (const [key, value] of Object.entries(layout.properties)) {
-		const actual = yard.layout.properties[key];
-		if (actual !== undefined && actual !== value) {
+		const actual = Object.hasOwn(yard.layout.properties, key)
+			? yard.layout.properties[key]
+			: undefined;
+		if (actual !== undefined && !jsonValuesEqual(actual, value)) {
 			hardFailures.push(`property-mismatch:${key}`);
 		}
 	}
@@ -255,14 +260,9 @@ function residencyFailure(
 	entry: string,
 	yard: YardInstanceRegistration,
 ): string | undefined {
-	if (yard.layout.residency.includes(entry)) return undefined;
-	const separator = entry.indexOf(":");
-	const jurisdictionRaw = separator === -1 ? entry : entry.slice(separator + 1);
 	try {
-		if (separator !== -1) {
-			parseDataClassification(entry.slice(0, separator));
-		}
-		const jurisdiction = parseJurisdictionId(jurisdictionRaw);
+		const jurisdiction = parseYardResidencyTag(entry);
+		if (yard.layout.residency.includes(entry)) return undefined;
 		if (yard.layout.regions.length === 0) {
 			return `residency-unattested:${entry}`;
 		}
@@ -321,7 +321,7 @@ function countExactLabels(
 ): number {
 	let n = 0;
 	for (const [k, v] of Object.entries(requested)) {
-		if (actual[k] === v) n += 1;
+		if (Object.hasOwn(actual, k) && actual[k] === v) n += 1;
 	}
 	return n;
 }
@@ -332,9 +332,30 @@ function countExactProperties(
 ): number {
 	let n = 0;
 	for (const [k, v] of Object.entries(requested)) {
-		if (actual[k] === v) n += 1;
+		if (Object.hasOwn(actual, k) && jsonValuesEqual(actual[k], v)) n += 1;
 	}
 	return n;
+}
+
+function jsonValuesEqual(
+	left: JsonValue | undefined,
+	right: JsonValue | undefined,
+): boolean {
+	if (left === right) return true;
+	if (Array.isArray(left) && Array.isArray(right))
+		return (
+			left.length === right.length &&
+			left.every((item, index) => jsonValuesEqual(item, right[index]))
+		);
+	if (!isJsonObject(left) || !isJsonObject(right)) return false;
+	const keys = Object.keys(left);
+	return (
+		keys.length === Object.keys(right).length &&
+		keys.every(
+			(key) =>
+				Object.hasOwn(right, key) && jsonValuesEqual(left[key], right[key]),
+		)
+	);
 }
 
 function decision(
@@ -374,6 +395,7 @@ export function layoutSubsetCompatible(
 	actual: YardLayout,
 	capabilities: readonly string[],
 ): boolean {
+	if (hasUnverifiedYardCamps(requested)) return false;
 	if (requested.providerId && actual.providerId !== requested.providerId) {
 		return false;
 	}

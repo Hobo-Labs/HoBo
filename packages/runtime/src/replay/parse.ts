@@ -1,10 +1,13 @@
 import {
 	isJsonNumber,
 	isJsonObject,
-	isJsonString,
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
+import {
+	isNonEmptyPrimitiveString,
+	isPrimitiveString,
+} from "../workflow-value.js";
 import type {
 	ReplayDivergenceRecord,
 	ReplayMode,
@@ -38,7 +41,7 @@ export function parseReplayReport(raw: JsonValue): ReplayReport {
 
 	return Object.freeze({
 		runId,
-		seqVector: [...seqVector],
+		seqVector: Object.freeze([...seqVector]),
 		readSetHash,
 		stateDigest,
 		mode,
@@ -102,7 +105,7 @@ function parseSeqVector(value: JsonValue | undefined) {
 
 function parseMode(value: JsonValue | undefined): ReplayMode {
 	// SAFETY: assertion to `value as ReplayMode` is required at this boundary.
-	if (!isJsonString(value) || !MODES.has(value as ReplayMode)) {
+	if (!isPrimitiveString(value) || !MODES.has(value as ReplayMode)) {
 		throw new ReplayParseError('mode must be "live" or "replay"');
 	}
 	// SAFETY: assertion to `value as ReplayMode` is required at this boundary.
@@ -123,11 +126,16 @@ function parseUInt(value: JsonValue | undefined, field: string): number {
 	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 0) {
 		throw new ReplayParseError(`${field} must be a non-negative integer`);
 	}
+	if (!Number.isSafeInteger(value))
+		throw new ReplayParseError(`${field} must be a safe integer`);
 	return value;
 }
 
 function stringArray(value: JsonValue | undefined, field: string): string[] {
-	if (!Array.isArray(value) || value.some((entry) => !isJsonString(entry))) {
+	if (
+		!Array.isArray(value) ||
+		value.some((entry) => !isPrimitiveString(entry))
+	) {
 		throw new ReplayParseError(`${field} must be a string array`);
 	}
 	// SAFETY: assertion to `Object.freeze([...value]) as string[]` is required at this boundary.
@@ -135,7 +143,7 @@ function stringArray(value: JsonValue | undefined, field: string): string[] {
 }
 
 function nonEmptyString(value: JsonValue | undefined, field: string): string {
-	if (!isJsonString(value) || value.length === 0) {
+	if (!isNonEmptyPrimitiveString(value)) {
 		throw new ReplayParseError(`${field} must be a non-empty string`);
 	}
 	return value;

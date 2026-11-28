@@ -309,7 +309,7 @@ describe("whole-target price ranking", () => {
 		});
 	});
 
-	it("excludes shared agreements whose selector values differ across resources", () => {
+	it("excludes a target whose resource matches no charge for its selector values", () => {
 		const ambiguous = candidate("ambiguous", "0.25");
 		if (ambiguous.pricing.state.case !== "model")
 			throw new Error("missing fixture model");
@@ -335,7 +335,7 @@ describe("whole-target price ranking", () => {
 			coverage: "partial",
 			budget: { evaluation: "not-evaluated", reservation: "not-created" },
 			ranking: [{ targetId: "good" }],
-			rejected: [{ targetId: "ambiguous", code: "PRICING_MODEL_UNSUPPORTED" }],
+			rejected: [{ targetId: "ambiguous", code: "RATE_CARD_NOT_FOUND" }],
 		});
 	});
 

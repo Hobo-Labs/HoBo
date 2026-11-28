@@ -28,26 +28,17 @@ function evaluate(locale: string, reverse = false) {
 	return JSON.parse(child.stdout);
 }
 
-it("uses the same credit and effective cost across locales while retaining explicit v1 replay", () => {
+it("uses the same credit and effective cost across locales", () => {
 	const english = evaluate("en_US.UTF-8");
 	const swedish = evaluate("sv_SE.UTF-8");
 	const reversed = evaluate("sv_SE.UTF-8", true);
 	expect(english.locale).toBe("en-US");
 	expect(swedish.locale).toBe("sv-SE");
 	for (const result of [english, swedish, reversed]) {
-		expect(result.version).toBe("pricing-rating/v9");
 		expect(result.effective).toBe("9");
 		expect(result.consumption).toEqual(["z"]);
-		expect(result.v2Version).toBe("pricing-rating/v2");
-		expect(result.v2Effective).toBe("9");
-		expect(result.v2Consumption).toEqual(["z"]);
 	}
 	expect(english.quoteHash).toBe(swedish.quoteHash);
-	expect(english.legacyVersion).toBe("pricing-rating/v1");
-	expect(english.legacyEffective).toBe("0");
-	expect(swedish.legacyEffective).toBe("9");
-	expect(english.legacyConsumption).toEqual(["ä"]);
-	expect(swedish.legacyConsumption).toEqual(["z"]);
 });
 
 it("chooses equal-priority credits independently of input order", () => {
@@ -99,19 +90,4 @@ it("chooses equal-priority credits independently of input order", () => {
 		}),
 		{ seed: 614482, numRuns: 300 },
 	);
-});
-
-it("rejects an unknown rating version", () => {
-	const scenario = makeScenario({
-		charges: [perUnitCharge("usage", "minute", "1")],
-	});
-	for (const raw of [
-		'{"ratingAlgorithmVersion":"future"}',
-		'{"ratingAlgorithmVersion":null}',
-	]) {
-		const result = quoteScenario(scenario, JSON.parse(raw));
-		expect(isQuoteVector(result)).toBe(false);
-		if (isQuoteVector(result)) throw new Error("unexpected quote");
-		expect(result.code).toBe("INVALID_PRICING_INPUT");
-	}
 });

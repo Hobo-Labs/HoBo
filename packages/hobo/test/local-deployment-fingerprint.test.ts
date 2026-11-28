@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -30,7 +30,16 @@ it("fingerprints authored code and raw packaged artifacts while ignoring private
 			await writeFile(file, "private or temporary state");
 		}
 		expect(await fingerprintLocalDeployment(project, home)).toBe(initial);
-		await writeFile(join(project, "src/app.ts"), "export const version = 2;");
+		const source = join(project, "src/app.ts");
+		if (process.platform !== "win32") {
+			const initialMode = (await stat(source)).mode & 0o777;
+			await chmod(source, initialMode & ~0o222);
+			expect(await fingerprintLocalDeployment(project, home)).toBe(initial);
+			await chmod(source, (initialMode & ~0o222) | 0o100);
+			expect(await fingerprintLocalDeployment(project, home)).not.toBe(initial);
+			await chmod(source, initialMode);
+		}
+		await writeFile(source, "export const version = 2;");
 		const changedSource = await fingerprintLocalDeployment(project, home);
 		expect(changedSource).not.toBe(initial);
 		await mkdir(join(project, ".hobo/build/assets"), { recursive: true });

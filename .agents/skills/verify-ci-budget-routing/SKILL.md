@@ -9,12 +9,13 @@ description: Verify HoBo CI account-budget routing and same-timestamp usage acco
 
 **Why:** Overlooking a hold or completion can admit a runner using budget already committed elsewhere.
 
+**Result at sync commit `719f8cbe6cf9a5cb9635f6d0055dd66ae2393604`:** PASS for the stated bounds and generated real-code scenarios.
 **Review baseline:** `12927757cdc1a3ed5bd7b3990f26ef067cdd564e` plus the duplicate-allocation changes in this skill's commit. PASS for the stated bounds, generated real-code scenarios, and deliberately weakened variants.
 
 ## Covered code
 
 - `packages/ci/src/routing.ts` (`route`, `shouldCountLocalUsage`)
-- `packages/ci/test/budget-routing.property.test.ts`
+- `packages/ci/test/budget-routing.property.test.ts` and `routing.test.ts`
 - `packages/ci/test/sandbox-pricing.test.ts`
 - `packages/ci/src/accounting.ts` and `packages/pricing/src/legacy/accounting.ts` (allocation inputs)
 
@@ -30,7 +31,7 @@ The command runs fast-check against the actual CI route, TLC 1.7.4, a Z3 4.15.4 
 
 ## Scope and evidence
 
-The generated tests use seed 614436 and 400 examples per original property. They generate account caps, spending, runner prices, and active, completed, or released leases, and compare admission with independent integer-microcurrency arithmetic. They also generate completion times around an observation and require equality to remain counted. The account-budget property exercises one non-sandbox offer. A second generated property uses seed 614451 and 400 examples to vary two observations, prices, provider budget limits, shared-policy limits, and offer order; it requires both budget guards to count the higher exposure. With seed 614452, 100 generated cases reject contradictory duplicate runner-minute reports in either order while allowing an unrelated provider; concrete cases also cover repeated object references and sandbox allowances. Unknown observation timestamps retain completed local usage. The configuration parser rejects duplicate provider-account offers, so these multi-offer checks protect direct router calls with unvalidated data rather than a valid parsed configuration. They do not prove database concurrency or external billing.
+The generated tests use seed 614436 and 400 examples per original property. They generate account caps, spending, runner prices, and active, completed, or released leases, and compare admission with independent integer-microcurrency arithmetic. They also generate completion times around an observation and require equality to remain counted. The router tests use seed 614513 and 500 fractional runtime-coverage pairs; exact financial time is modeled separately by `verify-ci-financial-time`. The account-budget property exercises one non-sandbox offer. A second generated property uses seed 614451 and 400 examples to vary two observations, prices, provider budget limits, shared-policy limits, and offer order; it requires both budget guards to count the higher exposure. With seed 614452, 100 generated cases reject contradictory duplicate runner-minute reports in either order while allowing an unrelated provider; concrete cases also cover repeated object references and sandbox allowances. Unknown observation timestamps retain completed local usage. The configuration parser rejects duplicate provider-account offers, so these multi-offer checks protect direct router calls with unvalidated data rather than a valid parsed configuration. They do not prove database concurrency or external billing.
 
 A Z3 induction proves that taking the maximum of any number of nonnegative exact-real observations covers each observation, and that admission below a cap covers them all. A separate flag induction proves that, if the flag represents every prior report, denying duplicate reports whenever any report contains free allocation admits no reported free amount. These proofs assume truthful, comparable observations and exact arithmetic; they are not TypeScript refinement proofs and do not establish provider bills or concurrency. Executable proof mutations remove the maximum and the duplicate-allocation guard and require counterexamples.
 

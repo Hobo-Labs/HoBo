@@ -45,11 +45,6 @@ it("allows partial showback but marks it ineligible for automatic selection", ()
 	expect(result.assumptions).toContain(
 		"financial state is partial; quote is informational only",
 	);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v8",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.eligibility?.eligible).toBe(true);
 });
 
 it("rejects partial state when showback is not enabled", () => {

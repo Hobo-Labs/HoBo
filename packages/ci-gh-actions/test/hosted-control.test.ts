@@ -1387,6 +1387,45 @@ describe("hosted asynchronous account control", () => {
 		).toBe(400);
 		expect((await t.store.configuration())?.revision).toBe(2);
 	});
+	it("accepts a genuinely newer hosted observation within one millisecond", async () => {
+		const t = setup();
+		const account = (await t.store.configuration())?.configuration?.accounts[0];
+		if (!account) throw new Error("fixture");
+		const observation = JSON.parse(toJsonString(AccountSchema, account));
+		observation.offers[0].observedAt = "2026-10-26T00:00:00.0000001Z";
+		observation.offers[0].freeMinutes += 1;
+		expect(
+			(
+				await t.request(
+					"/v2/accounts/self/observations",
+					"POST",
+					"observer",
+					observation,
+				)
+			).status,
+		).toBe(200);
+	});
+
+	it("rejects a sub-millisecond future hosted usage observation", async () => {
+		const t = setup();
+		const account = (await t.store.configuration())?.configuration?.accounts[0];
+		if (!account) throw new Error("fixture");
+		const observation = JSON.parse(toJsonString(AccountSchema, account));
+		observation.offers[0].observedAt = "2026-10-26T12:00:00.0000009Z";
+		observation.offers[0].freeMinutes += 1;
+		expect(
+			(
+				await t.request(
+					"/v2/accounts/self/observations",
+					"POST",
+					"observer",
+					observation,
+				)
+			).status,
+		).toBe(409);
+		expect((await t.store.configuration())?.revision).toBe(1);
+	});
+
 	it("rejects stale, conflicting and future snapshots and implicit manual-period billing resets", async () => {
 		const t = setup();
 		const account = (await t.store.configuration())?.configuration?.accounts[0];

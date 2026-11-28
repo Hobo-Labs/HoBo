@@ -1231,6 +1231,29 @@ describe("exportTarget", () => {
 });
 
 describe("planCommands", () => {
+	it("adds the empty-suite option only when the package script omits it", () => {
+		const scoped: TestPlan = {
+			mode: "scoped",
+			full: [],
+			subsets: new Map([["packages/subset", ["test/example.test.ts"]]]),
+			vitestShards: new Map([["packages/sharded", { count: 2, indexes: [0] }]]),
+			skipped: [],
+		};
+		const commands = planCommands(
+			scoped,
+			[],
+			"1",
+			() => [],
+			undefined,
+			(dir) =>
+				dir === "packages/subset"
+					? "vitest run --passWithNoTests"
+					: "vitest run",
+		);
+		assert.equal(commands[0]?.includes("--passWithNoTests"), false);
+		assert.equal(commands[1]?.includes("--passWithNoTests"), true);
+	});
+
 	const plan: TestPlan = {
 		mode: "scoped",
 		full: ["packages/lib"],
@@ -1474,6 +1497,20 @@ describe("planCommands", () => {
 		assert.ok(build.includes("@hobo/hobo#build"));
 		assert.ok(!build.includes("@hobo/hobo#test"));
 		assert.ok(!build.includes("--"));
+	});
+
+	it("builds the hello-bindle adapter in the HoBo build closure", () => {
+		const run = spawnSync(
+			"pnpm",
+			["exec", "turbo", "run", "build", "--filter=@hobo/hobo", "--dry=json"],
+			{ encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+		);
+		assert.equal(run.status, 0, run.stderr);
+		const tasks: unknown = JSON.parse(run.stdout).tasks;
+		assert.ok(Array.isArray(tasks));
+		const build = tasks.find((task) => task.taskId === "@hobo/hobo#build");
+		assert.ok(build && Array.isArray(build.dependencies));
+		assert.ok(build.dependencies.includes("@hobo/adapter-hono#build"));
 	});
 });
 

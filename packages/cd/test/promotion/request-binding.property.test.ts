@@ -270,6 +270,60 @@ describe("promotion request binding", () => {
 		expect(h.store.events(CD_EVENTS.EnvPromoteRolledBack)).toHaveLength(1);
 	});
 
+	it("keeps the rollback request captured before authorization awaits", async () => {
+		const h = harness();
+		h.freight.add("f0");
+		h.freight.add("f1");
+		for (const id of ["dev-1", "dev-2"])
+			h.desired.seed(id, "f0", resolvedFor(id, "alpha", "f0"));
+		const promoted = await h.service.promote(
+			{
+				freightId: fid("f1"),
+				targets: [camp("dev-1"), camp("dev-2")],
+				idempotencyKey: "snapshot-promotion",
+			},
+			h.ctx(),
+		);
+		expect(promoted.ok).toBe(true);
+		let entered!: () => void;
+		let release!: () => void;
+		const checking = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const continueCheck = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const authorize = h.authorizer.authorize.bind(h.authorizer);
+		vi.spyOn(h.authorizer, "authorize").mockImplementation(
+			async (action, subject, ctx) => {
+				if (action === "rollback") {
+					entered();
+					await continueCheck;
+				}
+				return authorize(action, subject, ctx);
+			},
+		);
+		const request = {
+			campId: camp("dev-1"),
+			reason: "original",
+			idempotencyKey: "snapshot-rollback",
+		};
+		const pending = h.service.rollback(request, h.ctx());
+		await checking;
+		request.campId = camp("dev-2");
+		request.reason = "changed";
+		request.idempotencyKey = "changed-key";
+		release();
+		const result = await pending;
+		expect(result.ok).toBe(true);
+		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f0");
+		expect((await h.desired.current(camp("dev-2")))?.freightId).toBe("f1");
+		if (result.ok) {
+			expect(result.value.targetCampIds).toEqual([camp("dev-1")]);
+			expect(result.value.idempotencyKey).toBe("snapshot-rollback");
+		}
+	});
+
 	it("does not perform rollback effects when its journal claim fails", async () => {
 		const h = harness();
 		h.freight.add("f0");

@@ -14,6 +14,7 @@ import {
 	EntitlementClaimSchema,
 	IacTargetAdmissionDecisionSchema,
 } from "../../../broker/src/_generated/yard_placement_pb.js";
+import { hostingQuoteDigest } from "../../../broker/src/index.js";
 import {
 	alchemyTarget,
 	captureAlchemyProgram,
@@ -314,7 +315,7 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 		{ bucketId: "shared", kind: "allowance", unit: "request", units: 1 },
 		{ bucketId: "shared", kind: "allowance", unit: "runner-ms", units: 2 },
 	];
-	return create(IacTargetAdmissionDecisionSchema, {
+	const decision = create(IacTargetAdmissionDecisionSchema, {
 		...base,
 		quote: {
 			quoteId,
@@ -363,6 +364,9 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 			},
 		},
 	});
+	if (decision.quote && decision.policyProof)
+		decision.policyProof.quoteDigest = hostingQuoteDigest(decision.quote);
+	return decision;
 }
 
 describe("financial admission modes", () => {
@@ -1052,6 +1056,9 @@ describe("financial admission modes", () => {
 		"unknown-reservation",
 		"fractional-reservation",
 		"foreign-priced-policy",
+		"empty-policy-quote-digest",
+		"quote-work-digest",
+		"kindless-claims",
 	] as const)("rejects malformed or conflicting %s evidence instead of discarding it", async (kind) => {
 		const route = routeFixture();
 		const f = fixture(
@@ -1184,6 +1191,14 @@ describe("financial admission modes", () => {
 				if (kind === "fractional-reservation") reservation.reservedMicros = 5.5;
 				if (kind === "foreign-priced-policy" && decision.policyProof?.identity)
 					decision.policyProof.identity.tenantId = "other";
+				if (kind === "empty-policy-quote-digest" && decision.policyProof)
+					decision.policyProof.quoteDigest = "";
+				if (kind === "kindless-claims" && decision.quote) {
+					for (const claim of decision.quote.entitlementClaims) claim.kind = "";
+					for (const claim of reservation.entitlementClaims) claim.kind = "";
+				}
+				if (kind === "quote-work-digest" && decision.quote)
+					decision.quote.workDigest = `sha256:${"9".repeat(64)}`;
 				return decision;
 			},
 			() => true,

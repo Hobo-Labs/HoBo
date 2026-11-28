@@ -1,7 +1,7 @@
 // WP6 rollback, Trails, previews and the fleet-and-policy bullets (D11, D12,
 // D20–D25): intents, Rail subject, fan-out aggregate.
 import { create } from "@bufbuild/protobuf";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	FanoutStatusRecordSchema,
 	FreightSubject,
@@ -360,6 +360,73 @@ describe("fleet and policy (D20–D25)", () => {
 		expect(
 			(await h.campPolicy.binding(camp("dev-1")))?.enforcedRailDigest,
 		).toBe("");
+	});
+
+	it("starts one Rail rollback effect when identical retries overlap", async () => {
+		const h = harness();
+		h.pipelines.define(
+			"rail-race",
+			[
+				pipelineNode("inform", {
+					campIds: ["dev-1"],
+					policyMode: PolicyMode.INFORM,
+				}),
+			],
+			FreightSubject.RAIL,
+		);
+		h.freight.add("r1", { subject: FreightSubject.RAIL });
+		h.pipelines.makeAvailable("rail-race", "inform", "r1");
+		const promoted = await h.service.promote(
+			{
+				freightId: fid("r1"),
+				targets: [camp("dev-1")],
+				idempotencyKey: "rail-race-promotion",
+				pipeline: "rail-race",
+				node: "inform",
+			},
+			h.ctx(),
+		);
+		expect(promoted.ok).toBe(true);
+		let firstEntered!: () => void;
+		let releaseFirst!: () => void;
+		let secondEntered!: () => void;
+		const firstStarted = new Promise<void>((resolve) => {
+			firstEntered = resolve;
+		});
+		const secondStarted = new Promise<void>((resolve) => {
+			secondEntered = resolve;
+		});
+		const firstRelease = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const restore = h.campPolicy.restore.bind(h.campPolicy);
+		let calls = 0;
+		const effect = vi
+			.spyOn(h.campPolicy, "restore")
+			.mockImplementation(async (input) => {
+				calls++;
+				if (calls === 1) {
+					firstEntered();
+					await firstRelease;
+				} else secondEntered();
+				return restore(input);
+			});
+		const request = {
+			campId: camp("dev-1"),
+			reason: "restore",
+			idempotencyKey: "rail-race-rollback",
+		};
+		const first = h.service.rollback(request, h.ctx());
+		await firstStarted;
+		const second = h.restart().rollback(request, h.ctx());
+		await Promise.race([second.then(() => undefined), secondStarted]);
+		releaseFirst();
+		const [winner, retry] = await Promise.all([first, second]);
+		expect(effect).toHaveBeenCalledTimes(1);
+		expect(winner.ok).toBe(true);
+		expect(retry.ok).toBe(false);
+		if (!retry.ok)
+			expect(retry.reasons[0]?.code).toBe(PROMOTION_REASON.journalConflict);
 	});
 
 	it("an aggregate over budget is refused before any Camp starts (§10)", async () => {

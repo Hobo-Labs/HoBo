@@ -55,6 +55,7 @@ describe("local provider bridge contract", () => {
 		expect(h.api.registrations).toBe(1);
 		await expect(h.relay.claim(lease.id, "valid")).rejects.toThrow();
 		h.api.host.status = "completed";
+		h.clock.now = h.api.host.updated_at;
 		await h.relay.reconcile(lease.id, 22);
 		expect(h.api.deletes).toBe(1);
 		expect(h.store.get(lease.id)).toMatchObject({

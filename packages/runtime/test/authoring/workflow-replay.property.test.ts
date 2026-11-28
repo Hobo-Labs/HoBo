@@ -58,15 +58,17 @@ describe("durable workflow histories", () => {
 				const handle = await engine.start(wf, null);
 				const streamId = `run/${handle.runId}`;
 				const events = await engine.store.readStream(streamId);
-				const missing = events.filter(
-					(event) =>
-						!(
-							(event.type === "run.SleepScheduled" ||
-								event.type === "run.SleepCompleted") &&
-							isJsonObject(event.data) &&
-							event.data.index === 1
-						),
-				);
+				const missing = events
+					.filter(
+						(event) =>
+							!(
+								(event.type === "run.SleepScheduled" ||
+									event.type === "run.SleepCompleted") &&
+								isJsonObject(event.data) &&
+								event.data.index === 1
+							),
+					)
+					.map((event, index) => ({ ...event, seq: index + 1 }));
 				const incompleteStore = {
 					...engine.store,
 					readStream: async () => missing,
@@ -118,10 +120,10 @@ describe("durable workflow histories", () => {
 		);
 	});
 
-	it("accepts ordered legacy sleeps but rejects an inconsistent recorded index", async () => {
+	it("rejects an inconsistent recorded sleep index", async () => {
 		const engine = createWorkflowEngine(advancingClock());
 		const wf = defineWorkflow({
-			name: "legacy-timers",
+			name: "indexed-timers",
 			async run(ctx) {
 				await ctx.sleep(3);
 				await ctx.sleep(7);
@@ -130,30 +132,13 @@ describe("durable workflow histories", () => {
 		});
 		const handle = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${handle.runId}`);
-		let index = 0;
-		const legacy = events.map((event) => {
-			if (event.type === "run.Started" && isJsonObject(event.data)) {
-				const data = { ...event.data };
-				delete data.commandTreeVersion;
-				return { ...event, data };
-			}
-			return event.type === "run.SleepScheduled"
-				? { ...event, data: { delayMs: index++ === 0 ? 3 : 7 } }
-				: event;
-		});
 		const definition = engine.toReplayDefinition(wf);
-		await expect(
-			replayRun(
-				{ ...engine.store, readStream: async () => legacy },
-				handle.runId,
-				definition,
-				null,
-			),
-		).resolves.toMatchObject({ state: "done" });
-		index = 0;
+		let index = 0;
 		const wrongIndex = events.map((event) =>
-			event.type === "run.SleepScheduled" && index++ === 1
-				? { ...event, data: { delayMs: 7, index: 0 } }
+			event.type === "run.SleepScheduled" &&
+			isJsonObject(event.data) &&
+			index++ === 1
+				? { ...event, data: { ...event.data, index: 0 } }
 				: event,
 		);
 		await expect(

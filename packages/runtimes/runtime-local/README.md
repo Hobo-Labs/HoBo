@@ -9,6 +9,10 @@ Wasmtime-based runtime-local **component host** for HoBo S1. Loads descriptor-de
 guest components, routes WIT imports through a deny-by-default **link table**, and
 appends `component.*` / `link.*` events to an injected event-log sink.
 
+Lifecycle reads and the host's runtime event mirror return detached snapshots. A
+sink may retain or change the event it receives without changing the mirror.
+The mirror is a local diagnostic view, not a substitute for the event-log sink.
+
 ## Scope
 
 **In:** component lifecycle, in-process link table, **wRPC in-process link layer**
@@ -30,6 +34,71 @@ import { createRuntimeLocalComponentHost } from "@hobo/runtime-local";
 const host = createRuntimeLocalComponentHost({
   appendEvent: (event) => eventLog.append(event),
 });
+```
+
+Loading an already loaded or currently loading ID fails with
+`component_already_loaded`; tear down the existing instance before replacing
+it. The host captures requested leases before instantiation and rejects an
+engine result whose ID differs from the requested ID. An instantiation error
+releases the loading claim so the caller can retry.
+
+The component-load model checks 78 bounded states. The projection hides 68
+internal steps that do not change a displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Component absent
+  s1: Component loading
+  s2: Load refused or failed
+  s3: Component loaded
+  s4: Component torn down
+  [*] --> s0
+  s0 --> s1: request load
+  s1 --> s2: instantiation fails or finish instantiation
+  s1 --> s3: finish instantiation
+  s2 --> s1: retry load
+  s3 --> s4: tear down component
+```
+
+The engine and event sink remain trusted. If the event sink throws, the host
+cannot determine whether it recorded the event. The host refuses subsequent
+effectful operations with `event_sink_uncertain`; reconcile the sink and rebuild
+the host before continuing. The sink must be synchronous: returning a promise
+or thenable is also treated as uncertain, and any write already started can
+still finish. Calls already in flight can still finish. The sink cannot reenter
+effectful host methods during an event callback. Teardown refuses
+with `component_busy` while linked or HTTP calls are active; retry it after they
+settle.
+
+The event-sink model checks 66 bounded states; its projection hides 56
+same-label steps.
+
+```mermaid
+stateDiagram-v2
+  s0: Host ready
+  s1: Event being recorded
+  s2: Host awaiting reconciliation
+  s3: Event recorded
+  [*] --> s0
+  s0 --> s1: record event
+  s1 --> s2: sink returns an async result or sink fails
+  s1 --> s3: sink confirms
+```
+
+The call-fence model checks 18 bounded states and hides 12 same-label steps.
+
+```mermaid
+stateDiagram-v2
+  s0: Component ready
+  s1: Component torn down
+  s2: Component call in progress
+  s3: Calls settled
+  [*] --> s0
+  s0 --> s1: tear down component
+  s0 --> s2: start call
+  s2 --> s3: call settles
+  s3 --> s1: tear down component
+  s3 --> s2: start call
 ```
 
 ## Tests

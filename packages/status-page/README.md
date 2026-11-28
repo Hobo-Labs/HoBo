@@ -36,6 +36,19 @@ static site is the **read store**, rebuildable from zero. Types follow
 - **Evaluation** (`src/model.ts`): wall-clock enters exactly once, as an
   explicit `evaluatedAt`. Components without a signal inside the freshness
   budget render **delayed/unknown — never stale operational** (ADR-0077 §4).
+  A signal dated after `evaluatedAt` is also delayed until the clock reaches it.
+  The freshness budget must be a nonnegative safe integer in milliseconds.
+- Maintenance updates received before their schedule are held in the projection
+  until the schedule arrives. Completed and canceled are terminal states. Rebuild
+  older projection snapshots from the event log to recover updates discarded by
+  earlier versions.
+- Incidents first seen in an update or resolution keep their lifecycle monotonic
+  while a late first open supplies the impact and any later state. Rebuild older
+  projection snapshots from the event log to recover data earlier versions did
+  not backfill.
+- Older measurements contribute to history but do not replace the latest
+  component label or status. Malformed optional component labels cause the
+  measurement to be ignored.
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
   chrome, strict inline CSP, and `escapeHtml` on every value. The implemented
   `src/tokens.ts` palette must match the independent reviewed
@@ -137,7 +150,9 @@ host's job; this package projects and renders.
 - Incidents referencing unregistered components still render.
 - Public publishes recompute the banner from public components only, and
   refuse an empty allowlist.
-- Site writer rejects slug traversal and duplicate slugs.
+- Site writer validates all slugs before touching the filesystem, including
+  traversal and duplicate checks. Later filesystem failures can leave partial
+  output and require a retry or cleanup.
 
 ## Honest scope
 

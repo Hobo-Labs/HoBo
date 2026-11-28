@@ -58,5 +58,21 @@ destroy, and replay. Oracles include:
 - equivalent manifests share a canonical hash
 - tenant A operations never mutate tenant B
 - rollback restores that tenant's snapshot slice (not the whole world, not just the clock)
+- retry and rollback advance the model clock, so snapshots taken after them do
+  not replace earlier checkpoints at the same clock
+- the model refuses to advance an invalid or exhausted clock without changing
+  its state
+- direct ticks and forward clock assignments are recorded for replay, and
+  invalid or backward clock assignments are refused
+- restoring a serialized state establishes a replay baseline for a fresh model;
+  on an existing model it records a new revision and preserves earlier snapshots
+- malformed snapshots and inconsistent fingerprints are refused before restore
+- capability commands reject unsupported verbs and capture caller-supplied lists
+  so later caller edits do not change the oracle or its replay history
+- public event appends advance the clock, replay-owned event kinds cannot be
+  emitted as free-form notes, and event history reads return detached snapshots
+- resource, capability, bindle and checkpoint reads return detached views;
+  editing them does not change the oracle's live state
+- rollback metadata is read-only, and the replay baseline is internal
 - interrupt after destroy does not revive a resource
 - apply after destroy recreates instead of leaving a destroyed hole

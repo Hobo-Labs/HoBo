@@ -34,7 +34,6 @@ import {
 	createRuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
-import { BudgetFenceSettlementGuardSchema } from "../../broker/src/_generated/yard_placement_pb.js";
 import { createHostingBudgetAuthorityBridge } from "../src/hosting-budget-authority.js";
 
 const NOW = Date.parse("2026-10-29T12:00:00.000Z"),
@@ -297,6 +296,89 @@ const actorContext = {
 };
 
 describe("durable core hosting financial authority composition", () => {
+	it("rejects an entitlement observed later within the current millisecond", async () => {
+		const initial = snapshot();
+		initial.entitlements = [
+			create(BudgetEntitlementSchema, {
+				kind: "allowance",
+				bucketId: "credit",
+				unit: "request",
+				periodId: "period",
+				remainingUnits: 10,
+				observedAt: "2026-10-29T12:00:00.000000900Z",
+				validUntil: new Date(VALID).toISOString(),
+			}),
+		];
+		const fx = fixture(initial);
+		const resolve = fx.bridge().resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		const request = {
+			budgetId: "hosting",
+			tenantId: "tenant",
+			bindle: deployment("time-boundary").bindle,
+			objective: "maximize-credits",
+		};
+		await expect(resolve(request)).rejects.toThrow(/entitlement exposure/u);
+		fx.setClock(NOW + 1);
+		await expect(resolve(request)).resolves.toMatchObject({
+			budget: { budgetId: "hosting" },
+		});
+	});
+
+	it("rejects a future snapshot even when an authority adapter returns it", async () => {
+		const fx = fixture();
+		const future = fx.authority.read(new Date(NOW).toISOString());
+		future.observedAt = "2026-10-29T12:00:00.000000900Z";
+		const port: BudgetAdmissionAuthority = {
+			...fx.authority,
+			read: () => future,
+		};
+		const resolve = fx.bridge(port).resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		await expect(
+			resolve({
+				budgetId: "hosting",
+				tenantId: "tenant",
+				bindle: deployment("future-snapshot").bindle,
+				objective: "maximize-credits",
+			}),
+		).rejects.toThrow(/financial evidence/u);
+	});
+
+	it("rejects an invalid entitlement date from an authority adapter", async () => {
+		const initial = snapshot();
+		initial.entitlements = [
+			create(BudgetEntitlementSchema, {
+				kind: "allowance",
+				bucketId: "credit",
+				unit: "request",
+				periodId: "period",
+				remainingUnits: 10,
+				observedAt: new Date(NOW).toISOString(),
+				validUntil: new Date(VALID).toISOString(),
+			}),
+		];
+		const fx = fixture(initial);
+		const invalid = fx.authority.read(new Date(NOW).toISOString());
+		const bucket = invalid.entitlements[0];
+		if (!bucket) throw new Error("fixture entitlement missing");
+		bucket.observedAt = "2026-09-31T00:00:00Z";
+		const port: BudgetAdmissionAuthority = {
+			...fx.authority,
+			read: () => invalid,
+		};
+		const resolve = fx.bridge(port).resolve;
+		if (!resolve) throw new Error("fixture bridge missing resolver");
+		await expect(
+			resolve({
+				budgetId: "hosting",
+				tenantId: "tenant",
+				bindle: deployment("invalid-entitlement").bindle,
+				objective: "maximize-credits",
+			}),
+		).rejects.toThrow(/timestamp/u);
+	});
+
 	it("adopts the gateway's hold once and forbids another transition from spending that authorization", async () => {
 		const fx = fixture(),
 			deps = deploymentDeps(fx),
@@ -509,83 +591,6 @@ describe("durable core hosting financial authority composition", () => {
 				?.reservedUnits,
 		).toBe(1);
 	});
-	it("matches kindless allowance snapshots from a custom durable authority", async () => {
-		const initial = snapshot();
-		initial.entitlements = [
-			create(BudgetEntitlementSchema, {
-				bucketId: "legacy",
-				kind: "allowance",
-				unit: "request",
-				periodId: "period",
-				remainingUnits: 1,
-				observedAt: new Date(NOW).toISOString(),
-				validUntil: new Date(VALID).toISOString(),
-			}),
-		];
-		const fx = fixture(initial);
-		const kindless = fx.authority.read(new Date(NOW).toISOString());
-		const entitlement = kindless.entitlements[0];
-		if (!entitlement) throw new Error("legacy entitlement missing");
-		entitlement.kind = "";
-		const custom: BudgetAdmissionAuthority = {
-			...fx.authority,
-			read: () => create(BudgetLedgerSnapshotSchema, kindless),
-		};
-		const commitment = proposal(input(custom));
-		expect((await reserve(fx.bridge(custom), "legacy", commitment)).ok).toBe(
-			true,
-		);
-	});
-	it.each([
-		"",
-		"allowance",
-	] as const)("canonicalizes %s entitlement evidence for a legacy v1 fence", async (kind) => {
-		const fx = fixture(),
-			commitment = proposal(input(fx.authority));
-		await reserve(fx.bridge(), "one", commitment);
-		const existing = fx.authority.lookup("one");
-		if (!existing) throw new Error("reservation missing");
-		const legacy = {
-			...existing,
-			fenceSettlementGuard: create(BudgetFenceSettlementGuardSchema, {}),
-			fenceSettlementPayloadVersion: "",
-		};
-		let observedKind: string | undefined;
-		const authority: BudgetAdmissionAuthority = {
-			...fx.authority,
-			lookup: () => legacy,
-			settle: (_id, _actual, evidence) => {
-				observedKind = evidence?.entitlementClaims?.[0]?.kind;
-				return legacy;
-			},
-		};
-		const bridge = fx.bridge(authority, {
-			settlement: async (request) => ({
-				actualMicros: request.settledMicros,
-				usageEvidenceRef: request.evidenceRef,
-				sourceStoppedEvidenceRef: request.sourceStoppedEvidenceRef,
-				entitlementClaims: [
-					create(EntitlementClaimSchema, {
-						bucketId: "legacy",
-						unit: "request",
-						units: 1,
-						kind,
-					}),
-				],
-			}),
-		});
-		expect(
-			(
-				await bridge.settle({
-					...ref("one", commitment),
-					settledMicros: 40,
-					evidenceRef: "usage",
-					sourceStoppedEvidenceRef: "retired",
-				})
-			).ok,
-		).toBe(true);
-		expect(observedKind).toBe("");
-	});
 	it("rejects cross-tenant evidence and understated financial allocations", async () => {
 		const fx = fixture(),
 			valid = proposal(input(fx.authority));
@@ -777,6 +782,51 @@ describe("durable core hosting financial authority composition", () => {
 			).ok,
 		).toBe(true);
 		expect(fx.authority.read(new Date(NOW).toISOString()).spentMicros).toBe(40);
+	});
+	it("refuses settlement evidence whose entitlement claim has no kind", async () => {
+		const fx = fixture(),
+			commitment = proposal(input(fx.authority));
+		await reserve(fx.bridge(), "one", commitment);
+		let settled = 0;
+		const authority: BudgetAdmissionAuthority = {
+			...fx.authority,
+			settle: (...args) => {
+				settled++;
+				return fx.authority.settle(...args);
+			},
+		};
+		const bridge = fx.bridge(authority, {
+			settlement: async (request) => ({
+				actualMicros: request.settledMicros,
+				usageEvidenceRef: request.evidenceRef,
+				sourceStoppedEvidenceRef: request.sourceStoppedEvidenceRef,
+				providerAccounts: [
+					create(ProviderAccountExposureSchema, {
+						providerAccountId: "account:host",
+						liabilityMicros: request.settledMicros,
+					}),
+				],
+				entitlementClaims: [
+					create(EntitlementClaimSchema, {
+						bucketId: "free",
+						unit: "request",
+						units: 1,
+						kind: "",
+					}),
+				],
+			}),
+		});
+		expect(
+			(
+				await bridge.settle({
+					...ref("one", commitment),
+					settledMicros: 40,
+					evidenceRef: "usage",
+					sourceStoppedEvidenceRef: "retired",
+				})
+			).ok,
+		).toBe(false);
+		expect(settled).toBe(0);
 	});
 	it("records an actual overrun even when the caller understates the settlement", async () => {
 		const fx = fixture(),

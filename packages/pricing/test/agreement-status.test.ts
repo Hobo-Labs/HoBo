@@ -5,7 +5,7 @@ import {
 	developerPricing,
 	quoteAvailablePricing,
 } from "../src/availability.js";
-import { quoteScenario, quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	assessTargetPricing,
 	createTargetPricingInventory,
@@ -71,7 +71,7 @@ describe("provider agreement status in v2 pricing", () => {
 	])("refuses %s agreements referenced by a workload", (status) => {
 		for (const use of ["baseline", "candidate"] as const) {
 			const scenario = scenarioWithStatus(status, use);
-			expect(quoteScenarioV2(scenario)).toMatchObject({
+			expect(quoteScenario(scenario)).toMatchObject({
 				code: "PRICING_AGREEMENT_UNAVAILABLE",
 			});
 		}
@@ -116,18 +116,18 @@ describe("provider agreement status in v2 pricing", () => {
 		"past-due",
 	])("allows a referenced %s agreement", (status) => {
 		expect(
-			isQuoteVector(quoteScenarioV2(scenarioWithStatus(status, "candidate"))),
+			isQuoteVector(quoteScenario(scenarioWithStatus(status, "candidate"))),
 		).toBe(true);
 	});
 
 	it("keeps trial agreements subject to the new-agreement policy", () => {
 		const scenario = scenarioWithStatus("trialing", "candidate");
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "NEW_AGREEMENT_DENIED",
 		});
 		if (!scenario.options) throw new Error("missing options");
 		scenario.options.allowNewProviderAgreement = true;
-		expect(isQuoteVector(quoteScenarioV2(scenario))).toBe(true);
+		expect(isQuoteVector(quoteScenario(scenario))).toBe(true);
 	});
 
 	it.each([
@@ -135,9 +135,7 @@ describe("provider agreement status in v2 pricing", () => {
 		"cancelled",
 	])("does not reject an unrelated %s agreement", (status) => {
 		expect(
-			isQuoteVector(
-				quoteScenarioV2(scenarioWithStatus(status, "unreferenced")),
-			),
+			isQuoteVector(quoteScenario(scenarioWithStatus(status, "unreferenced"))),
 		).toBe(true);
 	});
 
@@ -149,7 +147,7 @@ describe("provider agreement status in v2 pricing", () => {
 		const scenario = scenarioWithStatus(status, "unreferenced");
 		const reason =
 			status === "trialing" ? "explicit workload" : "unrecognized status";
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "PRICING_AGREEMENT_UNAVAILABLE",
 			message: expect.stringContaining(reason),
 		});
@@ -181,13 +179,5 @@ describe("provider agreement status in v2 pricing", () => {
 				providers: [{ providerId: "sandbox", status: "unverified" }],
 			},
 		});
-	});
-
-	it("preserves legacy v1 quote behavior for historical replay", () => {
-		expect(
-			isQuoteVector(
-				quoteScenario(scenarioWithStatus("cancelled", "candidate")),
-			),
-		).toBe(true);
 	});
 });

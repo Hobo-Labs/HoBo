@@ -434,6 +434,7 @@ export function advanceMaintenanceState(
 	current: MaintenanceState,
 	next: MaintenanceState,
 ): MaintenanceState {
+	if (current === "completed" || current === "canceled") return current;
 	return MAINTENANCE_STATE_RANK[next] >= MAINTENANCE_STATE_RANK[current]
 		? next
 		: current;

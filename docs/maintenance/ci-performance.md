@@ -917,6 +917,13 @@ checks failed on main before anyone saw them:
   ran them. #1959 lists it in `activeCiFiles`, and its two jobs follow the rules the lint then
   applies: the trunk label expression (the workflow can be dispatched) and `clean: false` on the box
   checkout.
+- **`fleet-enrollment.yml` in `actions.lock`.** The fleet enrollment workflow pins only
+  `actions/checkout`; after #1688 the lockfile omitted that workflow until the merge forward,
+  which made the standalone actions-lock job fail while the scorecard workflow still ran.
+  `ci-runner-preflight` also restores the turbo cache through `actions/cache`, so the workflow
+  lock entry must list that pin or the scorecard and strict-store jobs fail before checkout.
+  The strict-store job targets `test/fleet-v2-start-fence-handler.test.ts`, matching the
+  handler suite shipped in `@hobo/ci-gh-actions`.
 - **Who waits for the deps image.** `ci-deps-image-contract.test.ts` sliced the workflow from
   `main-gate:` to `artifact-trust:` and required that text not to mention `ci-deps-image`. #1840 put
   `main_workspace_tests` inside that slice, and it waits for the image on purpose. The test now reads

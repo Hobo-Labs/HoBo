@@ -1,3 +1,12 @@
+import { createHash } from "node:crypto";
+import { clone } from "@bufbuild/protobuf";
+import {
+	compareDecimal,
+	type Decimal,
+	parseDecimal,
+	type QuoteVector,
+	QuoteVectorSchema,
+} from "@hobo/pricing";
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { deliverySubmittedBody } from "./delivery.js";
 import type { BrokerEnvironment } from "./environments.js";
@@ -30,6 +39,11 @@ import {
 	policyHashOf,
 } from "./policies.js";
 import {
+	authorizeBillingSpend,
+	type TrustedQuoteAttestation,
+} from "./pricing-authorization.js";
+import {
+	canonicalResolutionJson,
 	type ResolutionSignature,
 	type ResolutionSigningKey,
 	signResolution,
@@ -50,12 +64,7 @@ import {
 	type ScaleDirective,
 } from "./types.js";
 
-// The HoBo Broker actor. It consumes brokering commands (resolve, scale,
-// deliver), runs the wrapped enforcement planes in order — connectors,
-// gatekeeper (policy + contracts + quota), billing, placement — and emits
-// decision facts. It coordinates durable state through those events; it never
-// mutates a query read model directly. Read models are folds over the emitted
-// facts (see foldBrokerDecisions), with snapshot/restore for the read store.
+export const MAX_BROKER_QUOTE_PLANS = 128;
 
 export interface BrokerResolution {
 	outcome: "resolved" | "rejected";
@@ -67,6 +76,27 @@ export interface BrokerResolution {
 	events: BrokerEvent[];
 }
 
+export interface BrokerQuoteContext {
+	readonly request: Readonly<BrokerRequest>;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly catalogHash: string;
+	readonly environmentDigest: string;
+	readonly policyHash: PolicyHash;
+	readonly stationId: string;
+	readonly railHash: string;
+	readonly bindingDigest: string;
+}
+
+export interface BrokerPricingAuthority {
+	quote(
+		context: BrokerQuoteContext,
+	): QuoteVector | undefined | Promise<QuoteVector | undefined>;
+	attest(
+		context: BrokerQuoteContext,
+		quote: QuoteVector,
+	): TrustedQuoteAttestation | undefined;
+}
+
 export interface HoboBrokerDeps {
 	policies: unknown;
 	catalog: BrokerCatalog;
@@ -74,6 +104,8 @@ export interface HoboBrokerDeps {
 	gatePlane?: GatePlane;
 	gateOptions?: GatePlaneOptions;
 	billingPlane?: BillingPlane;
+	pricingAuthority?: BrokerPricingAuthority;
+	trustLegacyEstimates?: boolean;
 	deliveryPlane?: DeliveryPlane;
 	signingKey?: ResolutionSigningKey;
 	/**
@@ -124,6 +156,139 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 	const deliveryPlane = deps.deliveryPlane ?? createDeliveryPlane();
 	const stationId = deps.stationId;
 	const railHash = deps.railHash;
+	const resolvingRequests = new Set<string>();
+	const issuedResolutions = new Map<
+		string,
+		{
+			canonical: string;
+			receipt: ResolutionReceipt;
+			catalogHash: string;
+			environmentSnapshot: string;
+			pricing?: {
+				authority: BrokerPricingAuthority;
+				quoteMethod: BrokerPricingAuthority["quote"];
+				attestMethod: BrokerPricingAuthority["attest"];
+				quote: QuoteVector;
+				context: BrokerQuoteContext;
+				amount: number;
+			};
+			state: "ready" | "claimed";
+		}
+	>();
+
+	function placementChoices(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+		quoteAll: boolean,
+	) {
+		const approved = deps.environment?.approvedProviders;
+		const definitions =
+			approved !== undefined && approved.length > 0
+				? deps.catalog
+						.definitions()
+						.filter((definition) => approved.includes(definition.providerId))
+				: deps.catalog.definitions();
+		const choices: PlacementDecision[][] = [];
+		const reasons: RejectionReason[] = [];
+		for (const requirement of request.requirements) {
+			const placed = placeRequirement(
+				requirement,
+				definitions,
+				effective,
+				quoteAll,
+			);
+			if ("reason" in placed) reasons.push(placed.reason);
+			else choices.push(placed.placements);
+		}
+		return { choices, reasons };
+	}
+	function selectPlacements(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+	) {
+		const { choices, reasons } = placementChoices(request, effective, false);
+		const placements: PlacementDecision[] = [];
+		for (const options of choices) {
+			const selected = options[0];
+			if (!selected)
+				return {
+					placements,
+					reasons: [
+						...reasons,
+						{
+							plane: "placement" as const,
+							code: "no-eligible-provider",
+							message: "no eligible placement",
+						},
+					],
+				};
+			placements.push(selected);
+		}
+		return { placements, reasons };
+	}
+	function enumeratePlans(
+		request: BrokerRequest,
+		effective: EffectivePlacementPolicy,
+	) {
+		const { choices, reasons } = placementChoices(request, effective, true);
+		if (reasons.length) return { plans: [], reasons };
+		let plans: PlacementDecision[][] = [[]];
+		for (const options of choices) {
+			if (
+				options.length === 0 ||
+				options.length > Math.floor(MAX_BROKER_QUOTE_PLANS / plans.length)
+			) {
+				return {
+					plans: [],
+					reasons: [
+						{
+							plane: "placement" as const,
+							code: "quote-search-limit",
+							message: `complete quote search exceeds ${MAX_BROKER_QUOTE_PLANS} candidate plans`,
+						},
+					],
+				};
+			}
+			plans = plans.flatMap((plan) =>
+				options.map((option) => [...plan, option]),
+			);
+		}
+		return { plans, reasons: [] };
+	}
+
+	function quoteContext(
+		request: BrokerRequest,
+		placements: readonly PlacementDecision[],
+		catalogHash: string,
+		environmentDigest: string,
+	): BrokerQuoteContext {
+		const frozenRequest = Object.freeze({
+			...request,
+			scope: Object.freeze({ ...request.scope }),
+			requirements: Object.freeze(
+				request.requirements.map((requirement) =>
+					Object.freeze({
+						...requirement,
+						features: Object.freeze([...requirement.features]),
+					}),
+				),
+			),
+		});
+		const frozenPlacements = Object.freeze(
+			placements.map((placement) => Object.freeze({ ...placement })),
+		);
+		const fields = {
+			request: frozenRequest,
+			placements: frozenPlacements,
+			catalogHash,
+			environmentDigest,
+			policyHash,
+			stationId,
+			railHash,
+		};
+		const bindingDigest = `sha256:${createHash("sha256").update(JSON.stringify(fields)).digest("hex")}`;
+		return Object.freeze({ ...fields, bindingDigest });
+	}
 
 	function sign(
 		resolution: ResolutionReceipt | ResolutionRejection,
@@ -174,7 +339,7 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 		};
 	}
 
-	return {
+	const broker: HoboBroker = {
 		brokerId: policies.brokerId,
 		policyHash,
 		async resolve(input) {
@@ -187,6 +352,21 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 					requirementCount: request.requirements.length,
 				}),
 			];
+
+			if (issuedResolutions.has(request.requestId)) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-replay-requires-reconciliation",
+							message:
+								"this broker has already issued a receipt for this request",
+						},
+					],
+					events,
+				);
+			}
 
 			// Plane 0 — connector registry: required connector kinds must be
 			// registered and enabled before the broker will act on their behalf.
@@ -277,104 +457,547 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
-			// Plane 1 — the Gatekeeper composition (policy pack + contract
-			// compatibility + obligations + quota), imported and RUN from
-			// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
-			// appended to this resolution's event list.
-			const gate = await gatePlane.evaluate({
-				request: toPolicyDecisionRequest(policies.brokerId, request),
-				costQuota: {
-					quota: policies.billing.quota,
-					used: policies.billing.quotaUsed,
-					limit: policies.billing.quotaLimit,
-				},
-			});
-			for (const gateEvent of gate.events) {
-				events.push({
-					type: String(gateEvent.type ?? "gatekeeper.Event"),
-					data: gateEvent,
-				});
+			let placements: PlacementDecision[] | undefined;
+			let authorizedEstimate = request.spendEstimateUsd;
+			let requestDigest = JSON.stringify(request);
+			let quoteHash: string | undefined;
+			let bindingDigest: string | undefined;
+			let selectedQuote: QuoteVector | undefined;
+			let selectedContext: BrokerQuoteContext | undefined;
+			const catalogHash = deps.catalog.catalogHash;
+			const environmentSnapshot = JSON.stringify(deps.environment ?? null);
+			const environmentDigest = `sha256:${createHash("sha256").update(environmentSnapshot).digest("hex")}`;
+			const environmentChanged = () =>
+				JSON.stringify(deps.environment ?? null) !== environmentSnapshot;
+			const rejectEnvironment = () =>
+				reject(
+					request,
+					[
+						{
+							plane: "policy",
+							code: "environment-stale",
+							message: "broker environment changed during resolution",
+						},
+					],
+					events,
+				);
+			const pricing = deps.pricingAuthority;
+			const quoteMethod = pricing?.quote;
+			const attestMethod = pricing?.attest;
+			const pricingChanged = () =>
+				deps.pricingAuthority !== pricing ||
+				(pricing !== undefined &&
+					(pricing.quote !== quoteMethod || pricing.attest !== attestMethod));
+			const rejectPricing = () =>
+				reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "quote-authority-stale",
+							message: "pricing authority changed during resolution",
+						},
+					],
+					events,
+				);
+			const quotedCandidates: Array<{
+				placements: PlacementDecision[];
+				context: BrokerQuoteContext;
+				quote: QuoteVector;
+				amount: number;
+				score: Decimal;
+				key: string;
+			}> = [];
+			if (pricing) {
+				const search = enumeratePlans(request, effective);
+				if (pricingChanged()) return rejectPricing();
+				if (search.reasons.length)
+					return reject(request, search.reasons, events);
+				if (environmentChanged()) return rejectEnvironment();
+				if (deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed during candidate enumeration",
+							},
+						],
+						events,
+					);
+				let refused: RejectionReason[] | undefined;
+				try {
+					for (const candidate of search.plans) {
+						const context = quoteContext(
+							request,
+							candidate,
+							catalogHash,
+							environmentDigest,
+						);
+						const suppliedQuote = await pricing.quote(context);
+						if (pricingChanged()) return rejectPricing();
+						if (!suppliedQuote)
+							return reject(
+								request,
+								[
+									{
+										plane: "billing",
+										code: "quote-authority-unavailable",
+										message:
+											"pricing authority returned no quote for a candidate plan",
+									},
+								],
+								events,
+							);
+						const quote = clone(QuoteVectorSchema, suppliedQuote);
+						const authorization = authorizeBillingSpend({
+							quote,
+							billing: policies.billing,
+							attestQuote: (item) => pricing.attest(context, item),
+						});
+						if (pricingChanged()) return rejectPricing();
+						if (deps.catalog.catalogHash !== catalogHash)
+							return reject(
+								request,
+								[
+									{
+										plane: "policy",
+										code: "catalog-snapshot-stale",
+										message: "catalog changed during quote search",
+									},
+								],
+								events,
+							);
+						if (environmentChanged()) return rejectEnvironment();
+						if (!authorization.ok) {
+							if (
+								authorization.reasons.length > 0 &&
+								authorization.reasons.every(
+									(reason) =>
+										reason.code === "budget-exceeded" ||
+										reason.code === "spend-cap-exceeded",
+								)
+							) {
+								refused ??= authorization.reasons;
+								continue;
+							}
+							return reject(request, authorization.reasons, events);
+						}
+						const score = parseDecimal(
+							quote.incremental?.billed?.decimal ?? "",
+						);
+						if (!score)
+							return reject(
+								request,
+								[
+									{
+										plane: "billing",
+										code: "quote-invalid",
+										message: "candidate quote has no valid total",
+									},
+								],
+								events,
+							);
+						const key = JSON.stringify(
+							candidate.map((entry) => [
+								entry.resourceId,
+								entry.providerId,
+								entry.definitionId,
+								entry.region,
+							]),
+						);
+						quotedCandidates.push({
+							placements: candidate,
+							context,
+							quote,
+							amount: authorization.authorizedUsd,
+							score,
+							key,
+						});
+					}
+					if (quotedCandidates.length === 0)
+						return reject(
+							request,
+							refused ?? [
+								{
+									plane: "billing",
+									code: "quote-ineligible",
+									message: "no eligible affordable quote",
+								},
+							],
+							events,
+						);
+					quotedCandidates.sort(
+						(a, b) =>
+							compareDecimal(a.score, b.score) || compareIdentity(a.key, b.key),
+					);
+				} catch {
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "quote-authority-unavailable",
+								message: "pricing authority could not verify candidate plans",
+							},
+						],
+						events,
+					);
+				}
+			} else if (deps.trustLegacyEstimates !== true) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "quote-authority-required",
+							message: "configure a trusted pricing authority for this request",
+						},
+					],
+					events,
+				);
 			}
-			if (gate.effect === "deny" || gate.effect === "require-approval") {
-				const reasons: RejectionReason[] =
-					gate.reasons.length > 0
-						? gate.reasons
-						: [
+
+			let candidateIndex = 0;
+			for (;;) {
+				if (pricingChanged()) return rejectPricing();
+				if (pricing) {
+					const candidate = quotedCandidates[candidateIndex++];
+					if (!candidate) throw new Error("candidate search exhausted");
+					placements = candidate.placements;
+					authorizedEstimate = candidate.amount;
+					quoteHash = candidate.quote.quoteHash;
+					selectedQuote = candidate.quote;
+					selectedContext = candidate.context;
+					bindingDigest = candidate.context.bindingDigest;
+					requestDigest = JSON.stringify({
+						bindingDigest,
+						quoteHash,
+						authorizedEstimate,
+					});
+				}
+				if (environmentChanged()) return rejectEnvironment();
+				if (pricing && deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed before policy evaluation",
+							},
+						],
+						events,
+					);
+
+				const gate = await gatePlane.evaluate({
+					request: toPolicyDecisionRequest(policies.brokerId, {
+						...request,
+						spendEstimateUsd: authorizedEstimate,
+					}),
+					costQuota: {
+						quota: policies.billing.quota,
+						used: policies.billing.quotaUsed,
+						limit: policies.billing.quotaLimit,
+					},
+				});
+				if (pricingChanged()) return rejectPricing();
+				for (const gateEvent of gate.events) {
+					events.push({
+						type: String(gateEvent.type ?? "gatekeeper.Event"),
+						data: gateEvent,
+					});
+				}
+				if (gate.effect === "deny" || gate.effect === "require-approval") {
+					const reasons: RejectionReason[] =
+						gate.reasons.length > 0
+							? gate.reasons
+							: [
+									{
+										plane: "policy",
+										code: "approval-required",
+										message:
+											"the gate plane requires approval before placement",
+									},
+								];
+					return reject(request, reasons, events);
+				}
+
+				if (environmentChanged()) return rejectEnvironment();
+
+				if (pricing && selectedQuote && selectedContext) {
+					const context = selectedContext;
+					if (deps.catalog.catalogHash !== catalogHash)
+						return reject(
+							request,
+							[
 								{
 									plane: "policy",
-									code: "approval-required",
-									message: "the gate plane requires approval before placement",
+									code: "catalog-snapshot-stale",
+									message: "catalog changed before billing admission",
 								},
-							];
-				return reject(request, reasons, events);
-			}
-
-			// Plane 2 — billing enforcement beyond quota: budget + spend cap.
-			const billing = billingPlane.authorize({
-				spendEstimateUsd: request.spendEstimateUsd,
-				billing: policies.billing,
-				requestId: request.requestId,
-				requestDigest: JSON.stringify(request),
-			});
-			if (!billing.ok) {
-				return reject(request, billing.reasons, events);
-			}
-
-			// Plane 3 — placement: match every requirement against the provider
-			// catalog under the effective policy, ranked by its objective. The
-			// approved environment's provider list bounds eligibility first.
-			const environmentProviders = deps.environment?.approvedProviders;
-			const definitions =
-				environmentProviders !== undefined && environmentProviders.length > 0
-					? deps.catalog
-							.definitions()
-							.filter((definition) =>
-								environmentProviders.includes(definition.providerId),
-							)
-					: deps.catalog.definitions();
-			const placements: PlacementDecision[] = [];
-			const placementReasons: RejectionReason[] = [];
-			for (const requirement of request.requirements) {
-				const placed = placeRequirement(requirement, definitions, effective);
-				if ("reason" in placed) {
-					placementReasons.push(placed.reason);
-				} else {
-					placements.push(placed.placement);
+							],
+							events,
+						);
+					const checked = authorizeBillingSpend({
+						quote: selectedQuote,
+						billing: policies.billing,
+						attestQuote: (candidate) => pricing.attest(context, candidate),
+					});
+					if (pricingChanged()) return rejectPricing();
+					if (!checked.ok) return reject(request, checked.reasons, events);
+					if (checked.authorizedUsd !== authorizedEstimate)
+						return reject(
+							request,
+							[
+								{
+									plane: "billing",
+									code: "quote-authority-stale",
+									message: "quote liability changed while policy was evaluated",
+								},
+							],
+							events,
+						);
 				}
-			}
-			if (placementReasons.length > 0) {
-				billingPlane.release?.(request.requestId, true);
-				return reject(request, placementReasons, events);
-			}
 
-			const receipt: ResolutionReceipt = {
-				schemaVersion: BROKER_SCHEMA_VERSION,
-				requestId: request.requestId,
-				brokerId: policies.brokerId,
-				catalogHash: deps.catalog.catalogHash,
-				policyHash,
-				placementPolicyId: effective.id,
-				placements,
-				stationId,
-				railHash,
-			};
-			events.push(
-				brokerEvent(BROKER_EVENTS.Resolved, {
+				if (environmentChanged()) return rejectEnvironment();
+				if (pricing && deps.catalog.catalogHash !== catalogHash)
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed during final quote attestation",
+							},
+						],
+						events,
+					);
+
+				const billing = billingPlane.authorize({
+					spendEstimateUsd: authorizedEstimate,
+					billing: { ...policies.billing },
+					requestId: request.requestId,
+					requestDigest,
+				});
+				if (pricingChanged()) {
+					if (billing.ok && billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return rejectPricing();
+				}
+				if (!billing.ok) {
+					if (
+						pricing &&
+						candidateIndex < quotedCandidates.length &&
+						billing.noReservationCreated === true &&
+						billing.reservationCreated !== true &&
+						billing.reasons.length > 0 &&
+						billing.reasons.every(
+							(reason) =>
+								reason.code === "budget-exceeded" ||
+								reason.code === "spend-cap-exceeded",
+						)
+					) {
+						events.push(
+							brokerEvent(BROKER_EVENTS.CandidateUnaffordable, {
+								requestId: request.requestId,
+								quoteHash: quoteHash ?? "",
+								bindingDigest: bindingDigest ?? "",
+								authorizedUsd: authorizedEstimate,
+								reasons: billing.reasons.map((reason) => ({ ...reason })),
+							}),
+						);
+						continue;
+					}
+					return reject(
+						request,
+						billing.reasons.length > 0
+							? billing.reasons
+							: [
+									{
+										plane: "billing",
+										code: "billing-denied",
+										message: "billing denied admission without a reason",
+									},
+								],
+						events,
+					);
+				}
+				if (pricing && billing.reservationCreated === undefined) {
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "reservation-evidence-required",
+								message:
+									"billing did not confirm creation of a new reservation",
+							},
+						],
+						events,
+					);
+				}
+				if (billing.reservationCreated === false) {
+					return reject(
+						request,
+						[
+							{
+								plane: "billing",
+								code: "reservation-replay-requires-reconciliation",
+								message:
+									"this reservation was already authorized; reconcile the prior resolution",
+							},
+						],
+						events,
+					);
+				}
+
+				if (environmentChanged()) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return rejectEnvironment();
+				}
+				if (pricing && deps.catalog.catalogHash !== catalogHash) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return reject(
+						request,
+						[
+							{
+								plane: "policy",
+								code: "catalog-snapshot-stale",
+								message: "catalog changed while the hold was created",
+							},
+						],
+						events,
+					);
+				}
+
+				if (pricing && selectedQuote && selectedContext) {
+					const context = selectedContext;
+					const checked = authorizeBillingSpend({
+						quote: selectedQuote,
+						billing: policies.billing,
+						attestQuote: (candidate) => pricing.attest(context, candidate),
+					});
+					if (pricingChanged()) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return rejectPricing();
+					}
+					if (!checked.ok || checked.authorizedUsd !== authorizedEstimate) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return reject(
+							request,
+							checked.ok
+								? [
+										{
+											plane: "billing",
+											code: "quote-authority-stale",
+											message:
+												"quote liability changed while the hold was created",
+										},
+									]
+								: checked.reasons,
+							events,
+						);
+					}
+					if (
+						environmentChanged() ||
+						deps.catalog.catalogHash !== catalogHash
+					) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						if (environmentChanged()) return rejectEnvironment();
+						return reject(
+							request,
+							[
+								{
+									plane: "policy",
+									code: "catalog-snapshot-stale",
+									message: "catalog changed during final quote check",
+								},
+							],
+							events,
+						);
+					}
+				}
+
+				if (!placements) {
+					const plan = selectPlacements(request, effective);
+					if (plan.reasons.length) {
+						if (billing.reservationCreated === true)
+							billingPlane.release?.(request.requestId, true);
+						return reject(request, plan.reasons, events);
+					}
+					placements = plan.placements;
+				}
+				if (pricingChanged()) {
+					if (billing.reservationCreated === true)
+						billingPlane.release?.(request.requestId, true);
+					return rejectPricing();
+				}
+
+				const receipt: ResolutionReceipt = {
+					schemaVersion: BROKER_SCHEMA_VERSION,
 					requestId: request.requestId,
 					brokerId: policies.brokerId,
-					catalogHash: deps.catalog.catalogHash,
+					catalogHash,
 					policyHash,
 					placementPolicyId: effective.id,
-					placements: placements.map((placement) => ({ ...placement })),
-				}),
-			);
-			const signature = sign(receipt, events);
-			return {
-				outcome: "resolved",
-				receipt,
-				...(signature !== undefined ? { signature } : undefined),
-				events,
-			};
+					placements,
+					stationId,
+					railHash,
+					...(quoteHash && bindingDigest
+						? {
+								quoteHash,
+								pricingBindingDigest: bindingDigest,
+								authorizedUsd: authorizedEstimate,
+							}
+						: undefined),
+				};
+				events.push(
+					brokerEvent(BROKER_EVENTS.Resolved, {
+						requestId: request.requestId,
+						brokerId: policies.brokerId,
+						catalogHash,
+						policyHash,
+						placementPolicyId: effective.id,
+						placements: placements.map((placement) => ({ ...placement })),
+						...(quoteHash && bindingDigest
+							? { quoteHash, bindingDigest, authorizedUsd: authorizedEstimate }
+							: undefined),
+					}),
+				);
+				const signature = sign(receipt, events);
+				issuedResolutions.set(request.requestId, {
+					canonical: canonicalResolutionJson(receipt),
+					receipt: structuredClone(receipt),
+					catalogHash,
+					environmentSnapshot,
+					...(pricing && selectedQuote && selectedContext
+						? {
+								pricing: {
+									authority: pricing,
+									quoteMethod: pricing.quote,
+									attestMethod: pricing.attest,
+									quote: selectedQuote,
+									context: selectedContext,
+									amount: authorizedEstimate,
+								},
+							}
+						: undefined),
+					state: "ready",
+				});
+				return {
+					outcome: "resolved",
+					receipt,
+					...(signature !== undefined ? { signature } : undefined),
+					events,
+				};
+			}
 		},
 		scale(input) {
 			const directive = parseScaleDirective(input);
@@ -391,14 +1014,92 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			};
 		},
 		async deliver(receipt) {
-			const ticket = await deliveryPlane.submit(receipt, policies.delivery);
+			const issued = issuedResolutions.get(receipt.requestId);
+			if (!issued || canonicalResolutionJson(receipt) !== issued.canonical) {
+				throw new BrokerParseError(
+					"delivery-receipt-untrusted",
+					"delivery-receipt-untrusted: receipt was not issued by this broker instance",
+				);
+			}
+			if (issued.state !== "ready") {
+				throw new BrokerParseError(
+					"delivery-already-claimed",
+					"delivery-already-claimed: reconcile the previous delivery attempt",
+				);
+			}
+			issued.state = "claimed";
+			let snapshot: ResolutionReceipt;
+			try {
+				const currentEnvironment = () =>
+					JSON.stringify(deps.environment ?? null) ===
+					issued.environmentSnapshot;
+				if (
+					!currentEnvironment() ||
+					deps.catalog.catalogHash !== issued.catalogHash
+				) {
+					throw new BrokerParseError(
+						"delivery-context-stale",
+						"delivery-context-stale: environment or catalog changed",
+					);
+				}
+				if (issued.pricing) {
+					const {
+						authority,
+						quoteMethod,
+						attestMethod,
+						quote,
+						context,
+						amount,
+					} = issued.pricing;
+					const authorityChanged = () =>
+						deps.pricingAuthority !== authority ||
+						authority.quote !== quoteMethod ||
+						authority.attest !== attestMethod;
+					if (authorityChanged())
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: pricing authority changed",
+						);
+					const check = authorizeBillingSpend({
+						quote,
+						billing: policies.billing,
+						attestQuote: (candidate) => authority.attest(context, candidate),
+					});
+					if (!check.ok || check.authorizedUsd !== amount)
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: quote or liability is no longer current",
+						);
+					if (authorityChanged())
+						throw new BrokerParseError(
+							"delivery-quote-stale",
+							"delivery-quote-stale: pricing authority changed during quote check",
+						);
+					if (
+						!currentEnvironment() ||
+						deps.catalog.catalogHash !== issued.catalogHash
+					)
+						throw new BrokerParseError(
+							"delivery-context-stale",
+							"delivery-context-stale: context changed during quote check",
+						);
+				}
+				snapshot = structuredClone(issued.receipt);
+			} catch (error) {
+				issued.state = "ready";
+				throw error;
+			}
+			const ticket = await deliveryPlane.submit(
+				snapshot,
+				structuredClone(policies.delivery),
+			);
 			return {
 				ticket,
 				events: [
 					brokerEvent(
 						BROKER_EVENTS.DeliverySubmitted,
 						deliverySubmittedBody({
-							requestId: receipt.requestId,
+							requestId: issued.receipt.requestId,
 							brokerId: policies.brokerId,
 							ticket,
 						}),
@@ -407,29 +1108,94 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			};
 		},
 	};
+	return {
+		...broker,
+		async resolve(input) {
+			const snapshot = cloneAsJson(input);
+			const request = parseBrokerRequest(snapshot);
+			if (resolvingRequests.has(request.requestId)) {
+				return reject(
+					request,
+					[
+						{
+							plane: "billing",
+							code: "reservation-replay-requires-reconciliation",
+							message: "resolution for this request is already in progress",
+						},
+					],
+					[
+						brokerEvent(BROKER_EVENTS.Requested, {
+							requestId: request.requestId,
+							brokerId: policies.brokerId,
+							bindleId: request.scope.bindleId,
+							requirementCount: request.requirements.length,
+						}),
+					],
+				);
+			}
+			resolvingRequests.add(request.requestId);
+			try {
+				return await broker.resolve(snapshot);
+			} finally {
+				resolvingRequests.delete(request.requestId);
+			}
+		},
+	};
 }
 
 function placeRequirement(
 	requirement: ResourceRequirement,
 	definitions: readonly BrokerCatalogDefinition[],
 	policy: EffectivePlacementPolicy,
-): { placement: PlacementDecision } | { reason: RejectionReason } {
+	quoteAll: boolean,
+): { placements: PlacementDecision[] } | { reason: RejectionReason } {
+	let invalidDefinition = false;
+	const selectedRegions = new Map<BrokerCatalogDefinition, string[]>();
 	const eligible = definitions.filter((definition) => {
+		if (
+			policy.objective === "pinned" &&
+			definition.providerId !== policy.pinnedProviderId
+		)
+			return false;
 		if (policy.deniedProviders.includes(definition.providerId)) return false;
 		if (
 			policy.allowedProviders.length > 0 &&
 			!policy.allowedProviders.includes(definition.providerId)
 		)
 			return false;
-		const verdict = definition.satisfies({
-			port: requirement.port,
-			features: [...requirement.features],
-		});
-		if (verdict.kind !== "full") return false;
-		const region = pickRegion(requirement, definition, policy);
-		return region !== undefined;
+		try {
+			const verdict = definition.satisfies({
+				port: requirement.port,
+				features: [...requirement.features],
+			});
+			if (verdict.kind !== "full") return false;
+			const regions = eligibleRegions(requirement, definition, policy);
+			if (regions.length === 0) return false;
+			if (
+				regions.some(
+					(region) => !isJsonString(region) || region.trim().length === 0,
+				)
+			) {
+				invalidDefinition = true;
+				return false;
+			}
+			selectedRegions.set(definition, regions);
+			return true;
+		} catch {
+			invalidDefinition = true;
+			return false;
+		}
 	});
 
+	if (invalidDefinition) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "catalog-definition-invalid",
+				message: "a catalog capability check failed",
+			},
+		};
+	}
 	if (eligible.length === 0) {
 		return {
 			reason: {
@@ -440,74 +1206,208 @@ function placeRequirement(
 		};
 	}
 
-	let winner: BrokerCatalogDefinition;
-	if (policy.objective === "pinned") {
-		const pinned = eligible.filter(
-			(definition) => definition.providerId === policy.pinnedProviderId,
-		);
-		if (pinned.length === 0) {
+	const candidates =
+		policy.objective === "pinned"
+			? eligible.filter(
+					(definition) => definition.providerId === policy.pinnedProviderId,
+				)
+			: eligible;
+	if (candidates.length === 0) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "pinned-provider-unavailable",
+				message: `pinned provider ${policy.pinnedProviderId ?? "<unset>"} cannot satisfy port ${requirement.port} for resource ${requirement.resourceId}`,
+			},
+		};
+	}
+
+	const ids = new Set<string>();
+	const priced: Array<{
+		definition: BrokerCatalogDefinition;
+		price: Decimal;
+		id: string;
+		providerId: string;
+		sku: string;
+		unit: string;
+		priceText: string;
+	}> = [];
+	let comparisonUnit: string | undefined;
+	for (const definition of candidates) {
+		let id: string,
+			providerId: string,
+			sku: string,
+			unit: string,
+			priceText: string;
+		try {
+			id = definition.id;
+			providerId = definition.providerId;
+			sku = definition.cost?.sku;
+			unit = definition.cost?.unit;
+			priceText = definition.cost?.marginalPrice;
+		} catch {
 			return {
 				reason: {
 					plane: "placement",
-					code: "pinned-provider-unavailable",
-					message: `pinned provider ${policy.pinnedProviderId ?? "<unset>"} cannot satisfy port ${requirement.port} for resource ${requirement.resourceId}`,
+					code: "catalog-definition-invalid",
+					message: "catalog definition fields could not be read",
 				},
 			};
 		}
-		// SAFETY: assertion required at this I/O or test boundary.
-		winner = rankByCost(pinned)[0] as BrokerCatalogDefinition;
-	} else {
-		// SAFETY: assertion required at this I/O or test boundary.
-		winner = rankByCost(eligible)[0] as BrokerCatalogDefinition;
+		if (
+			!isJsonString(id) ||
+			id.trim().length === 0 ||
+			!isJsonString(providerId) ||
+			providerId.trim().length === 0 ||
+			!isJsonString(sku) ||
+			sku.trim().length === 0
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message:
+						"eligible catalog definitions need a provider, identity and SKU",
+				},
+			};
+		}
+		if (ids.has(id)) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-conflict",
+					message: "eligible catalog definitions must have distinct identities",
+				},
+			};
+		}
+		ids.add(id);
+		let price: Decimal | undefined;
+		try {
+			price = isJsonString(priceText) ? parseDecimal(priceText) : undefined;
+		} catch {
+			price = undefined;
+		}
+		if (
+			price === undefined ||
+			price.coefficient < 0n ||
+			!isJsonString(unit) ||
+			unit.trim().length === 0
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-price-invalid",
+					message: `catalog price for ${id} must be a nonnegative decimal with a unit`,
+				},
+			};
+		}
+		if (!quoteAll && comparisonUnit !== undefined && unit !== comparisonUnit) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-price-incomparable",
+					message: "eligible catalog prices use different units",
+				},
+			};
+		}
+		comparisonUnit = unit;
+		priced.push({ definition, price, id, providerId, sku, unit, priceText });
 	}
+	priced.sort(
+		(a, b) =>
+			compareDecimal(a.price, b.price) ||
+			compareIdentity(a.providerId, b.providerId) ||
+			compareIdentity(a.id, b.id),
+	);
+	if (priced.length === 0) {
+		return {
+			reason: {
+				plane: "placement",
+				code: "no-eligible-provider",
+				message: "no priced catalog definition is eligible",
+			},
+		};
+	}
+	const placements: PlacementDecision[] = [];
+	for (const selected of priced) {
+		const winner = selected.definition;
 
-	// SAFETY: assertion required at this I/O or test boundary.
-	const region = pickRegion(requirement, winner, policy) as string;
-	return {
-		placement: {
-			resourceId: requirement.resourceId,
-			providerId: winner.providerId,
-			definitionId: winner.id,
-			region,
-			sku: winner.cost.sku,
-			unit: winner.cost.unit,
-			marginalPrice: winner.cost.marginalPrice,
-		},
-	};
+		let regions: string[];
+		try {
+			regions = eligibleRegions(requirement, winner, policy);
+		} catch {
+			regions = [];
+		}
+		if (
+			JSON.stringify(regions) !== JSON.stringify(selectedRegions.get(winner))
+		) {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message: "selected catalog regions changed during placement",
+				},
+			};
+		}
+
+		try {
+			if (
+				winner.id !== selected.id ||
+				winner.providerId !== selected.providerId ||
+				winner.cost.sku !== selected.sku ||
+				winner.cost.unit !== selected.unit ||
+				winner.cost.marginalPrice !== selected.priceText
+			) {
+				return {
+					reason: {
+						plane: "placement",
+						code: "catalog-definition-invalid",
+						message: "selected catalog definition changed during placement",
+					},
+				};
+			}
+		} catch {
+			return {
+				reason: {
+					plane: "placement",
+					code: "catalog-definition-invalid",
+					message: "selected catalog definition could not be rechecked",
+				},
+			};
+		}
+		for (const region of quoteAll ? regions : regions.slice(0, 1)) {
+			placements.push({
+				resourceId: requirement.resourceId,
+				providerId: selected.providerId,
+				definitionId: selected.id,
+				region,
+				sku: selected.sku,
+				unit: selected.unit,
+				marginalPrice: selected.priceText,
+			});
+		}
+	}
+	return { placements };
 }
 
-// Min-cost objective (same objective the Yard Planner ranks by): lowest
-// marginal price wins; provider id is the deterministic tie-break.
-function rankByCost(
-	definitions: readonly BrokerCatalogDefinition[],
-): BrokerCatalogDefinition[] {
-	return [...definitions].sort((a, b) => {
-		const priceA = Number.parseFloat(a.cost.marginalPrice);
-		const priceB = Number.parseFloat(b.cost.marginalPrice);
-		const costA = Number.isNaN(priceA) ? Number.POSITIVE_INFINITY : priceA;
-		const costB = Number.isNaN(priceB) ? Number.POSITIVE_INFINITY : priceB;
-		if (costA !== costB) return costA - costB;
-		return a.providerId.localeCompare(b.providerId);
-	});
+function compareIdentity(a: string, b: string): number {
+	return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function pickRegion(
+function eligibleRegions(
 	requirement: ResourceRequirement,
 	definition: BrokerCatalogDefinition,
 	policy: EffectivePlacementPolicy,
-): string | undefined {
+): string[] {
 	const allowed =
 		policy.allowedRegions.length > 0
 			? definition.regions.filter((region) =>
 					policy.allowedRegions.includes(region),
 				)
 			: [...definition.regions];
-	if (requirement.region !== undefined) {
-		return allowed.includes(requirement.region)
-			? requirement.region
-			: undefined;
-	}
-	return allowed[0];
+	if (requirement.region !== undefined)
+		return allowed.includes(requirement.region) ? [requirement.region] : [];
+	return [...new Set(allowed)];
 }
 
 export function parseScaleDirective(

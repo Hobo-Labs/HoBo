@@ -60,9 +60,9 @@ describe("workflow journal authority", () => {
 		const engine = createWorkflowEngine();
 		const live = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${live.runId}`);
-		const damaged = events.filter(
-			(event) => event.type !== "run.SleepCompleted",
-		);
+		const damaged = events
+			.filter((event) => event.type !== "run.SleepCompleted")
+			.map((event, index) => ({ ...event, seq: index + 1 }));
 		const reader = { ...engine.store, readStream: async () => damaged };
 		await expect(
 			createWorkflowEngine({ store: reader }).resume(wf, live.runId, null),
@@ -95,19 +95,19 @@ describe("workflow journal authority", () => {
 		}
 	});
 
-	it("refuses an unknown command-tree version before returning a terminal result", async () => {
-		const wf = defineWorkflow({ name: "unknown-version", run: () => "done" });
+	it("refuses an unknown run.Started field before returning a terminal result", async () => {
+		const wf = defineWorkflow({ name: "unknown-field", run: () => "done" });
 		const engine = createWorkflowEngine();
 		const live = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${live.runId}`);
 		const unknown = events.map((event) =>
 			event.type === "run.Started" && isJsonObject(event.data)
-				? { ...event, data: { ...event.data, commandTreeVersion: 999 } }
+				? { ...event, data: { ...event.data, unknownField: 999 } }
 				: event,
 		);
 		const reader = { ...engine.store, readStream: async () => unknown };
 		await expect(
 			createWorkflowEngine({ store: reader }).resume(wf, live.runId, null),
-		).rejects.toThrow(/unsupported.*version/i);
+		).rejects.toThrow(/run.Started/i);
 	});
 });

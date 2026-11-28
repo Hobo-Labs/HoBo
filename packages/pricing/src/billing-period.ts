@@ -2,7 +2,7 @@ import type {
 	ProviderAgreement,
 	QuoteScenario,
 } from "./_generated/pricing_pb.js";
-import { hasV2BaselineCharges } from "./agreement-status.js";
+import { hasBaselineCharges } from "./agreement-status.js";
 import { PricingFault } from "./state.js";
 import { utcMillis } from "./time-order.js";
 
@@ -69,7 +69,7 @@ function validatePeriod(
 		throw unsupported();
 }
 
-export function validateV2BillingPeriods(scenario: QuoteScenario): void {
+export function validateBillingPeriods(scenario: QuoteScenario): void {
 	const state = scenario.state;
 	if (state === undefined) throw unsupported();
 	const at = utcMillis(scenario.at);
@@ -79,6 +79,6 @@ export function validateV2BillingPeriods(scenario: QuoteScenario): void {
 		...scenario.candidate.map((item) => item.agreementRef),
 	]);
 	for (const agreement of state.agreements)
-		if (hasV2BaselineCharges(agreement.status) || used.has(agreement.id))
+		if (hasBaselineCharges(agreement.status) || used.has(agreement.id))
 			validatePeriod(agreement, at, horizon);
 }

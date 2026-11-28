@@ -28,7 +28,7 @@ on:
       - "scripts/test/bounded-tlc.test.ts"
       - "scripts/test/pricing-workflow-model-trigger.test.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
-      - "docs/design/provider-pricing-scorecard.md"
+      - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
   push:
     branches: [main]
@@ -57,7 +57,7 @@ on:
       - "scripts/test/bounded-tlc.test.ts"
       - "scripts/test/pricing-workflow-model-trigger.test.ts"
       - "docs/design/provider-pricing-commercial-terms.md"
-      - "docs/design/provider-pricing-scorecard.md"
+      - "docs/pricing/provider-pricing-scorecard.md"
       - ".github/workflows/pricing-ci.yml"
   workflow_dispatch:
 

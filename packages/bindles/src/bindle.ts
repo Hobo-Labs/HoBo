@@ -6,6 +6,7 @@ import {
 import {
 	containerDependencyAnnotation,
 	externalDependencyAnnotation,
+	requiredRuntimesForResources,
 	wasmComponentDependencyAnnotation,
 } from "./dependencies.js";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
@@ -344,11 +345,14 @@ export function bindle(
 		}
 	}
 
-	// Usage is the source of truth: b.web()/b.service() → http (+ wasm unless
-	// containers force oci), b.container() → container + oci. Explicit
-	// require/runtimes only when the author opts in with a non-empty block.
+	const inferredRequirements = inferRequirementsFromResources(resources);
 	if (isEmptyRequirements(requirements)) {
-		requirements = inferRequirementsFromResources(resources);
+		requirements = inferredRequirements;
+	} else {
+		requirements = parseBindleRequirements({
+			...requirements,
+			runtimes: [...requirements.runtimes, ...inferredRequirements.runtimes],
+		});
 	}
 
 	const definition: BindleDefinition = {
@@ -379,7 +383,7 @@ export function inferRequirementsFromResources(
 	resources: Readonly<Record<string, BindleResourceRecord>>,
 ): BindleRequirements {
 	const require = new Set<string>();
-	const runtimes = new Set<string>();
+	const runtimes = requiredRuntimesForResources(resources);
 	for (const resource of Object.values(resources)) {
 		switch (resource.kind) {
 			case "web":
@@ -389,7 +393,6 @@ export function inferRequirementsFromResources(
 			case "websocket":
 			case "job":
 				require.add("http");
-				runtimes.add("wasm");
 				break;
 			case "kv":
 				require.add("kv");
@@ -412,21 +415,12 @@ export function inferRequirementsFromResources(
 			case "secret":
 				require.add("secret");
 				break;
-			case "wasm-component":
-				runtimes.add("wasm");
-				break;
 			case "container":
 				require.add("container");
-				runtimes.add("oci");
 				break;
 			default:
 				break;
 		}
-	}
-	// OCI containers imply the Camp host; drop default wasm when oci is present
-	// so nameless Bindles with container+service do not force a wasm runtime.
-	if (runtimes.has("oci")) {
-		runtimes.delete("wasm");
 	}
 	return parseBindleRequirements({
 		require: [...require].sort(),

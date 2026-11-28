@@ -24,8 +24,7 @@ import {
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import { quoteScenarioV2 } from "./quote.js";
-import { utcPricingTimeOrder } from "./time-order.js";
+import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
 const hasOwn = Object.hasOwn;
@@ -587,7 +586,7 @@ export function quoteTargetPricing(
 			workload: candidate,
 		});
 	}
-	const quote = quoteScenarioV2(scenario);
+	const quote = quoteScenario(scenario);
 	if (!isQuoteVector(quote))
 		return refuse(
 			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
@@ -636,7 +635,6 @@ export function quoteTargetPricing(
 			agreement,
 			scenario.at,
 			scenario.horizon,
-			utcPricingTimeOrder,
 		);
 		if (
 			rateCard.charges.length === 0 ||

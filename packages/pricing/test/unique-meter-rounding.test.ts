@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -32,14 +32,14 @@ describe("unique-count meter rounding", () => {
 		["ceil", "5"],
 		["floor", "0"],
 	] as const)("applies period %s rounding after unique aggregation", (mode, expected) => {
-		expect(quoteScenarioV2(scenario("period", "5", mode))).toMatchObject({
+		expect(quoteScenario(scenario("period", "5", mode))).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: expected, currency: "USD" } },
 		});
 	});
 
 	it("rejects nontrivial event rounding rather than rounding an aggregate", () => {
-		expect(quoteScenarioV2(scenario("event", "5"))).toMatchObject({
+		expect(quoteScenario(scenario("event", "5"))).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -48,7 +48,7 @@ describe("unique-count meter rounding", () => {
 		"event",
 		"period",
 	])("allows identity rounding at %s scope", (scope) => {
-		expect(quoteScenarioV2(scenario(scope, "1"))).toMatchObject({
+		expect(quoteScenario(scenario(scope, "1"))).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "3", currency: "USD" } },
 		});
@@ -60,7 +60,7 @@ describe("unique-count meter rounding", () => {
 		if (!removed) throw new Error("missing workload fixture");
 		input.baseline.push({ ...removed, usage: [...removed.usage] });
 		removed.direction = "remove";
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -68,7 +68,7 @@ describe("unique-count meter rounding", () => {
 	it("rejects invalid rounding instead of silently ignoring it", () => {
 		const input = scenario("period", "0");
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

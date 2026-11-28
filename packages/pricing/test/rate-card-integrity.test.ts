@@ -3,7 +3,7 @@ import {
 	developerPricing,
 	quoteAvailablePricing,
 } from "../src/availability.js";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	createTargetPricingInventory,
 	quoteTargetPricing,
@@ -84,7 +84,7 @@ describe("rate-card charge integrity", () => {
 		if (kind === "unset-variant") second.variant = { case: undefined };
 		if (kind === "empty-card") charges.length = 0;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 		expect(makeQuote(scenario)).toMatchObject({

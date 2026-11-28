@@ -5,8 +5,6 @@ import type {
 	WorkloadDelta,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard, selectChargeComponents } from "./catalog.js";
-import { codeUnitPricingOrder } from "./ordering.js";
-import { utcPricingTimeOrder } from "./time-order.js";
 
 export function hasExplicitFixedChargeCoverage(
 	rateCard: RateCard,
@@ -19,7 +17,6 @@ export function hasExplicitFixedChargeCoverage(
 		workload,
 		undefined,
 		"fixed",
-		codeUnitPricingOrder,
 	);
 	if (!hasUsageMeters && charges.length === 0) return false;
 	return charges.every((charge) =>
@@ -60,19 +57,12 @@ export function hasExplicitUnreferencedFixedCoverage(
 	return agreements.every((agreement) => {
 		if (agreement.status !== "active" || referenced.has(agreement.id))
 			return true;
-		const rateCard = resolveRateCard(
-			catalog,
-			agreement,
-			at,
-			horizon,
-			utcPricingTimeOrder,
-		);
+		const rateCard = resolveRateCard(catalog, agreement, at, horizon);
 		const charges = selectChargeComponents(
 			rateCard,
 			undefined,
 			undefined,
 			"fixed",
-			codeUnitPricingOrder,
 		);
 		return charges.every((charge) => {
 			if (charge.variant.case !== "fixed") return false;

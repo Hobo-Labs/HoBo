@@ -7,12 +7,14 @@
 export interface SeededPrng {
 	/** Next float in [0, 1). */
 	next(): number;
-	/** Next integer in [0, bound), bound >= 1. */
 	nextInt(bound: number): number;
 }
 
 /** Creates a splitmix32 PRNG from a 32-bit unsigned seed. */
 export function createSeededPrng(seed: number): SeededPrng {
+	if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
+		throw new RangeError("seed must be an unsigned 32-bit integer");
+	}
 	let state = seed >>> 0;
 	const next = (): number => {
 		state = (state + 0x9e3779b9) >>> 0;
@@ -25,6 +27,9 @@ export function createSeededPrng(seed: number): SeededPrng {
 	return {
 		next,
 		nextInt(bound: number): number {
+			if (!Number.isSafeInteger(bound) || bound < 1) {
+				throw new RangeError("bound must be a positive safe integer");
+			}
 			return Math.floor(next() * bound);
 		},
 	};

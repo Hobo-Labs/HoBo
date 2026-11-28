@@ -262,6 +262,18 @@ describe("RRULE subset", () => {
 		}
 	});
 
+	it("maps each weekday and refuses unknown weekday codes", () => {
+		const parsed = parseRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU");
+		expect(parsed.ok).toBe(true);
+		if (!parsed.ok) throw new Error("valid weekday list was refused");
+		expect(parsed.value.byDay.map((day) => day.weekday)).toEqual([
+			0, 1, 2, 3, 4, 5, 6,
+		]);
+		for (const code of ["XX", "M", "MOX", "", "MO,"]) {
+			expect(parseRrule(`FREQ=WEEKLY;BYDAY=${code}`).ok, code).toBe(false);
+		}
+	});
+
 	it("gives up on a rule that never fires instead of looping", () => {
 		const s = series(
 			"FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30",

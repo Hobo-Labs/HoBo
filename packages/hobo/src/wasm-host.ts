@@ -10,6 +10,7 @@
  *   - cloud-native: multi-cloud registry (`@hobo/runtime-cloud-native`)
  */
 
+import type { BindleDefinition } from "@hobo/bindles";
 import { must } from "@hobo/core/total-access";
 import {
 	createInProcessWasmtimeEngine,
@@ -124,6 +125,7 @@ export async function serveProjectOnWasmHost(
 /** Place a Bindle on the local Yard using the configured Camp component host. */
 export async function serveProjectOnLocalYard(options: {
 	readonly projectDir: string;
+	readonly definition?: BindleDefinition;
 	readonly yard?: BareMetalYard;
 	readonly port?: number;
 	readonly hoboHome?: string;

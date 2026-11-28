@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	creditState,
 	makeScenario,
@@ -25,7 +25,7 @@ describe("deterministic pricing time order", () => {
 		early.end = "2027-01-01T00:00:00Z";
 		later.end = "2027-01-01T00:00:00.5Z";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			consumption: [{ sourceId: "Z-early" }],
 			incremental: { effective: { decimal: "0", currency: "USD" } },
@@ -59,7 +59,7 @@ describe("deterministic pricing time order", () => {
 			effective: { ...schedule.effective, start: "2025-01-01T00:00:00.5Z" },
 		});
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "40", currency: "USD" } },
 		});
@@ -89,7 +89,7 @@ describe("deterministic pricing time order", () => {
 		});
 		if (reverse) agreement.rateSchedule.reverse();
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -110,7 +110,7 @@ describe("deterministic pricing time order", () => {
 		if (!first || !second) throw new Error("missing measurement fixture");
 		first.observedAt = "2026-01-01T00:00:00Z";
 		second.observedAt = "2026-01-01T00:00:00.1Z";
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "2", currency: "USD" } },
 		});
@@ -136,7 +136,7 @@ describe("deterministic pricing time order", () => {
 		measurements[0].observedAt = "2026-01-01T00:00:00Z";
 		measurements[1].observedAt = "2026-01-01T00:00:00.0Z";
 		if (reverse) measurements.reverse();
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -157,7 +157,7 @@ describe("deterministic pricing time order", () => {
 			throw new Error("missing measurement fixture");
 		measurements[0].observedAt = "2026-01-01T00:00:00Z";
 		measurements[1].observedAt = "2026-01-01T00:00:00.000Z";
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "2", currency: "USD" } },
 		});
@@ -191,7 +191,7 @@ describe("deterministic pricing time order", () => {
 			evidence.observedAt = value;
 		}
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -209,7 +209,7 @@ describe("deterministic pricing time order", () => {
 		const measurement = scenario.candidate[0]?.usage[0];
 		if (!measurement) throw new Error("missing measurement fixture");
 		measurement.observedAt = observedAt;
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

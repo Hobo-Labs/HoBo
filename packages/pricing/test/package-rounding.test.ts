@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { PackagePriceSchema } from "../src/_generated/pricing_pb.js";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -48,7 +48,7 @@ describe("package rounding", () => {
 		if (kind === "unknown-mode") price.rounding.mode = "unknown";
 		if (kind === "missing-rounding") Reflect.deleteProperty(price, "rounding");
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -63,7 +63,7 @@ describe("package rounding", () => {
 		price.rounding.mode = mode;
 		price.rounding.multiple = "1.0";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: expected, currency: "USD" } },
 		});
@@ -78,7 +78,7 @@ describe("package rounding", () => {
 		const { input, price } = scenario(["1"]);
 		price.packageSize = size;
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -88,7 +88,7 @@ describe("package rounding", () => {
 		if (!price.packageAmount) throw new Error("missing package amount fixture");
 		price.packageAmount.decimal = "0";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "0", currency: "USD" } },
 		});

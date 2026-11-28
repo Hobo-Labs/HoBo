@@ -7,6 +7,8 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
+import { isNonEmptyPrimitiveString } from "../workflow-value.js";
+import { compareCanonicalStrings } from "./canonicalization.js";
 import { createDeterministicContext } from "./context.js";
 import { ReplayDivergenceError } from "./divergence.js";
 import type {
@@ -34,13 +36,39 @@ export function assertReplayEqualsLive<S>({
 	fold,
 	initialState,
 	upcast = (event) => event,
-	targetSeq = seqVector(events),
+	targetSeq,
 	seed = "hobo-replay-live",
-	normalize = stableValue,
+	normalize,
 	runId = "fold-proof",
 }: AssertReplayEqualsLiveInput<S>): ReplayReport {
-	const eventSlice = events.filter((event) => isAtOrBefore(event, targetSeq));
-	const replayEvents = [...eventSlice].sort(compareCanonicalEventOrder);
+	if (!isNonEmptyPrimitiveString(runId))
+		throw new TypeError("replay runId must be a non-empty string");
+	if (!isNonEmptyPrimitiveString(seed))
+		throw new TypeError("replay seed must be a non-empty string");
+	const capturedEvents = events.map((event) => clone(event));
+	const defaultTarget = seqVector(capturedEvents);
+	const requestedTarget = targetSeq === undefined ? defaultTarget : targetSeq;
+	const capturedTarget = Object.fromEntries(
+		Object.getOwnPropertyNames(requestedTarget).map((streamId) => {
+			if (!isNonEmptyPrimitiveString(streamId))
+				throw new TypeError("target stream must be a non-empty string");
+			const sequence = must(
+				requestedTarget[streamId],
+				`target sequence for ${streamId}`,
+			);
+			if (!Number.isSafeInteger(sequence) || sequence < 0)
+				throw new RangeError(
+					"target sequence must be a non-negative safe integer",
+				);
+			return [streamId, sequence];
+		}),
+	);
+	const eventSlice = capturedEvents.filter((event) =>
+		isAtOrBefore(event, capturedTarget),
+	);
+	const replayEvents = [...eventSlice].sort((left, right) =>
+		compareCanonicalEventOrder(left, right),
+	);
 
 	const liveState = runFold({
 		events: eventSlice,
@@ -64,8 +92,9 @@ export function assertReplayEqualsLive<S>({
 		ambientRandom: 0.999999999,
 	});
 
-	const normalizedLive = normalize(cloneAsJson(liveState));
-	const normalizedReplay = normalize(cloneAsJson(replayState));
+	const normalizeState = normalize ?? stableValue;
+	const normalizedLive = normalizeState(cloneAsJson(liveState));
+	const normalizedReplay = normalizeState(cloneAsJson(replayState));
 
 	try {
 		assert.deepEqual(normalizedLive, normalizedReplay);
@@ -79,17 +108,17 @@ export function assertReplayEqualsLive<S>({
 		});
 	}
 
-	return {
+	return Object.freeze({
 		runId,
-		seqVector: toSeqVectorEntries(targetSeq),
-		readSetHash: hashReadSet(events),
+		seqVector: toSeqVectorEntries(capturedTarget),
+		readSetHash: hashReadSet(capturedEvents),
 		stateDigest: crypto
 			.createHash("sha256")
 			.update(stableStringify(normalizedReplay))
 			.digest("hex"),
 		mode: "replay",
 		seed,
-	};
+	});
 }
 
 export interface RunFoldInput<S> {
@@ -134,19 +163,32 @@ export function runFold<S>({
 }
 
 export function seqVector(events: EventEnvelope[]): SeqVector {
-	return stableObject(
-		events.reduce<SeqVector>((position, event) => {
-			position[event.streamId] = Math.max(
-				position[event.streamId] ?? 0,
-				event.seq,
+	const positions = new Map<string, number>();
+	for (const event of events) {
+		if (!isNonEmptyPrimitiveString(event.streamId))
+			throw new TypeError("event stream must be a non-empty string");
+		if (!Number.isSafeInteger(event.seq) || event.seq < 0)
+			throw new RangeError(
+				"event sequence must be a non-negative safe integer",
 			);
-			return position;
-		}, {}),
-	);
+		positions.set(
+			event.streamId,
+			Math.max(positions.get(event.streamId) ?? 0, event.seq),
+		);
+	}
+	return stableObject(Object.fromEntries(positions));
 }
 
 export function hashReadSet(events: EventEnvelope[]): string {
-	const streams = [...new Set(events.map((event) => event.streamId))].sort();
+	const streams = [
+		...new Set(
+			events.map((event) => {
+				if (!isNonEmptyPrimitiveString(event.streamId))
+					throw new TypeError("event stream must be a non-empty string");
+				return event.streamId;
+			}),
+		),
+	].sort();
 	return crypto
 		.createHash("sha256")
 		.update(JSON.stringify(streams))
@@ -188,10 +230,10 @@ export function compareCanonicalEventOrder(
 	right: EventEnvelope,
 ): number {
 	return (
-		left.streamId.localeCompare(right.streamId) ||
+		compareCanonicalStrings(left.streamId, right.streamId) ||
 		left.seq - right.seq ||
-		String(left.type).localeCompare(String(right.type)) ||
-		String(left.id).localeCompare(String(right.id))
+		compareCanonicalStrings(String(left.type), String(right.type)) ||
+		compareCanonicalStrings(String(left.id), String(right.id))
 	);
 }
 
@@ -199,25 +241,32 @@ export function stableValue(value: JsonValue): JsonValue {
 	if (value instanceof Map) {
 		return [...value.entries()]
 			.map(([key, entry]) => [stableValue(key), stableValue(entry)])
-			.sort(([left], [right]) =>
-				stableStringify(left ?? null).localeCompare(
-					stableStringify(right ?? null),
-				),
+			.sort(
+				([leftKey, leftValue], [rightKey, rightValue]) =>
+					compareCanonicalStrings(
+						stableStringify(leftKey ?? null),
+						stableStringify(rightKey ?? null),
+					) ||
+					compareCanonicalStrings(
+						stableStringify(leftValue ?? null),
+						stableStringify(rightValue ?? null),
+					),
 			);
 	}
 
 	if (value instanceof Set) {
 		return [...value]
-			.map(stableValue)
+			.map((entry) => stableValue(entry))
 			.sort((left, right) =>
-				stableStringify(left ?? null).localeCompare(
+				compareCanonicalStrings(
+					stableStringify(left ?? null),
 					stableStringify(right ?? null),
 				),
 			);
 	}
 
 	if (Array.isArray(value)) {
-		return value.map(stableValue);
+		return value.map((entry) => stableValue(entry));
 	}
 
 	if (value && isJsonObject(value)) {
@@ -239,7 +288,10 @@ export function stableStringify(value: JsonValue): string {
 }
 
 function isAtOrBefore(event: EventEnvelope, targetSeq: SeqVector): boolean {
-	return event.seq <= (targetSeq[event.streamId] ?? 0);
+	const limit = Object.hasOwn(targetSeq, event.streamId)
+		? targetSeq[event.streamId]
+		: undefined;
+	return event.seq <= (limit ?? 0);
 }
 
 export function eventKey(event: EventEnvelope): string {
@@ -256,9 +308,11 @@ function seededUnit(input: string): number {
 }
 
 function stableObject<T extends JsonObject>(value: T): T {
-	// SAFETY: assertion to `Object.fromEntries( Object.entries(value).sort(([left], [right]) => left.localeCompare(right)), ) as T` is required at this boundary.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: sorting and rebuilding preserves the object's own JSON entries.
 	return Object.fromEntries(
-		Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+		Object.entries(value).sort(([left], [right]) =>
+			compareCanonicalStrings(left, right),
+		),
 	) as T;
 }
 
@@ -274,22 +328,40 @@ function withAmbientNondeterminism<T>(
 	{ now, random }: { now: number; random: number },
 	callback: () => T,
 ): T {
-	const originalDateNow = Date.now;
-	const originalMathRandom = Math.random;
-
-	Date.now = () => now;
-	Math.random = () => random;
-
+	const clockDescriptor = Object.getOwnPropertyDescriptor(Date, "now");
+	const randomDescriptor = Object.getOwnPropertyDescriptor(Math, "random");
+	if (
+		!clockDescriptor ||
+		!("value" in clockDescriptor) ||
+		!randomDescriptor ||
+		!("value" in randomDescriptor)
+	)
+		throw new Error(
+			"replay harness requires ordinary clock and random intrinsics",
+		);
+	let clockInstalled = false;
+	let randomInstalled = false;
 	try {
+		Date.now = () => now;
+		clockInstalled = true;
+		Math.random = () => random;
+		randomInstalled = true;
 		return callback();
 	} finally {
-		Date.now = originalDateNow;
-		Math.random = originalMathRandom;
+		try {
+			if (randomInstalled)
+				Object.defineProperty(Math, "random", randomDescriptor);
+		} finally {
+			if (clockInstalled) Object.defineProperty(Date, "now", clockDescriptor);
+		}
 	}
 }
 
-function toSeqVectorEntries(vector: SeqVector) {
-	return Object.entries(vector)
+export function toSeqVectorEntries(vector: SeqVector) {
+	const entries = Object.entries(vector)
 		.map(([streamId, seq]) => ({ streamId, seq }))
-		.sort((left, right) => left.streamId.localeCompare(right.streamId));
+		.sort((left, right) =>
+			compareCanonicalStrings(left.streamId, right.streamId),
+		);
+	return Object.freeze(entries.map((entry) => Object.freeze(entry)));
 }

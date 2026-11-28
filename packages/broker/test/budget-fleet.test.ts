@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { create, toJsonString } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import {
 	createImmutableJournal,
 	ImmutableJournalError,
@@ -200,36 +200,6 @@ describe("majority journal financial authority", () => {
 				(replica) => replica.rows.length === 0 && replica.documents.size === 0,
 			),
 		).toBe(true);
-	});
-
-	it("normalizes a legacy persisted base without validating the reopen seed", async () => {
-		const f = fixture();
-		kindlessEntitlement(f.snapshot);
-		const journal = f.open();
-		await journal.bootstrap(async () => {});
-		await journal.append(
-			"broker:base",
-			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
-			0,
-		);
-		const reopened = f.authority(journal);
-		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
-	});
-
-	it("resumes interrupted initialization from a legacy kindless base", async () => {
-		const f = fixture();
-		kindlessEntitlement(f.snapshot);
-		const journal = f.open();
-		await journal.bootstrap(async () => {});
-		await journal.append(
-			"broker:base",
-			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
-			0,
-		);
-		const reopened = f.authority(journal);
-		await reopened.initializeFresh(async () => {});
-		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
-		expect((await journal.read()).length).toBe(1);
 	});
 
 	it("recovers interrupted initialization only after every voter is verified", async () => {

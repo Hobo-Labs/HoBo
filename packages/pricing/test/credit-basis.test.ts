@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	creditState,
 	makeScenario,
@@ -55,7 +55,7 @@ describe("credit basis and currency", () => {
 			credit.usedBasis.decimal = "1";
 		}
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -91,7 +91,7 @@ describe("credit basis and currency", () => {
 		if (!amount) throw new Error("missing amount fixture");
 		amount.currency = "EUR";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({ code: "CROSS_CURRENCY" });
+		expect(quoteScenario(scenario)).toMatchObject({ code: "CROSS_CURRENCY" });
 	});
 
 	it("rejects a derived credit with nonzero acquisition basis", () => {
@@ -100,7 +100,7 @@ describe("credit basis and currency", () => {
 		if (!grant) throw new Error("missing credit fixture");
 		grant.derivedFrom = "included-capacity";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -115,7 +115,7 @@ describe("credit basis and currency", () => {
 		acquisition.decimal = "0";
 		credit.remainingBasis.decimal = "0";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			incremental: { effective: { decimal: "0", currency: "USD" } },
 		});
 	});
@@ -130,7 +130,7 @@ describe("credit basis and currency", () => {
 		if (!basis) throw new Error("missing basis fixture");
 		basis.decimal = remainingBasis;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
@@ -144,7 +144,7 @@ describe("credit basis and currency", () => {
 		if (!basis) throw new Error("missing basis fixture");
 		basis.decimal = remainingBasis;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			incremental: { effective: { decimal: "3.6", currency: "USD" } },
 		});
 	});

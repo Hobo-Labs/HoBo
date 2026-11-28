@@ -1,4 +1,6 @@
 import { must } from "@hobo/core/total-access";
+import { hasUnverifiedYardCamps } from "./camp-constraints.js";
+import { hasValidYardResidency } from "./residency.js";
 import {
 	type ContentHash,
 	contentHashOf,
@@ -83,6 +85,55 @@ export function planYardGeneration(options: {
 		return {
 			allowed: false,
 			reason: "yard generation policy denies generation by default",
+			policyId: policy.id,
+		};
+	}
+	if (policy.effect !== "allow-if-no-match") {
+		return {
+			allowed: false,
+			reason:
+				"generation policy effect is unsupported or requires dedicated Yard evidence",
+			policyId: policy.id,
+		};
+	}
+	if (!hasValidYardResidency(options.requestedLayout)) {
+		return {
+			allowed: false,
+			reason: "requested layout has invalid residency",
+			policyId: policy.id,
+		};
+	}
+	if (hasUnverifiedYardCamps(options.requestedLayout)) {
+		return {
+			allowed: false,
+			reason: "requested Camp layouts cannot yet be verified",
+			policyId: policy.id,
+		};
+	}
+	if (policy.requireApproval !== false) {
+		return {
+			allowed: false,
+			reason:
+				"generation requires approval, but approval evidence is unavailable",
+			policyId: policy.id,
+		};
+	}
+
+	if (policy.requireAttestation !== false) {
+		return {
+			allowed: false,
+			reason:
+				"generation requires attestation, but attestation evidence is unavailable",
+			policyId: policy.id,
+		};
+	}
+	if (
+		!Array.isArray(policy.lockedProperties) ||
+		policy.lockedProperties.length > 0
+	) {
+		return {
+			allowed: false,
+			reason: "generation locked properties cannot yet be verified",
 			policyId: policy.id,
 		};
 	}
@@ -192,67 +243,199 @@ export interface YardGenerationSaga {
 
 export function createYardGenerationSaga(options: {
 	readonly connectors: ReadonlyMap<string, YardGenerationConnector>;
+	readonly authorizePlan?: (plan: YardGenerationPlan) => boolean;
 }): YardGenerationSaga {
 	const attempts = new Map<
 		string,
-		{ plan: YardGenerationPlan; result: YardGenerationResult }
+		{
+			planDigest: ContentHash;
+			plan: YardGenerationPlan;
+			result: YardGenerationResult;
+		}
 	>();
+	const inFlight = new Map<string, Promise<YardGenerationResult>>();
+	const authorized = (
+		authorize: (plan: YardGenerationPlan) => boolean,
+		plan: YardGenerationPlan,
+		planDigest: ContentHash,
+	) => {
+		try {
+			const decisionPlan = structuredClone(plan);
+			return (
+				options.authorizePlan === authorize &&
+				authorize(decisionPlan) === true &&
+				contentHashOf(decisionPlan) === planDigest &&
+				contentHashOf(plan) === planDigest &&
+				options.authorizePlan === authorize
+			);
+		} catch {
+			return false;
+		}
+	};
 
 	return {
-		async run(plan) {
-			const existing = attempts.get(plan.idempotencyKey);
-			if (existing) {
-				if (
-					existing.result.status === "ready" ||
-					existing.result.status === "failed"
-				) {
-					return existing.result;
-				}
-				// Resume inspect path for in-flight.
-				const connector = options.connectors.get(plan.generatorConnectorId);
-				if (!connector) {
-					return fail(plan, "connector-missing", "generator connector missing");
-				}
-				const inspected = await connector.inspect(plan.attemptId);
-				attempts.set(plan.idempotencyKey, { plan, result: inspected });
-				return inspected;
+		async run(inputPlan) {
+			const plan = structuredClone(inputPlan);
+			if (!hasValidYardResidency(plan.requestedLayout)) {
+				return fail(
+					plan,
+					"invalid-residency",
+					"requested layout has invalid residency",
+				);
 			}
+			if (hasUnverifiedYardCamps(plan.requestedLayout)) {
+				return fail(
+					plan,
+					"camp-constraints-unverified",
+					"requested Camp layouts cannot yet be verified",
+				);
+			}
+			const planDigest = contentHashOf(plan);
+			const authorize = options.authorizePlan;
+			if (!authorize)
+				return fail(
+					plan,
+					"generation-authorization-required",
+					"a trusted host authorization is required",
+				);
+			if (!authorized(authorize, plan, planDigest))
+				return fail(
+					plan,
+					"generation-authorization-denied",
+					"host authorization denied or changed the generation plan",
+				);
+			const deliveryPlan = structuredClone(plan);
+			const awaitAuthorized = async (
+				operation: Promise<YardGenerationResult>,
+			): Promise<YardGenerationResult> => {
+				let result: YardGenerationResult;
+				try {
+					result = await operation;
+				} catch (error) {
+					if (!authorized(authorize, deliveryPlan, planDigest))
+						return fail(
+							deliveryPlan,
+							"generation-authorization-denied",
+							"host authorization changed before result delivery",
+						);
+					throw error;
+				}
+				if (!authorized(authorize, deliveryPlan, planDigest))
+					return fail(
+						deliveryPlan,
+						"generation-authorization-denied",
+						"host authorization changed before result delivery",
+					);
+				return result;
+			};
+			const key = plan.idempotencyKey;
+			const existing = attempts.get(key);
+			if (existing && existing.planDigest !== planDigest) {
+				return fail(
+					plan,
+					"generation-plan-conflict",
+					"idempotency key belongs to a different generation plan",
+				);
+			}
+			const pending = inFlight.get(key);
+			if (pending) return await awaitAuthorized(pending);
+			if (
+				existing &&
+				(existing.result.status === "ready" ||
+					existing.result.status === "failed")
+			) {
+				return existing.result;
+			}
+			const recordedPlan = existing?.plan ?? structuredClone(plan);
 
 			const connector = options.connectors.get(plan.generatorConnectorId);
 			if (!connector) {
 				const result = fail(
 					plan,
 					"connector-missing",
-					"generator connector not registered",
+					existing
+						? "generator connector missing"
+						: "generator connector not registered",
 				);
-				attempts.set(plan.idempotencyKey, { plan, result });
+				if (!existing)
+					attempts.set(key, { planDigest, plan: recordedPlan, result });
 				return result;
 			}
 
-			const started: YardGenerationResult = Object.freeze({
-				attemptId: plan.attemptId,
-				status: "started",
-				externalRefs: Object.freeze({}),
-				outputHash: contentHashOf({
+			if (!existing) {
+				const started: YardGenerationResult = Object.freeze({
 					attemptId: plan.attemptId,
 					status: "started",
-				}),
-			});
-			attempts.set(plan.idempotencyKey, { plan, result: started });
+					externalRefs: Object.freeze({}),
+					outputHash: contentHashOf({
+						attemptId: plan.attemptId,
+						status: "started",
+					}),
+				});
+				attempts.set(key, { planDigest, plan: recordedPlan, result: started });
+			}
 
-			const result = await connector.provision(plan);
-			// Never treat provisioned as ready without registration path.
-			const normalized =
-				result.status === "provisioned"
-					? Object.freeze({ ...result, status: "registered" as const })
-					: result;
-			attempts.set(plan.idempotencyKey, { plan, result: normalized });
-			return normalized;
+			const provision = connector.provision;
+			const inspect = connector.inspect;
+
+			const operation = Promise.resolve().then(async () => {
+				if (!authorized(authorize, plan, planDigest))
+					return fail(
+						plan,
+						"generation-authorization-denied",
+						"host authorization changed before the provider call",
+					);
+				const result = existing
+					? await inspect.call(connector, plan.attemptId)
+					: await provision.call(connector, plan);
+				const normalized = snapshotGenerationResult(result);
+				attempts.set(key, {
+					planDigest,
+					plan: recordedPlan,
+					result: normalized,
+				});
+				return normalized;
+			});
+			inFlight.set(key, operation);
+			try {
+				return await awaitAuthorized(operation);
+			} finally {
+				if (inFlight.get(key) === operation) inFlight.delete(key);
+			}
 		},
 		inspect(idempotencyKey) {
-			return attempts.get(idempotencyKey)?.result;
+			const attempt = attempts.get(idempotencyKey);
+			if (!attempt) return undefined;
+			try {
+				const authorize = options.authorizePlan;
+				if (
+					!authorize ||
+					!authorized(authorize, attempt.plan, attempt.planDigest)
+				)
+					return undefined;
+				return attempt.result;
+			} catch {
+				return undefined;
+			}
 		},
 	};
+}
+
+function snapshotGenerationResult(
+	value: YardGenerationResult,
+): YardGenerationResult {
+	const result = structuredClone(value);
+	const snapshot = {
+		...result,
+		status: result.status === "provisioned" ? "registered" : result.status,
+		externalRefs: Object.freeze(result.externalRefs),
+	};
+	if (result.failure)
+		return Object.freeze({
+			...snapshot,
+			failure: Object.freeze(result.failure),
+		});
+	return Object.freeze(snapshot);
 }
 
 function fail(

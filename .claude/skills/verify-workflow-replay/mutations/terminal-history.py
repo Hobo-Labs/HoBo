@@ -20,12 +20,12 @@ with tempfile.TemporaryDirectory(prefix='hobo-workflow-terminal-mutant-') as tem
     shutil.copytree(source, scratch, ignore=shutil.ignore_patterns('node_modules', 'dist', '.turbo', 'coverage'))
     (scratch / 'node_modules').symlink_to(source / 'node_modules', target_is_directory=True)
     (scratch / 'tsconfig.json').unlink()
-    target = scratch / 'src/workflow.ts'
+    target = scratch / 'src/replay/journal-history.ts'
     original = target.read_text()
-    before = 'if (terminals.length > 1) {'
+    before = 'if (terminal)\n'
     if original.count(before) != 1:
         raise RuntimeError('expected one duplicate-terminal guard')
-    target.write_text(original.replace(before, 'if (false && terminals.length > 1) {', 1))
+    target.write_text(original.replace(before, 'if (false)\n', 1))
     result = run(scratch)
     if result.returncode == 0 or f'FAIL  {test} >' not in result.stdout or 'AssertionError' not in result.stdout or 'Failed Suites' in result.stdout:
         raise RuntimeError(f'expected a real-code assertion failure:\n{result.stdout}')

@@ -78,6 +78,7 @@ describe("broker environments — admin controls", () => {
 
 	it("rejects resolutions against an unapproved environment", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -96,6 +97,7 @@ describe("broker environments — admin controls", () => {
 
 	it("rejects when the pinned catalog snapshot is stale", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -114,6 +116,7 @@ describe("broker environments — admin controls", () => {
 
 	it("bounds placement eligibility to the environment's approved providers", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -139,6 +142,7 @@ describe("broker environments — admin controls", () => {
 describe("hosted authority surface (HTTP)", () => {
 	it("serves resolve/scale/rejection-matrix over a real node:http server", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -193,6 +197,7 @@ describe("hosted authority surface (HTTP)", () => {
 
 	it("maps billing rejections to 402 through the pure handler", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",

@@ -419,6 +419,12 @@ export function parseBrokerRequest(
 	input: JsonValue | undefined,
 ): BrokerRequest {
 	const raw = asRecord(input, "invalid-request");
+	if (raw.guest !== undefined) {
+		throw new BrokerParseError(
+			"guest-resolution-unavailable",
+			"guest-resolution-unavailable: broker admission does not yet bind guest consent and claim evidence",
+		);
+	}
 	const schemaVersion = requireString(
 		raw.schemaVersion ?? raw.schema_version,
 		"invalid-request",
@@ -447,6 +453,36 @@ export function parseBrokerRequest(
 			"invalid-request: scope is required — a request names the bindle it places into",
 		);
 	}
+	const camelEstimate = raw.spendEstimateUsd;
+	const snakeEstimate = raw.spend_estimate_usd;
+	if (
+		camelEstimate !== undefined &&
+		snakeEstimate !== undefined &&
+		camelEstimate !== snakeEstimate
+	) {
+		throw new BrokerParseError(
+			"invalid-request",
+			"invalid-request: conflicting spendEstimateUsd spellings",
+		);
+	}
+	const estimate = camelEstimate !== undefined ? camelEstimate : snakeEstimate;
+	if (estimate === undefined) {
+		throw new BrokerParseError(
+			"invalid-request",
+			"invalid-request: spendEstimateUsd is required, including for free work",
+		);
+	}
+	const requirements = requirementsRaw.map(parseResourceRequirement);
+	const resourceIds = new Set<string>();
+	for (const requirement of requirements) {
+		if (resourceIds.has(requirement.resourceId)) {
+			throw new BrokerParseError(
+				"duplicate-resource-id",
+				`duplicate-resource-id: ${requirement.resourceId} occurs more than once`,
+			);
+		}
+		resourceIds.add(requirement.resourceId);
+	}
 	return {
 		schemaVersion: BROKER_SCHEMA_VERSION,
 		requestId: requireString(
@@ -455,9 +491,9 @@ export function parseBrokerRequest(
 			"requestId",
 		),
 		scope: parseTopologyScope(raw.scope),
-		requirements: requirementsRaw.map(parseResourceRequirement),
+		requirements,
 		spendEstimateUsd: nonNegativeNumber(
-			raw.spendEstimateUsd ?? raw.spend_estimate_usd,
+			estimate,
 			0,
 			"invalid-request",
 			"spendEstimateUsd",

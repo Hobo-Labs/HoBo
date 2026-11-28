@@ -1,0 +1,12 @@
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const build=spawnSync('pnpm',['exec','turbo','run','build','--filter=@hobo/hobo','--concurrency=2'],{stdio:'inherit'});
+if(build.error) throw build.error;
+if(build.status !== 0) process.exit(build.status ?? 1);
+const root=process.env.HOBO_BUDGET_FALLBACK_VERIFY_PACKAGE_ROOT ?? path.resolve('packages/hobo');
+const config=fileURLToPath(new URL('../models/vitest.config.mts',import.meta.url));
+const vitest=path.resolve('node_modules/vitest/vitest.mjs');
+const result=spawnSync(process.execPath,[vitest,'run','test/local-budget-fallback.test.ts','test/local-work-binding.test.ts','test/hosting-remote-admission.test.ts','test/broker-up-command.test.ts','--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'],{stdio:'inherit'});
+if(result.error) throw result.error;
+if(result.status !== 0) process.exit(result.status ?? 1);

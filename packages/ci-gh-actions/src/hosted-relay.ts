@@ -1,4 +1,10 @@
 import { clone, create } from "@bufbuild/protobuf";
+import {
+	addFinancialMilliseconds,
+	ceilFinancialMinutes,
+	compareFinancialTime,
+	validFinancialTime,
+} from "@hobo/broker";
 import type { Account, ConfigurationState } from "@hobo/ci";
 import {
 	type Configuration,
@@ -1137,7 +1143,12 @@ export class HostedRelay {
 		const account = this.account(lease);
 		const offer = providerOffer(account, lease);
 		const now = this.now();
-		const bound = Date.parse(now) + lease.reservedMinutes * 60000;
+		let bound: string;
+		try {
+			bound = addFinancialMilliseconds(now, lease.reservedMinutes * 60_000);
+		} catch {
+			return false;
+		}
 		if (
 			this.queueExpired(lease.queueDeadlineAt) ||
 			!offer.enabled ||
@@ -1148,8 +1159,8 @@ export class HostedRelay {
 			account.maxRuntimeMinutes + account.startupMinutes !==
 				lease.reservedMinutes ||
 			(lease.reservedFreeMinutes > 0 &&
-				(!Number.isFinite(Date.parse(lease.freeValidUntil)) ||
-					Date.parse(lease.freeValidUntil) < bound))
+				(!validFinancialTime(lease.freeValidUntil) ||
+					compareFinancialTime(lease.freeValidUntil, bound) < 0))
 		)
 			return false;
 		// Reprice this exact host against fresh evidence, excluding its own reservation.
@@ -2249,6 +2260,18 @@ export class HostedRelay {
 			host.labels[0]?.toLowerCase() !== offer.runsOn.toLowerCase()
 		)
 			throw new Error("host shutdown not established");
+		const checkedAt = this.now();
+		if (
+			!validFinancialTime(host.started_at) ||
+			!validFinancialTime(host.completed_at) ||
+			!validFinancialTime(lease.createdAt) ||
+			!validFinancialTime(checkedAt) ||
+			compareFinancialTime(host.started_at, lease.createdAt) < 0 ||
+			compareFinancialTime(host.completed_at, host.started_at) < 0 ||
+			compareFinancialTime(host.completed_at, checkedAt) > 0
+		)
+			throw new Error("invalid host completion time");
+		const minutes = ceilFinancialMinutes(host.started_at, host.completed_at);
 		if (lease.runnerId !== 0) {
 			const deleted = await this.options.github.request(
 				lease.installationId,
@@ -2258,12 +2281,6 @@ export class HostedRelay {
 			if (deleted.status !== 204 && deleted.status !== 404)
 				throw new Error("runner cleanup not established");
 		}
-		// Wall-clock host duration conservatively includes boot/idle/cleanup, rounded up.
-		const minutes = Math.ceil(
-			(Date.parse(host.completed_at) - Date.parse(host.started_at)) / 60000,
-		);
-		if (!Number.isFinite(minutes) || minutes < 0)
-			throw new Error("invalid host duration");
 		const original = await getJob(
 			this.options.github,
 			lease.installationId,

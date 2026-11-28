@@ -449,6 +449,8 @@ and requests admission before applying the exact plan under Alchemy's state
 lease. Financial services include a durable budget authority, a trusted clock,
 `issueLiability`, `verifyLiability` and policy `authorize` callbacks. The
 adapter only knows the injected port; the broker supplies its implementation.
+Financial receipt parsing accepts the broker's explicit entitlement kinds,
+compares claims by kind, bucket and unit, and refuses a claim without a kind.
 Evidence must be independently verified and bound to every target account,
 the operation (`deploy` or `destroy`) and the quote horizon. Liability callbacks
 receive the operation in the inventory. A model or its author cannot supply its own trusted bound merely

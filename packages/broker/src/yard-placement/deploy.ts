@@ -1,16 +1,24 @@
 import { randomUUID } from "node:crypto";
+import { clone, toJsonString } from "@bufbuild/protobuf";
 import { first } from "@hobo/core/total-access";
+import { compareDecimal, type Decimal, parseDecimal } from "@hobo/pricing";
 import {
 	type BudgetAdmissionAuthority,
+	BudgetAdmissionDeniedError,
 	type BudgetIdentity,
+	BudgetIdentitySchema,
 	type BudgetReservation,
 	budgetIdentityKey,
 	type HostingPolicyProof,
+	HostingPolicyProofSchema,
 	type HostingQuote,
+	HostingQuoteSchema,
+	hostingQuoteDigest,
 	validateHostingQuote,
 } from "../budget-authority.js";
 import {
 	cloneAsJson,
+	isJsonBoolean,
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
@@ -19,6 +27,7 @@ import {
 } from "../json.js";
 import type { GateDecision } from "../planes.js";
 import type { BrokerCatalog, PlacementDecision } from "../types.js";
+import { hasUnverifiedCampConstraints } from "./camp-constraints.js";
 import { defaultYardGenerationConnectors } from "./connectors.js";
 import {
 	createDefaultEventStoreFoldResolvers,
@@ -39,8 +48,15 @@ import {
 	planYardGeneration,
 	type YardGenerationConnector,
 } from "./generation.js";
+import {
+	type YardGenerationQuotaAuthority,
+	type YardGenerationQuotaClaim,
+	YardGenerationQuotaDeniedError,
+	type YardGenerationQuotaRequest,
+} from "./generation-quota.js";
 import { createYardRuntimeCatalog, localYardInstance } from "./inventory.js";
 import { matchYard } from "./matching.js";
+import { parseYardResidencyTag } from "./residency.js";
 import {
 	buildExecutionUnits,
 	composeResolverPins,
@@ -53,6 +69,8 @@ import {
 	type ContentHash,
 	contentHashOf,
 	emptyYardLayout,
+	type LocalHostingProof,
+	parseCampLayout,
 	parseYardLayout,
 	YARD_PLACEMENT_RECEIPT_SCHEMA,
 	type YardGenerationPolicy,
@@ -60,12 +78,112 @@ import {
 	type YardPlacementRequest,
 } from "./types.js";
 
+export interface LocalHostingAuthorizationContext {
+	readonly brokerId: string;
+	readonly request: BindleDeploymentRequest;
+	readonly requestDigest: ContentHash;
+	readonly catalogHash: string;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly ownerTenantId: string;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly bindingDigest: ContentHash;
+}
+
+class GenerationQuotaAdmissionError extends Error {}
+
+export interface YardHostingWorkInput {
+	readonly request: BindleDeploymentRequest;
+	readonly brokerId: string;
+	readonly ownerTenantId: string;
+	readonly catalog: BrokerCatalog;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly generationPlanHash?: ContentHash | undefined;
+}
+
+function hostingWorkDigest(input: {
+	readonly requestDigest: ContentHash;
+	readonly brokerId: string;
+	readonly ownerTenantId: string;
+	readonly catalogHash: string;
+	readonly yardId: string;
+	readonly providerId: string;
+	readonly placements: readonly Readonly<PlacementDecision>[];
+	readonly generationPlanHash: ContentHash | undefined;
+}): ContentHash {
+	return contentHashOf({
+		schemaVersion: "hobo.yard-hosting-work/v1",
+		...input,
+		generationPlanHash: input.generationPlanHash ?? "",
+	});
+}
+
+export function prepareYardHostingWork(input: YardHostingWorkInput):
+	| {
+			readonly workDigest: ContentHash;
+			readonly placements: readonly Readonly<PlacementDecision>[];
+	  }
+	| { readonly error: string; readonly code: string } {
+	const request = parseBindleDeploymentRequest(cloneAsJson(input.request));
+	if (hasUnverifiedCampConstraints(request))
+		return {
+			code: "camp-constraints-unverified",
+			error: "Camp requirements cannot yet be verified for this work",
+		};
+	if (request.ownerTenantId && request.ownerTenantId !== input.ownerTenantId)
+		return {
+			code: "owner-tenant-mismatch",
+			error: "work owner differs from request owner",
+		};
+	if (
+		request.yard.selectionMode === "exact" &&
+		request.yard.requestedYardId !== input.yardId
+	)
+		return {
+			code: "yard-exact-id-mismatch",
+			error: "quote Yard does not match the exact requested Yard",
+		};
+	if (selectOrGenerateCamp(request, input.yardId) === undefined)
+		return {
+			code: "camp-yard-mismatch",
+			error: "requested Camp is not a direct child of the selected Yard",
+		};
+	const catalogHash = input.catalog.catalogHash;
+	const selected = placeResourcesUnderYard(
+		request,
+		input.providerId,
+		input.catalog,
+	);
+	if ("error" in selected) return selected;
+	if (input.catalog.catalogHash !== catalogHash)
+		return {
+			code: "catalog-definition-invalid",
+			error: "catalog changed while planning quote work",
+		};
+	const placements = Object.freeze(
+		selected.decisions.map((placement) => Object.freeze({ ...placement })),
+	);
+	const workDigest = hostingWorkDigest({
+		requestDigest: contentHashOf(request),
+		brokerId: input.brokerId,
+		ownerTenantId: input.ownerTenantId,
+		catalogHash,
+		yardId: input.yardId,
+		providerId: input.providerId,
+		placements,
+		generationPlanHash: input.generationPlanHash,
+	});
+	return { workDigest, placements };
+}
+
 export interface YardFirstPlacementDeps {
 	readonly brokerId: string;
 	readonly catalog: BrokerCatalog;
 	readonly ownerTenantId?: string;
 	readonly runtimeCatalog?: ReturnType<typeof createYardRuntimeCatalog>;
 	readonly generationPolicy?: YardGenerationPolicy;
+	readonly generationQuota?: YardGenerationQuotaAuthority;
 	readonly connectors?: ReadonlyMap<string, YardGenerationConnector>;
 	/** Seed a ready local yard when inventory is empty (zero-config path). */
 	readonly seedLocalYard?: boolean;
@@ -79,11 +197,18 @@ export interface YardFirstPlacementDeps {
 		request: BindleDeploymentRequest;
 		requestDigest: string;
 		quote: HostingQuote;
+		quoteDigest: string;
+		workDigest: ContentHash;
+		placements: readonly Readonly<PlacementDecision>[];
+		generationPlanHash: ContentHash | undefined;
 		identity: BudgetIdentity;
 		now: string;
 	}) =>
 		| { gate: GateDecision; proof: HostingPolicyProof }
 		| Promise<{ gate: GateDecision; proof: HostingPolicyProof }>;
+	readonly authorizeLocalHosting?: (
+		input: LocalHostingAuthorizationContext,
+	) => LocalHostingProof | undefined | Promise<LocalHostingProof | undefined>;
 	/** Trusted whole-request quotes and the shared durable financial authority.
 	 * Estimates without an enforceable exposure bound cannot authorize hosting. */
 	readonly hostingBudget?: {
@@ -142,6 +267,13 @@ export async function resolveBindleDeployment(
 	const appendProviderSignals = (
 		providerId: string,
 		signals: readonly { kind: string; payload: JsonObject }[],
+		expected: {
+			readonly attemptId: string;
+			readonly idempotencyKey: string;
+			readonly yardId: string;
+			readonly runtimeId: string;
+			readonly ownerTenantId: string;
+		},
 	): void => {
 		const resolver =
 			foldRegistry.get(providerId) ??
@@ -150,7 +282,36 @@ export async function resolveBindleDeployment(
 				createDefaultEventStoreFoldResolvers(),
 				"createDefaultEventStoreFoldResolvers()",
 			);
+		const pending: YardEvent[] = [];
+		const allowed = new Set<string>([
+			YARD_EVENTS.GenerationStarted,
+			YARD_EVENTS.GenerationProgressed,
+			YARD_EVENTS.GenerationProvisioned,
+			YARD_EVENTS.GenerationFailed,
+			YARD_EVENTS.GenerationCompensationRequested,
+			YARD_EVENTS.GenerationCompensated,
+			YARD_EVENTS.Registered,
+			YARD_EVENTS.AttestationStarted,
+			YARD_EVENTS.Attested,
+			YARD_EVENTS.Ready,
+			YARD_EVENTS.StatusChanged,
+			YARD_EVENTS.CapacityUpdated,
+			YARD_EVENTS.ProviderSignalNormalized,
+		]);
 		for (const signal of signals) {
+			if (
+				!isJsonObject(signal.payload) ||
+				signal.payload.attemptId !== expected.attemptId ||
+				(signal.payload.idempotencyKey !== undefined &&
+					signal.payload.idempotencyKey !== expected.idempotencyKey) ||
+				(signal.payload.yardId !== undefined &&
+					signal.payload.yardId !== expected.yardId) ||
+				(signal.payload.runtimeId !== undefined &&
+					signal.payload.runtimeId !== expected.runtimeId) ||
+				(signal.payload.ownerTenantId !== undefined &&
+					signal.payload.ownerTenantId !== expected.ownerTenantId)
+			)
+				throw new Error("provider signal does not match the generation plan");
 			const native: ProviderNativeSignal = {
 				providerId,
 				kind: signal.kind,
@@ -158,9 +319,66 @@ export async function resolveBindleDeployment(
 				payload: signal.payload as ProviderNativeSignal["payload"],
 			};
 			for (const event of resolver.normalize(native)) {
-				append(event);
+				const type = event.type;
+				if (!allowed.has(type))
+					throw new Error("provider signal contains a broker-owned event");
+				const data = cloneAsJson(event.data);
+				if (!isJsonObject(data))
+					throw new Error("normalized provider signal data must be an object");
+				for (const [key, value] of [
+					["attemptId", expected.attemptId],
+					["idempotencyKey", expected.idempotencyKey],
+					["yardId", expected.yardId],
+					["expectedYardId", expected.yardId],
+					["providerId", providerId],
+					["runtimeId", expected.runtimeId],
+				] as const) {
+					if (
+						data[key] !== undefined &&
+						data[key] !== "" &&
+						data[key] !== value
+					)
+						throw new Error(`normalized provider signal has mismatched ${key}`);
+				}
+				if (
+					(type === YARD_EVENTS.Ready ||
+						type === YARD_EVENTS.Attested ||
+						type === YARD_EVENTS.AttestationStarted) &&
+					data.yardId !== expected.yardId
+				)
+					throw new Error("normalized provider signal lacks the planned Yard");
+				if (type === YARD_EVENTS.Ready && data.attemptId !== expected.attemptId)
+					throw new Error("ready signal lacks the planned generation attempt");
+				if (type === YARD_EVENTS.StatusChanged && data.status === "ready")
+					throw new Error(
+						"ready status requires an attempt-bound ready signal",
+					);
+				if (type === YARD_EVENTS.Registered) {
+					const yard = data.yard;
+					if (
+						!isJsonObject(yard) ||
+						yard.yardId !== expected.yardId ||
+						yard.ownerTenantId !== expected.ownerTenantId ||
+						yard.providerId !== providerId ||
+						yard.runtimeId !== expected.runtimeId ||
+						yard.status === "ready"
+					)
+						throw new Error(
+							"normalized provider registration does not match the generation plan",
+						);
+				}
+				pending.push(
+					Object.freeze({
+						type,
+						data: Object.freeze(data),
+						...(event.occurredAt !== undefined
+							? { occurredAt: event.occurredAt }
+							: undefined),
+					}),
+				);
 			}
 		}
+		for (const event of pending) append(event);
 	};
 
 	if (request.schemaVersion !== BINDLE_DEPLOYMENT_REQUEST_SCHEMA) {
@@ -173,6 +391,26 @@ export async function resolveBindleDeployment(
 		);
 	}
 
+	try {
+		request = parseBindleDeploymentRequest(cloneAsJson(request));
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"contracts",
+			"invalid-deployment-request",
+			error instanceof Error ? error.message : "invalid deployment request",
+		);
+	}
+	if (hasUnverifiedCampConstraints(request))
+		return rejectResult(
+			foldState,
+			emitted,
+			"placement",
+			"camp-constraints-unverified",
+			"Camp requirements cannot yet be verified for this work",
+		);
+
 	const ownerTenantId = request.ownerTenantId || deps.ownerTenantId || "local";
 	if (deps.ownerTenantId && deps.ownerTenantId !== ownerTenantId)
 		return rejectResult(
@@ -182,12 +420,146 @@ export async function resolveBindleDeployment(
 			"owner-tenant-mismatch",
 			"deployment owner differs from the authenticated tenant",
 		);
-	const runtimeCatalog = deps.runtimeCatalog ?? createYardRuntimeCatalog();
+	const runtimeCatalogInput = deps.runtimeCatalog;
+	const generationPolicyInput = deps.generationPolicy;
+	const generationQuotaInput = deps.generationQuota;
+	const connectorsInput = deps.connectors;
+	const runtimeCatalog = runtimeCatalogInput ?? createYardRuntimeCatalog();
 	const requestDigest = contentHashOf(request);
+	const brokerId = deps.brokerId;
+	const ownerTenant = deps.ownerTenantId;
+	const catalog = deps.catalog;
+	const hostingBudget = deps.hostingBudget;
+	const localAuthority = deps.authorizeLocalHosting;
+	const paidAuthority = deps.authorizeHosting;
+	const budgetAuthority = hostingBudget?.authority;
+	const budgetPersistence = budgetAuthority?.persistence;
+	const budgetRead = budgetAuthority?.read;
+	const budgetLookup = budgetAuthority?.lookup;
+	const budgetReserve = budgetAuthority?.reserve;
+	const budgetClaim = budgetAuthority?.claimExecution;
+	const budgetUncertain = budgetAuthority?.uncertain;
+	const budgetClock = hostingBudget?.now;
+	const catalogHash = deps.catalog.catalogHash;
+	const quoteKey = (quotes: readonly HostingQuote[]) =>
+		contentHashOf(
+			quotes.map((quote) => toJsonString(HostingQuoteSchema, quote)),
+		);
+	let quotes: HostingQuote[] = [];
+	let quotesDigest: ContentHash | undefined;
+	try {
+		if (hostingBudget) {
+			quotes = hostingBudget.quotes.map((quote) =>
+				clone(HostingQuoteSchema, quote),
+			);
+			quotesDigest = quoteKey(quotes);
+			if (quoteKey(hostingBudget.quotes) !== quotesDigest)
+				throw new Error("hosting quote evidence changed during snapshot");
+		}
+	} catch {
+		return rejectResult(
+			foldState,
+			emitted,
+			"billing",
+			"hosting-quote-invalid",
+			"hosting quote evidence could not be snapshotted",
+		);
+	}
+	const paidContextCurrent = () => {
+		try {
+			return (
+				deps.hostingBudget === hostingBudget &&
+				deps.authorizeHosting === paidAuthority &&
+				deps.brokerId === brokerId &&
+				deps.ownerTenantId === ownerTenant &&
+				deps.catalog === catalog &&
+				deps.catalog.catalogHash === catalogHash &&
+				contentHashOf(request) === requestDigest &&
+				(!hostingBudget ||
+					(hostingBudget.authority === budgetAuthority &&
+						budgetAuthority?.persistence === budgetPersistence &&
+						budgetAuthority?.read === budgetRead &&
+						budgetAuthority?.lookup === budgetLookup &&
+						budgetAuthority?.reserve === budgetReserve &&
+						budgetAuthority?.claimExecution === budgetClaim &&
+						budgetAuthority?.uncertain === budgetUncertain &&
+						hostingBudget.now === budgetClock &&
+						quoteKey(hostingBudget.quotes) === quotesDigest))
+			);
+		} catch {
+			return false;
+		}
+	};
+	const localContextCurrent = () => {
+		try {
+			return (
+				deps.authorizeLocalHosting === localAuthority &&
+				deps.hostingBudget === hostingBudget &&
+				deps.brokerId === brokerId &&
+				deps.ownerTenantId === ownerTenant &&
+				deps.catalog === catalog &&
+				deps.catalog.catalogHash === catalogHash &&
+				contentHashOf(request) === requestDigest
+			);
+		} catch {
+			return false;
+		}
+	};
 	const reservationId = `hosting:${deps.brokerId}:${request.requestId}`;
 	let budgetReservation: BudgetReservation | undefined;
+	let budgetExecutionClaimed = false;
+	let budgetClaimBinding:
+		| {
+				readonly quoteId: string;
+				readonly quoteDigest: string;
+				readonly reservedMicros: number;
+				readonly identityKey: string;
+				readonly executionDigest: string;
+		  }
+		| undefined;
+	let generationBudgetReserveAttempted = false;
 	let hostingQuote: HostingQuote | undefined;
 	let hostingPolicyProof: HostingPolicyProof | undefined;
+	let localHostingProof: LocalHostingProof | undefined;
+	const markGenerationUncertain = () => {
+		if (!budgetReservation) return true;
+		try {
+			const binding = budgetClaimBinding;
+			if (
+				!binding ||
+				!budgetAuthority ||
+				!budgetUncertain ||
+				!budgetLookup ||
+				budgetAuthority.uncertain !== budgetUncertain ||
+				budgetAuthority.lookup !== budgetLookup ||
+				budgetAuthority.persistence !== budgetPersistence
+			)
+				return false;
+			const matches = (reservation: BudgetReservation | undefined) =>
+				reservation?.status === "uncertain" &&
+				reservation.reservationId === reservationId &&
+				reservation.requestDigest === requestDigest &&
+				reservation.quoteId === binding.quoteId &&
+				reservation.quoteDigest === binding.quoteDigest &&
+				reservation.reservedMicros === binding.reservedMicros &&
+				reservation.identity !== undefined &&
+				budgetIdentityKey(reservation.identity) === binding.identityKey &&
+				(reservation.executionDigest === binding.executionDigest ||
+					(!budgetExecutionClaimed && reservation.executionDigest === ""));
+			const marked = budgetUncertain.call(budgetAuthority, reservationId);
+			const stored = budgetLookup.call(budgetAuthority, reservationId);
+			return (
+				matches(marked) &&
+				matches(stored) &&
+				marked.executionDigest === stored?.executionDigest &&
+				budgetAuthority.uncertain === budgetUncertain &&
+				budgetAuthority.lookup === budgetLookup &&
+				budgetAuthority.persistence === budgetPersistence
+			);
+		} catch {
+			return false;
+		}
+	};
 	const isLocalProvider = (providerId: string) =>
 		providerId === "local" || providerId === "@hobo/provider-local-host";
 	function economicCosts(
@@ -200,17 +572,19 @@ export async function resolveBindleDeployment(
 		const costs = new Map<string, number>();
 		const context = deps.hostingBudget;
 		let ledger: ReturnType<BudgetAdmissionAuthority["read"]> | undefined;
+		let previous: ReturnType<BudgetAdmissionAuthority["lookup"]> | undefined;
 		try {
 			ledger = context?.authority.read(context.now());
+			previous = context?.authority.lookup(reservationId);
 		} catch {
-			return costs;
+			throw new Error("hosting budget evidence is unavailable");
 		}
-		const previous = context?.authority.lookup(reservationId);
 		for (const yard of yards) {
 			if (
 				!context &&
 				isLocalProvider(yard.providerId) &&
-				request.spendEstimateUsd === 0
+				request.spendEstimateUsd === 0 &&
+				deps.authorizeLocalHosting !== undefined
 			) {
 				costs.set(yard.yardId, 0);
 				continue;
@@ -221,7 +595,7 @@ export async function resolveBindleDeployment(
 				ledger.identity.tenantId !== ownerTenantId
 			)
 				continue;
-			const quote = context.quotes.find(
+			const quote = quotes.find(
 				(row) =>
 					row.yardId === yard.yardId &&
 					row.providerId === yard.providerId &&
@@ -254,17 +628,80 @@ export async function resolveBindleDeployment(
 	async function admitHosting(
 		yardId: string,
 		providerId: string,
+		placements?: readonly PlacementDecision[],
+		generationPlanHash?: ContentHash,
+		beforeReserve?: () => void,
+		generationCurrent?: () => boolean,
 	): Promise<void> {
 		const context = deps.hostingBudget;
+		if (context !== hostingBudget)
+			throw new Error("hosting budget changed during placement");
+		if (generationPlanHash && !context)
+			throw new Error(
+				"durable shared hosting budget authority required for generation",
+			);
 		if (
 			!context &&
 			isLocalProvider(providerId) &&
 			request.spendEstimateUsd === 0
-		)
+		) {
+			const authorize = localAuthority;
+			if (!authorize || !placements)
+				throw new Error(
+					"bound local hosting authorization required before placement",
+				);
+			if (!localContextCurrent())
+				throw new Error("local hosting context changed before authorization");
+			const work = Object.freeze(
+				placements.map((placement) => Object.freeze({ ...placement })),
+			);
+			const binding = {
+				brokerId,
+				requestDigest,
+				catalogHash,
+				yardId,
+				providerId,
+				ownerTenantId,
+				placements: work,
+			};
+			const bindingDigest = contentHashOf(binding);
+			const input = Object.freeze({ ...binding, request, bindingDigest });
+			const proof = await authorize(input);
+			if (
+				!localContextCurrent() ||
+				contentHashOf(placements) !== contentHashOf(work)
+			)
+				throw new Error("local hosting context changed during authorization");
+			if (
+				proof?.schemaVersion !== "hobo.local-hosting-proof/v1" ||
+				proof.bindingDigest !== bindingDigest ||
+				(proof.effect !== "allow" && proof.effect !== "allow-degraded") ||
+				proof.obligationsSatisfied !== true ||
+				!isJsonString(proof.policyHash) ||
+				!/^sha256:[0-9a-f]{64}$/u.test(proof.policyHash) ||
+				!isJsonString(proof.evidenceRef) ||
+				!proof.evidenceRef.trim() ||
+				proof.liabilityBoundMicros !== 0
+			)
+				throw new Error(
+					"local hosting lacks bound policy and zero-liability proof",
+				);
+			localHostingProof = Object.freeze({
+				schemaVersion: proof.schemaVersion,
+				bindingDigest: proof.bindingDigest,
+				effect: proof.effect,
+				obligationsSatisfied: true,
+				policyHash: proof.policyHash,
+				evidenceRef: proof.evidenceRef,
+				liabilityBoundMicros: 0,
+			});
 			return;
+		}
 		if (context?.authority.persistence !== "durable-cas")
 			throw new Error("durable shared hosting budget authority required");
-		const quote = context.quotes.find(
+		if (!paidContextCurrent())
+			throw new Error("hosting context changed before policy");
+		const quote = quotes.find(
 			(row) =>
 				row.yardId === yardId &&
 				row.providerId === providerId &&
@@ -272,17 +709,52 @@ export async function resolveBindleDeployment(
 				row.requestDigest === requestDigest,
 		);
 		if (!quote) throw new Error("complete hosting quote missing");
+		if (!placements) throw new Error("selected quote work missing");
+		const work = Object.freeze(
+			placements.map((placement) => Object.freeze({ ...placement })),
+		);
+		const workDigest = hostingWorkDigest({
+			requestDigest,
+			brokerId,
+			ownerTenantId,
+			catalogHash,
+			yardId,
+			providerId,
+			placements: work,
+			generationPlanHash,
+		});
+		if (quote.workDigest !== workDigest)
+			throw new Error(
+				"hosting quote does not bind selected work and generation plan",
+			);
 		const ledger = context.authority.read(context.now());
 		if (!ledger.identity) throw new Error("budget identity missing");
-		if (!deps.authorizeHosting)
+		const authorize = paidAuthority;
+		if (!authorize)
 			throw new Error("bound hosting policy authorization required");
-		const { gate, proof } = await deps.authorizeHosting({
+		const expectedQuote = toJsonString(HostingQuoteSchema, quote);
+		const quoteDigest = hostingQuoteDigest(quote);
+		const policyQuote = clone(HostingQuoteSchema, quote);
+		const policyIdentity = clone(BudgetIdentitySchema, ledger.identity);
+		const expectedIdentity = toJsonString(BudgetIdentitySchema, policyIdentity);
+		const { gate, proof } = await authorize({
 			request,
 			requestDigest,
-			quote,
-			identity: ledger.identity,
+			quote: policyQuote,
+			quoteDigest,
+			workDigest,
+			placements: work,
+			generationPlanHash,
+			identity: policyIdentity,
 			now: context.now(),
 		});
+		if (
+			!paidContextCurrent() ||
+			contentHashOf(placements) !== contentHashOf(work) ||
+			toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||
+			toJsonString(BudgetIdentitySchema, policyIdentity) !== expectedIdentity
+		)
+			throw new Error("hosting evidence changed while policy was evaluated");
 		if (
 			(gate.effect !== "allow" && gate.effect !== "allow-degraded") ||
 			proof.effect !== gate.effect ||
@@ -291,26 +763,68 @@ export async function resolveBindleDeployment(
 			!proof.policyHash ||
 			proof.requestDigest !== requestDigest ||
 			proof.quoteId !== quote.quoteId ||
+			proof.quoteDigest !== quoteDigest ||
 			!proof.identity ||
 			budgetIdentityKey(proof.identity) !== budgetIdentityKey(ledger.identity)
 		)
 			throw new Error(
 				"hosting policy denies, requires approval, or lacks bound fulfilled obligations",
 			);
+		const policyProof = clone(HostingPolicyProofSchema, proof);
+		const expectedProof = toJsonString(HostingPolicyProofSchema, policyProof);
+		const reservedQuote = clone(HostingQuoteSchema, quote);
+		const reservedIdentity = clone(BudgetIdentitySchema, ledger.identity);
+		let reserveNow = context.now();
+		if (!paidContextCurrent())
+			throw new Error("hosting context changed before reservation");
+		validateHostingQuote(quote, reserveNow);
+		if (beforeReserve) {
+			beforeReserve();
+			if (
+				!paidContextCurrent() ||
+				toJsonString(HostingQuoteSchema, policyQuote) !== expectedQuote ||
+				toJsonString(BudgetIdentitySchema, policyIdentity) !==
+					expectedIdentity ||
+				toJsonString(HostingPolicyProofSchema, proof) !== expectedProof
+			)
+				throw new Error("hosting evidence changed during quota reservation");
+			reserveNow = context.now();
+			validateHostingQuote(quote, reserveNow);
+			if (!generationCurrent?.() || !paidContextCurrent())
+				throw new Error(
+					"generation authority changed before budget reservation",
+				);
+		}
+		if (generationPlanHash) generationBudgetReserveAttempted = true;
 		budgetReservation = context.authority.reserve({
 			reservationId,
 			requestDigest,
-			quote,
-			identity: ledger.identity,
+			quote: reservedQuote,
+			identity: reservedIdentity,
 			expectedSeq: ledger.seq,
-			now: context.now(),
+			now: reserveNow,
 		});
 		if (budgetReservation.status !== "held")
 			throw new Error(
 				"existing terminal or uncertain commitment cannot authorize a new execution",
 			);
+		if (
+			!paidContextCurrent() ||
+			toJsonString(HostingQuoteSchema, reservedQuote) !== expectedQuote ||
+			toJsonString(BudgetIdentitySchema, reservedIdentity) !==
+				expectedIdentity ||
+			toJsonString(HostingPolicyProofSchema, proof) !== expectedProof
+		)
+			throw new Error(
+				"hosting evidence changed while the hold was created; reconcile reservation",
+			);
+		validateHostingQuote(quote, context.now());
+		if (!paidContextCurrent())
+			throw new Error(
+				"hosting context changed during final freshness check; reconcile reservation",
+			);
 		hostingQuote = quote;
-		hostingPolicyProof = proof;
+		hostingPolicyProof = policyProof;
 	}
 
 	append(
@@ -346,12 +860,26 @@ export async function resolveBindleDeployment(
 	}
 
 	const snapshot = inventorySnapshotFromFold(foldState);
+	let initialCosts: ReadonlyMap<string, number>;
+	try {
+		initialCosts = economicCosts(snapshot.yards);
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"billing",
+			"hosting-budget-evidence-unavailable",
+			error instanceof Error
+				? error.message
+				: "hosting budget evidence unavailable",
+		);
+	}
 	const match = matchYard(request.yard, snapshot, {
 		ownerTenantId,
 		objective: request.objective,
 		bindleRuntimes: request.bindleRequirements.runtimes,
 		contributingPolicyIds: ["yard-match"],
-		economicCosts: economicCosts(snapshot.yards),
+		economicCosts: initialCosts,
 	});
 
 	append(
@@ -363,14 +891,49 @@ export async function resolveBindleDeployment(
 
 	let selectedYardId = match.winnerYardId;
 	let generationAttemptId: string | undefined;
-	const runtimeSnapshot = runtimeCatalog.snapshot();
+	let generationPlanHash: ContentHash | undefined;
+	let generationAuthorityCurrent: (() => boolean) | undefined;
+	const rejectAfterGeneration = (
+		plane: string,
+		code: string,
+		message: string,
+	) => {
+		const marked = generationAttemptId ? markGenerationUncertain() : true;
+		return rejectResult(
+			foldState,
+			emitted,
+			plane,
+			code,
+			`${message}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+		);
+	};
+	let runtimeSnapshotMethod: typeof runtimeCatalog.snapshot;
+	let runtimeSnapshot: ReturnType<typeof runtimeCatalog.snapshot>;
+	try {
+		runtimeSnapshotMethod = runtimeCatalog.snapshot;
+		runtimeSnapshot = runtimeSnapshotMethod.call(runtimeCatalog);
+	} catch (error) {
+		return rejectResult(
+			foldState,
+			emitted,
+			"placement",
+			"yard-runtime-catalog-unavailable",
+			error instanceof Error
+				? error.message
+				: "Yard runtime catalog unavailable",
+		);
+	}
 
 	if (match.outcome === "generation-required") {
+		const runtimeSnapshotDigest = contentHashOf(runtimeSnapshot);
+		const generationPolicy =
+			generationPolicyInput ?? DEFAULT_YARD_GENERATION_POLICY;
+		const generationPolicyDigest = contentHashOf(generationPolicy);
 		const genDecision = planYardGeneration({
 			ownerTenantId,
 			requestedLayout: request.yard.requestedLayout,
 			runtimeCatalog: runtimeSnapshot,
-			policy: deps.generationPolicy ?? DEFAULT_YARD_GENERATION_POLICY,
+			policy: generationPolicy,
 			allowGenerationRequested: request.yard.allowGenerationRequested,
 			attemptId: `gen-${request.requestId}`,
 		});
@@ -391,41 +954,493 @@ export async function resolveBindleDeployment(
 				genDecision.reason,
 			);
 		}
-		let inspectGenerationOnly = false;
-		try {
-			await admitHosting(
-				genDecision.plan.expectedYardId,
-				genDecision.plan.providerId,
+		if (
+			request.yard.selectionMode === "exact" &&
+			request.yard.requestedYardId !== genDecision.plan.expectedYardId
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-exact-id-mismatch",
+					reasonCodes: ["yard-generation-exact-id-mismatch"],
+				}),
 			);
-			const financial = deps.hostingBudget;
-			if (financial && budgetReservation && hostingQuote) {
-				const now = financial.now();
-				validateHostingQuote(hostingQuote, now);
-				const head = financial.authority.read(now);
-				const previous = financial.authority.lookup(reservationId);
-				inspectGenerationOnly = Boolean(previous?.executionDigest);
-				budgetReservation = financial.authority.claimExecution({
-					reservationId,
-					requestDigest,
-					executionDigest: contentHashOf({
-						kind: "yard-generation",
-						requestDigest,
-						planHash: genDecision.plan.planHash,
-					}),
-					expectedSeq: head.seq,
-				});
-				// A durable claim may wait for a database writer past quote expiry.
-				validateHostingQuote(hostingQuote, financial.now());
-			}
-		} catch (error) {
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-exact-id-mismatch",
+				"generated Yard would not match the exact requested Yard",
+			);
+		}
+		if (
+			selectOrGenerateCamp(request, genDecision.plan.expectedYardId) ===
+			undefined
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "camp-yard-mismatch",
+					reasonCodes: ["camp-yard-mismatch"],
+					message: "requested Camp is not a direct child of the planned Yard",
+				}),
+			);
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"camp-yard-mismatch",
+				"requested Camp is not a direct child of the planned Yard",
+			);
+		}
+		if (!hostingBudget)
 			return rejectResult(
 				foldState,
 				emitted,
 				"billing",
 				"hosting-budget-admission-denied",
-				error instanceof Error
-					? error.message
-					: "hosting budget admission failed",
+				"Yard generation requires a durable hosting budget",
+			);
+		const quota = generationQuotaInput;
+		if (!quota || quota.persistence !== "durable-sqlite")
+			return rejectResult(
+				foldState,
+				emitted,
+				"policy",
+				"yard-generation-quota-unavailable",
+				"a shared durable generation quota authority is required",
+			);
+		const quotaReserve = quota.reserve;
+		const quotaLookup = quota.lookup;
+		const quotaMarkReady = quota.markReady;
+		const quotaClaimExecution = quota.claimExecution;
+		const quotaCancelUnclaimed = quota.cancelUnclaimed;
+		const quotaLookupCancellation = quota.lookupCancellation;
+		const quotaMethods = [
+			quotaReserve,
+			quotaLookup,
+			quotaMarkReady,
+			quotaClaimExecution,
+			quotaCancelUnclaimed,
+			quotaLookupCancellation,
+		];
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: this host-supplied port must be callable before policy, budget or provider effects.
+		if (!quotaMethods.every((method) => typeof method === "function"))
+			return rejectResult(
+				foldState,
+				emitted,
+				"policy",
+				"yard-generation-quota-unavailable",
+				"generation quota authority lacks execution fencing",
+			);
+		const quotaRequest: YardGenerationQuotaRequest = Object.freeze({
+			idempotencyKey: genDecision.plan.idempotencyKey,
+			attemptId: genDecision.plan.attemptId,
+			ownerTenantId,
+			yardId: genDecision.plan.expectedYardId,
+			planHash: genDecision.plan.planHash,
+			maxConcurrentGenerations: generationPolicy.maxConcurrentGenerations,
+			maxYardsPerTenant: generationPolicy.maxYardsPerTenant,
+		});
+		const quotaRequestDigest = contentHashOf(quotaRequest);
+		const quotaClaimMatches = (claim: YardGenerationQuotaClaim | undefined) =>
+			Boolean(
+				claim &&
+					claim.idempotencyKey === quotaRequest.idempotencyKey &&
+					claim.attemptId === quotaRequest.attemptId &&
+					claim.ownerTenantId === quotaRequest.ownerTenantId &&
+					claim.yardId === quotaRequest.yardId &&
+					claim.planHash === quotaRequest.planHash &&
+					claim.maxConcurrentGenerations ===
+						quotaRequest.maxConcurrentGenerations &&
+					claim.maxYardsPerTenant === quotaRequest.maxYardsPerTenant &&
+					isJsonBoolean(claim.executionClaimed) &&
+					(claim.status === "pending" || claim.status === "ready") &&
+					(claim.status !== "ready" ||
+						(claim.executionClaimed &&
+							isJsonString(claim.readyEvidenceRef) &&
+							claim.readyEvidenceRef.trim().length > 0)),
+			);
+		const quotaMethodsCurrent = () =>
+			deps.generationQuota === quota &&
+			quota.persistence === "durable-sqlite" &&
+			quota.reserve === quotaReserve &&
+			quota.lookup === quotaLookup &&
+			quota.markReady === quotaMarkReady &&
+			quota.claimExecution === quotaClaimExecution &&
+			quota.cancelUnclaimed === quotaCancelUnclaimed &&
+			quota.lookupCancellation === quotaLookupCancellation;
+		let quotaReserved = false;
+		let quotaCreatedByCall = false;
+		let quotaExecutionClaimed = false;
+		let quotaReservationOutcomeUnknown = false;
+		const quotaCurrent = () => {
+			try {
+				if (!quotaReserved || !quotaMethodsCurrent()) return false;
+				const claim = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+				return (
+					quotaClaimMatches(claim) &&
+					(!quotaExecutionClaimed || claim?.executionClaimed === true) &&
+					quotaMethodsCurrent()
+				);
+			} catch {
+				return false;
+			}
+		};
+		const generationPlanCurrent = () => {
+			try {
+				const { planHash, ...planBody } = genDecision.plan;
+				return contentHashOf(planBody) === planHash;
+			} catch {
+				return false;
+			}
+		};
+		const connectors = connectorsInput ?? defaultYardGenerationConnectors();
+		const connectorLookup = connectors.get;
+		let selectedConnector: YardGenerationConnector | undefined;
+		try {
+			selectedConnector = connectors.get(genDecision.plan.generatorConnectorId);
+		} catch {
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-denied",
+				"generation connector unavailable",
+			);
+		}
+		if (
+			!selectedConnector ||
+			selectedConnector.id !== genDecision.plan.generatorConnectorId
+		)
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-denied",
+				"generation connector missing or mismatched",
+			);
+		const selectedId = selectedConnector.id;
+		const selectedKind = selectedConnector.kind;
+		const selectedPlan = selectedConnector.plan;
+		const selectedProvision = selectedConnector.provision;
+		const selectedInspect = selectedConnector.inspect;
+		const selectedCompensate = selectedConnector.compensate;
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: connectors may expose this optional provider-signal extension.
+		const selectedSignals = (
+			selectedConnector as YardGenerationConnector & {
+				signalsFor?: (
+					id: string,
+				) => readonly { kind: string; payload: JsonObject }[];
+			}
+		).signalsFor;
+		const generationContextCurrent = (requireQuota: boolean) => {
+			try {
+				if (
+					!(requireQuota ? quotaCurrent() : quotaMethodsCurrent()) ||
+					deps.generationPolicy !== generationPolicyInput ||
+					deps.runtimeCatalog !== runtimeCatalogInput ||
+					deps.connectors !== connectorsInput ||
+					runtimeCatalog.snapshot !== runtimeSnapshotMethod ||
+					connectors.get !== connectorLookup ||
+					contentHashOf(generationPolicy) !== generationPolicyDigest ||
+					contentHashOf(runtimeCatalog.snapshot()) !== runtimeSnapshotDigest ||
+					!generationPlanCurrent()
+				)
+					return false;
+				const nowConnector = connectors.get(
+					genDecision.plan.generatorConnectorId,
+				);
+				return (
+					nowConnector === selectedConnector &&
+					nowConnector.id === selectedId &&
+					nowConnector.kind === selectedKind &&
+					nowConnector.plan === selectedPlan &&
+					nowConnector.provision === selectedProvision &&
+					nowConnector.inspect === selectedInspect &&
+					nowConnector.compensate === selectedCompensate &&
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: compare the same optional extension captured above.
+					(nowConnector as YardGenerationConnector & { signalsFor?: unknown })
+						.signalsFor === selectedSignals &&
+					deps.generationPolicy === generationPolicyInput &&
+					deps.runtimeCatalog === runtimeCatalogInput &&
+					deps.connectors === connectorsInput &&
+					contentHashOf(generationPolicy) === generationPolicyDigest &&
+					contentHashOf(runtimeCatalog.snapshot()) === runtimeSnapshotDigest &&
+					generationPlanCurrent() &&
+					paidContextCurrent() &&
+					deps.generationPolicy === generationPolicyInput &&
+					deps.runtimeCatalog === runtimeCatalogInput &&
+					deps.connectors === connectorsInput &&
+					runtimeCatalog.snapshot === runtimeSnapshotMethod &&
+					connectors.get === connectorLookup &&
+					contentHashOf(generationPolicy) === generationPolicyDigest &&
+					selectedConnector.provision === selectedProvision &&
+					selectedConnector.inspect === selectedInspect &&
+					(requireQuota ? quotaCurrent() : quotaMethodsCurrent())
+				);
+			} catch {
+				return false;
+			}
+		};
+		let budgetExecutionClaimAttempted = false;
+		let budgetAlreadyClaimed = false;
+		let budgetHoldUnverifiable = false;
+		const budgetClaimMatches = (
+			reservation: BudgetReservation | undefined,
+			requireExecution = true,
+		) => {
+			try {
+				return Boolean(
+					budgetClaimBinding &&
+						reservation?.status === "held" &&
+						reservation.reservationId === reservationId &&
+						reservation.requestDigest === requestDigest &&
+						reservation.quoteId === budgetClaimBinding.quoteId &&
+						reservation.quoteDigest === budgetClaimBinding.quoteDigest &&
+						reservation.reservedMicros === budgetClaimBinding.reservedMicros &&
+						reservation.identity &&
+						budgetIdentityKey(reservation.identity) ===
+							budgetClaimBinding.identityKey &&
+						(!requireExecution ||
+							reservation.executionDigest ===
+								budgetClaimBinding.executionDigest),
+				);
+			} catch {
+				return false;
+			}
+		};
+		const budgetClaimCurrent = () => {
+			try {
+				if (!budgetExecutionClaimed) return true;
+				return Boolean(
+					budgetAuthority &&
+						budgetLookup &&
+						budgetAuthority.lookup === budgetLookup &&
+						budgetAuthority.persistence === budgetPersistence &&
+						budgetClaimMatches(
+							budgetLookup.call(budgetAuthority, reservationId),
+						) &&
+						budgetAuthority.lookup === budgetLookup &&
+						budgetAuthority.persistence === budgetPersistence,
+				);
+			} catch {
+				return false;
+			}
+		};
+		generationAuthorityCurrent = () =>
+			generationContextCurrent(true) &&
+			budgetClaimCurrent() &&
+			generationContextCurrent(true) &&
+			budgetClaimCurrent();
+		let inspectGenerationOnly = false;
+		generationPlanHash = genDecision.plan.planHash;
+		const planned = placeResourcesUnderYard(
+			request,
+			genDecision.plan.providerId,
+			deps.catalog,
+		);
+		if ("error" in planned)
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				planned.code,
+				planned.error,
+			);
+		const reserveGenerationQuota = () => {
+			try {
+				if (!generationContextCurrent(false))
+					throw new Error(
+						"generation authority changed before quota reservation",
+					);
+				let reservation: ReturnType<typeof quotaReserve>;
+				quotaReservationOutcomeUnknown = true;
+				try {
+					reservation = quotaReserve.call(quota, quotaRequest);
+				} catch (error) {
+					if (error instanceof YardGenerationQuotaDeniedError)
+						quotaReservationOutcomeUnknown = false;
+					throw error;
+				}
+				if (
+					!reservation ||
+					(reservation.kind !== "reserved" &&
+						reservation.kind !== "existing") ||
+					!quotaClaimMatches(reservation.claim) ||
+					!quotaMethodsCurrent()
+				)
+					throw new Error("generation quota returned an invalid claim");
+				quotaReserved = true;
+				quotaCreatedByCall = reservation.kind === "reserved";
+				const stored = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+				if (!quotaClaimMatches(stored) || !quotaMethodsCurrent())
+					throw new Error("generation quota claim could not be verified");
+				quotaReservationOutcomeUnknown = false;
+				if (!generationContextCurrent(true))
+					throw new Error(
+						"generation authority changed during quota reservation",
+					);
+			} catch (error) {
+				throw new GenerationQuotaAdmissionError(
+					error instanceof Error
+						? error.message
+						: "generation quota reservation failed",
+				);
+			}
+		};
+		try {
+			await admitHosting(
+				genDecision.plan.expectedYardId,
+				genDecision.plan.providerId,
+				planned.decisions,
+				generationPlanHash,
+				reserveGenerationQuota,
+				generationAuthorityCurrent,
+			);
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed after quote approval; reconcile reservation",
+				);
+			const financial = deps.hostingBudget;
+			if (financial && budgetReservation && hostingQuote) {
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
+					throw new Error(
+						"hosting context changed before generation claim; reconcile reservation",
+					);
+				const now = financial.now();
+				validateHostingQuote(hostingQuote, now);
+				const head = financial.authority.read(now);
+				const previous = financial.authority.lookup(reservationId);
+				budgetAlreadyClaimed = Boolean(previous?.executionDigest);
+				const liabilityBoundMicros = hostingQuote.liabilityBoundMicros;
+				const executionDigest = contentHashOf({
+					kind: "yard-generation",
+					requestDigest,
+					planHash: genDecision.plan.planHash,
+				});
+				if (!head.identity || !isJsonNumber(liabilityBoundMicros)) {
+					budgetHoldUnverifiable = true;
+					throw new Error(
+						"budget identity is unavailable before generation claim",
+					);
+				}
+				budgetClaimBinding = {
+					quoteId: hostingQuote.quoteId,
+					quoteDigest: hostingQuoteDigest(hostingQuote),
+					reservedMicros: liabilityBoundMicros,
+					identityKey: budgetIdentityKey(head.identity),
+					executionDigest,
+				};
+				if (
+					!budgetClaimMatches(budgetReservation, false) ||
+					!budgetClaimMatches(previous, false)
+				) {
+					budgetHoldUnverifiable = true;
+					throw new Error("budget reservation binding could not be verified");
+				}
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
+					throw new Error(
+						"hosting context changed before generation claim; reconcile reservation",
+					);
+				budgetExecutionClaimAttempted = true;
+				const claimed = financial.authority.claimExecution({
+					reservationId,
+					requestDigest,
+					executionDigest,
+					expectedSeq: head.seq,
+				});
+				if (
+					!budgetClaimMatches(claimed) ||
+					!budgetClaimMatches(financial.authority.lookup(reservationId)) ||
+					!paidContextCurrent()
+				)
+					throw new Error("budget execution claim could not be verified");
+				budgetReservation = claimed;
+				budgetExecutionClaimed = true;
+				// A durable claim may wait for a database writer past quote expiry.
+				validateHostingQuote(hostingQuote, financial.now());
+				if (!paidContextCurrent())
+					throw new Error(
+						"hosting context changed after generation claim; reconcile reservation",
+					);
+			}
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed before quota execution claim",
+				);
+			const execution = quotaClaimExecution.call(quota, quotaRequest);
+			if (
+				!execution ||
+				(execution.kind !== "claimed" && execution.kind !== "existing") ||
+				!quotaClaimMatches(execution.claim) ||
+				!execution.claim.executionClaimed ||
+				!quotaMethodsCurrent()
+			)
+				throw new Error("generation quota returned an invalid execution claim");
+			quotaExecutionClaimed = true;
+			inspectGenerationOnly =
+				execution.kind === "existing" || budgetAlreadyClaimed;
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed during quota execution claim",
+				);
+		} catch (error) {
+			let quotaReconciliation = quotaReservationOutcomeUnknown
+				? "; quota reservation outcome is unknown; reconcile the claim"
+				: "";
+			if (quotaCreatedByCall && !quotaExecutionClaimed) {
+				try {
+					const cancelled = quotaCancelUnclaimed.call(quota, quotaRequest);
+					if (
+						!cancelled ||
+						(cancelled.kind !== "cancelled" && cancelled.kind !== "existing") ||
+						cancelled.requestDigest !== quotaRequestDigest ||
+						quota.persistence !== "durable-sqlite" ||
+						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
+						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation ||
+						quotaLookupCancellation.call(quota, quotaRequest.idempotencyKey) !==
+							quotaRequestDigest ||
+						quotaLookup.call(quota, quotaRequest.idempotencyKey) !==
+							undefined ||
+						quota.cancelUnclaimed !== quotaCancelUnclaimed ||
+						quota.lookup !== quotaLookup ||
+						quota.lookupCancellation !== quotaLookupCancellation
+					)
+						throw new Error("quota cancellation could not be verified");
+					quotaReconciliation = "";
+				} catch {
+					quotaReconciliation = "; quota reservation requires reconciliation";
+				}
+			}
+			const budgetClaimOutcomeUnknown =
+				budgetExecutionClaimAttempted && !budgetExecutionClaimed;
+			const budgetUncertaintyWriteFailed =
+				budgetExecutionClaimAttempted && !markGenerationUncertain();
+			const budgetReconciliation =
+				(budgetHoldUnverifiable
+					? "; budget reservation binding is unverified; reconcile the hold"
+					: "") +
+				(budgetClaimOutcomeUnknown
+					? "; budget execution claim outcome is unknown; reconcile the hold"
+					: "") +
+				(budgetUncertaintyWriteFailed
+					? "; uncertain budget status could not be recorded; reconcile the hold"
+					: "") +
+				(generationBudgetReserveAttempted &&
+				!budgetReservation &&
+				!(error instanceof BudgetAdmissionDeniedError)
+					? "; budget reservation outcome is unknown; reconcile the hold"
+					: "");
+			return rejectResult(
+				foldState,
+				emitted,
+				error instanceof GenerationQuotaAdmissionError ? "policy" : "billing",
+				error instanceof GenerationQuotaAdmissionError
+					? "yard-generation-quota-denied"
+					: "hosting-budget-admission-denied",
+				`${error instanceof Error ? error.message : "hosting budget admission failed"}${quotaReconciliation}${budgetReconciliation}`,
 			);
 		}
 
@@ -448,8 +1463,34 @@ export async function resolveBindleDeployment(
 			}),
 		);
 
-		const connectors = deps.connectors ?? defaultYardGenerationConnectors();
-		const saga = createYardGenerationSaga({ connectors });
+		const checkProviderBoundary = () => {
+			if (generationAuthorityCurrent?.() !== true)
+				throw new Error(
+					"generation authority changed at the provider boundary",
+				);
+		};
+		const pinnedConnector: YardGenerationConnector = {
+			id: selectedId,
+			kind: selectedKind,
+			plan: (input) => selectedPlan.call(selectedConnector, input),
+			provision: (plan) => {
+				checkProviderBoundary();
+				return selectedProvision.call(selectedConnector, plan);
+			},
+			inspect: (id) => {
+				checkProviderBoundary();
+				return selectedInspect.call(selectedConnector, id);
+			},
+		};
+		const saga = createYardGenerationSaga({
+			authorizePlan: (plan) =>
+				generationAuthorityCurrent?.() === true &&
+				contentHashOf(plan) === contentHashOf(genDecision.plan) &&
+				generationAuthorityCurrent?.() === true,
+			connectors: new Map([
+				[genDecision.plan.generatorConnectorId, pinnedConnector],
+			]),
+		});
 		append(
 			yardEvent(YARD_EVENTS.GenerationStarted, {
 				attemptId: genDecision.plan.attemptId,
@@ -462,45 +1503,116 @@ export async function resolveBindleDeployment(
 
 		let genResult: Awaited<ReturnType<typeof saga.run>>;
 		try {
-			if (inspectGenerationOnly) {
-				const connector = connectors.get(genDecision.plan.generatorConnectorId);
-				if (!connector) throw new Error("claimed generation connector missing");
+			if (!generationAuthorityCurrent())
+				throw new Error(
+					"generation authority changed before provider operation",
+				);
+			const currentQuotaClaim = quotaLookup.call(
+				quota,
+				quotaRequest.idempotencyKey,
+			);
+			if (
+				!quotaClaimMatches(currentQuotaClaim) ||
+				!quotaMethodsCurrent() ||
+				!generationAuthorityCurrent()
+			)
+				throw new Error("generation quota changed before provider operation");
+			if (inspectGenerationOnly || currentQuotaClaim?.status === "ready") {
 				// The claim may have committed before a lost provider acknowledgement.
 				// Reopening a saga must inspect that operation rather than provision again.
-				genResult = await connector.inspect(genDecision.plan.attemptId);
+				genResult = await selectedInspect.call(
+					selectedConnector,
+					genDecision.plan.attemptId,
+				);
 			} else genResult = await saga.run(genDecision.plan);
 		} catch (error) {
-			if (budgetReservation)
-				deps.hostingBudget?.authority.uncertain(reservationId);
+			const marked = markGenerationUncertain();
 			return rejectResult(
 				foldState,
 				emitted,
 				"placement",
 				"yard-generation-uncertain",
-				error instanceof Error ? error.message : "generation outcome uncertain",
+				`${error instanceof Error ? error.message : "generation outcome uncertain"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+			);
+		}
+		try {
+			if (budgetReservation && hostingQuote && hostingBudget) {
+				if (!paidContextCurrent() || !generationAuthorityCurrent())
+					throw new Error(
+						"hosting or generation authority changed during generation",
+					);
+				validateHostingQuote(hostingQuote, hostingBudget.now());
+				if (!paidContextCurrent())
+					throw new Error("hosting context changed after generation");
+			}
+		} catch (error) {
+			const marked = markGenerationUncertain();
+			return rejectResult(
+				foldState,
+				emitted,
+				"placement",
+				"yard-generation-uncertain",
+				`${error instanceof Error ? error.message : "generation context changed"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
 			);
 		}
 		generationAttemptId = genDecision.plan.attemptId;
+		if (genResult.attemptId !== genDecision.plan.attemptId) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-attempt-mismatch",
+					reasonCodes: ["yard-generation-attempt-mismatch"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-attempt-mismatch",
+				"provider returned a different generation attempt",
+			);
+		}
+		if (
+			genResult.yardId &&
+			genResult.yardId !== genDecision.plan.expectedYardId
+		) {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-id-mismatch",
+					reasonCodes: ["yard-generation-id-mismatch"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-id-mismatch",
+				"provider returned a different Yard than the generation plan",
+			);
+		}
 
-		// Feed connector progress signals through the provider fold resolver.
-		// SAFETY: assertion required at this I/O or test boundary.
-		const connector = connectors.get(genDecision.plan.generatorConnectorId) as
-			| (YardGenerationConnector & {
-					signalsFor?: (
-						id: string,
-					) => readonly { kind: string; payload: JsonObject }[];
-			  })
-			| undefined;
-		if (connector?.signalsFor) {
-			appendProviderSignals(
-				genDecision.plan.providerId,
-				connector.signalsFor(genDecision.plan.attemptId),
+		try {
+			if (selectedSignals) {
+				appendProviderSignals(
+					genDecision.plan.providerId,
+					selectedSignals.call(selectedConnector, genDecision.plan.attemptId),
+					{
+						attemptId: genDecision.plan.attemptId,
+						idempotencyKey: genDecision.plan.idempotencyKey,
+						yardId: genDecision.plan.expectedYardId,
+						runtimeId: genDecision.plan.runtimeId,
+						ownerTenantId,
+					},
+				);
+			}
+		} catch (error) {
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-uncertain",
+				error instanceof Error
+					? error.message
+					: "generation signals unavailable",
 			);
 		}
 
 		if (genResult.status === "failed" || !genResult.yardId) {
-			if (budgetReservation)
-				deps.hostingBudget?.authority.uncertain(reservationId);
 			append(
 				yardEvent(YARD_EVENTS.GenerationFailed, {
 					attemptId: genDecision.plan.attemptId,
@@ -520,16 +1632,37 @@ export async function resolveBindleDeployment(
 					reasonCodes: [genResult.failure?.code ?? "yard-generation-failed"],
 				}),
 			);
-			return rejectResult(
-				foldState,
-				emitted,
+			return rejectAfterGeneration(
 				"placement",
 				genResult.failure?.code ?? "yard-generation-failed",
 				genResult.failure?.message ?? "yard generation failed",
 			);
 		}
 
-		// If connector did not emit ready via signals, complete attestation path.
+		const readyAttempt =
+			foldState.generationAttempts[genDecision.plan.attemptId];
+		const readySignalMatches =
+			foldState.yards[genResult.yardId]?.status === "ready" &&
+			readyAttempt?.status === "ready" &&
+			readyAttempt.yardId === genDecision.plan.expectedYardId &&
+			readyAttempt.expectedYardId === genDecision.plan.expectedYardId &&
+			readyAttempt.idempotencyKey === genDecision.plan.idempotencyKey &&
+			readyAttempt.providerId === genDecision.plan.providerId &&
+			readyAttempt.runtimeId === genDecision.plan.runtimeId;
+		if (!readySignalMatches && genResult.status !== "ready") {
+			append(
+				yardEvent(YARD_EVENTS.PlacementRejected, {
+					requestId: request.requestId,
+					code: "yard-generation-not-ready",
+					reasonCodes: ["yard-generation-not-ready"],
+				}),
+			);
+			return rejectAfterGeneration(
+				"placement",
+				"yard-generation-not-ready",
+				"provider has not reported a ready Yard",
+			);
+		}
 		if (
 			!foldState.yards[genResult.yardId]?.status ||
 			foldState.yards[genResult.yardId]?.status !== "ready"
@@ -559,18 +1692,63 @@ export async function resolveBindleDeployment(
 			);
 		}
 
-		const rematch = matchYard(
-			request.yard,
-			inventorySnapshotFromFold(foldState),
-			{
-				ownerTenantId,
-				objective: request.objective,
-				bindleRuntimes: request.bindleRequirements.runtimes,
-				economicCosts: economicCosts(
-					inventorySnapshotFromFold(foldState).yards,
-				),
-			},
-		);
+		try {
+			if (!quotaCurrent() || !generationAuthorityCurrent())
+				throw new Error(
+					"generation quota changed before readiness was recorded",
+				);
+			const current = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+			const ready =
+				current?.status === "ready"
+					? current
+					: quotaMarkReady.call(quota, {
+							idempotencyKey: quotaRequest.idempotencyKey,
+							attemptId: quotaRequest.attemptId,
+							ownerTenantId: quotaRequest.ownerTenantId,
+							planHash: quotaRequest.planHash,
+							yardId: quotaRequest.yardId,
+							evidenceRef: genResult.outputHash,
+						});
+			const storedReady = quotaLookup.call(quota, quotaRequest.idempotencyKey);
+			if (
+				!quotaClaimMatches(ready) ||
+				ready.status !== "ready" ||
+				!quotaClaimMatches(storedReady) ||
+				storedReady?.status !== "ready" ||
+				storedReady.readyEvidenceRef !== ready.readyEvidenceRef ||
+				!quotaCurrent()
+			)
+				throw new Error("generation quota readiness could not be verified");
+		} catch (error) {
+			return rejectAfterGeneration(
+				"policy",
+				"yard-generation-quota-uncertain",
+				error instanceof Error
+					? error.message
+					: "generation quota readiness unavailable",
+			);
+		}
+
+		const rematchSnapshot = inventorySnapshotFromFold(foldState);
+		let rematchCosts: ReadonlyMap<string, number>;
+		try {
+			rematchCosts = economicCosts(rematchSnapshot.yards);
+		} catch (error) {
+			const marked = markGenerationUncertain();
+			return rejectResult(
+				foldState,
+				emitted,
+				"billing",
+				"hosting-budget-evidence-unavailable",
+				`${error instanceof Error ? error.message : "hosting budget evidence unavailable"}${marked ? "" : "; uncertain status could not be recorded; reconcile the hold"}`,
+			);
+		}
+		const rematch = matchYard(request.yard, rematchSnapshot, {
+			ownerTenantId,
+			objective: request.objective,
+			bindleRuntimes: request.bindleRequirements.runtimes,
+			economicCosts: rematchCosts,
+		});
 		append(
 			yardEvent(YARD_EVENTS.MatchDecided, {
 				requestId: request.requestId,
@@ -586,9 +1764,7 @@ export async function resolveBindleDeployment(
 					reasonCodes: ["yard-rematch-failed"],
 				}),
 			);
-			return rejectResult(
-				foldState,
-				emitted,
+			return rejectAfterGeneration(
 				"placement",
 				"yard-rematch-failed",
 				"generated yard did not become selectable",
@@ -606,9 +1782,7 @@ export async function resolveBindleDeployment(
 				message: match.rationale,
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"yard-match-rejected",
 			match.rationale,
@@ -622,9 +1796,7 @@ export async function resolveBindleDeployment(
 				reasonCodes: ["no-yard-selected"],
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"no-yard-selected",
 			"no yard selected",
@@ -641,9 +1813,7 @@ export async function resolveBindleDeployment(
 				reasonCodes: ["yard-not-ready"],
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			"yard-not-ready",
 			`yard ${selectedYardId} is not ready`,
@@ -652,14 +1822,38 @@ export async function resolveBindleDeployment(
 
 	// Camp placement inside selected yard.
 	const campId = selectOrGenerateCamp(request, yard.yardId);
+	if (campId === undefined) {
+		append(
+			yardEvent(YARD_EVENTS.PlacementRejected, {
+				requestId: request.requestId,
+				code: "camp-yard-mismatch",
+				reasonCodes: ["camp-yard-mismatch"],
+				message: "requested Camp is not a direct child of the selected Yard",
+			}),
+		);
+		return rejectAfterGeneration(
+			"placement",
+			"camp-yard-mismatch",
+			"requested Camp is not a direct child of the selected Yard",
+		);
+	}
 
 	// Resolvers constrained to yard provider (includes event-store slot).
-	const { pins } = composeResolverPins({
-		providerId: yard.providerId,
-		yardDefaults: EMPTY_RESOLVER_CONFIG,
-		campConfig: EMPTY_RESOLVER_CONFIG,
-		providerDefaults: defaultProviderResolvers(yard.providerId),
-	});
+	let pins: ReturnType<typeof composeResolverPins>["pins"];
+	try {
+		({ pins } = composeResolverPins({
+			providerId: yard.providerId,
+			yardDefaults: EMPTY_RESOLVER_CONFIG,
+			campConfig: EMPTY_RESOLVER_CONFIG,
+			providerDefaults: defaultProviderResolvers(yard.providerId),
+		}));
+	} catch (error) {
+		return rejectAfterGeneration(
+			"placement",
+			"resolver-composition-failed",
+			error instanceof Error ? error.message : "resolver composition failed",
+		);
+	}
 
 	// Residual resources: all under selected yard provider only (no cross-yard split).
 	const placements = placeResourcesUnderYard(
@@ -676,20 +1870,49 @@ export async function resolveBindleDeployment(
 				message: placements.error,
 			}),
 		);
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"placement",
 			placements.code,
 			placements.error,
 		);
 	}
 	try {
-		await admitHosting(yard.yardId, yard.providerId);
+		await admitHosting(
+			yard.yardId,
+			yard.providerId,
+			placements.decisions,
+			generationPlanHash,
+		);
+		if (generationAuthorityCurrent && !generationAuthorityCurrent())
+			throw new Error("generation authority changed before receipt");
+		if (hostingQuote && hostingBudget) {
+			if (!paidContextCurrent())
+				throw new Error(
+					"hosting context changed before receipt; reconcile reservation",
+				);
+			validateHostingQuote(hostingQuote, hostingBudget.now());
+			if (!paidContextCurrent())
+				throw new Error(
+					"hosting context changed during receipt freshness check; reconcile reservation",
+				);
+		}
+		if (
+			localHostingProof &&
+			(!localContextCurrent() ||
+				localHostingProof.bindingDigest !==
+					contentHashOf({
+						brokerId,
+						requestDigest,
+						catalogHash,
+						yardId: yard.yardId,
+						providerId: yard.providerId,
+						ownerTenantId,
+						placements: placements.decisions,
+					}))
+		)
+			throw new Error("local hosting context changed before receipt");
 	} catch (error) {
-		return rejectResult(
-			foldState,
-			emitted,
+		return rejectAfterGeneration(
 			"billing",
 			"hosting-budget-admission-denied",
 			error instanceof Error
@@ -698,14 +1921,12 @@ export async function resolveBindleDeployment(
 		);
 	}
 
-	const residualDefinitionIds = placements.decisions.map((p) => p.definitionId);
 	const executionUnits = buildExecutionUnits({
 		yardId: yard.yardId,
 		providerId: yard.providerId,
 		campId,
 		bindleName: request.bindleName,
-		resourceIds: request.resources.map((r) => r.resourceId),
-		residualDefinitionIds,
+		resourcePlacements: placements.decisions,
 	});
 
 	const receiptBody = {
@@ -743,6 +1964,7 @@ export async function resolveBindleDeployment(
 	if (budgetReservation && hostingQuote)
 		Object.assign(receiptBody, { budgetReservation, hostingQuote });
 	if (hostingPolicyProof) Object.assign(receiptBody, { hostingPolicyProof });
+	if (localHostingProof) Object.assign(receiptBody, { localHostingProof });
 
 	const receipt: YardPlacementReceipt = Object.freeze({
 		...receiptBody,
@@ -810,6 +2032,25 @@ export function parseBindleDeploymentRequest(
 	if (!yardRaw || !isJsonObject(yardRaw)) {
 		throw new TypeError("yard placement request required");
 	}
+	if (
+		!isJsonNumber(raw.spendEstimateUsd) ||
+		!Number.isFinite(raw.spendEstimateUsd) ||
+		raw.spendEstimateUsd < 0
+	)
+		throw new TypeError(
+			"spendEstimateUsd must be present, finite, and nonnegative",
+		);
+	if (
+		yardRaw.selectionMode === "exact" &&
+		yardRaw.requestedYardId === undefined
+	)
+		throw new TypeError("exact Yard selection requires requestedYardId");
+	if (
+		yardRaw.requestedYardId !== undefined &&
+		(!isJsonString(yardRaw.requestedYardId) || !yardRaw.requestedYardId.trim())
+	)
+		throw new TypeError("requestedYardId must be a nonempty string");
+	validateRequestedYardLayout(yardRaw.requestedLayout);
 	const yard: YardPlacementRequest = Object.freeze({
 		requestId: isJsonString(yardRaw.requestId)
 			? yardRaw.requestId
@@ -829,22 +2070,68 @@ export function parseBindleDeploymentRequest(
 		allowGenerationRequested: yardRaw.allowGenerationRequested === true,
 	});
 
-	// SAFETY: assertion required at this I/O or test boundary.
-	const reqs = (raw.bindleRequirements ?? {}) as JsonObject;
-	const resources = Array.isArray(raw.resources)
-		? raw.resources.map((r) => {
-				// SAFETY: assertion required at this I/O or test boundary.
-				const row = r as JsonObject;
-				return Object.freeze({
-					resourceId: String(row.resourceId),
-					port: String(row.port),
-					features: Object.freeze(
-						Array.isArray(row.features) ? row.features.map(String) : [],
-					),
-					...(isJsonString(row.region) ? { region: row.region } : undefined),
-				});
-			})
-		: [];
+	if (
+		raw.bindleRequirements !== undefined &&
+		!isJsonObject(raw.bindleRequirements)
+	)
+		throw new TypeError("bindleRequirements must be an object");
+	const reqs = isJsonObject(raw.bindleRequirements)
+		? raw.bindleRequirements
+		: {};
+	validateConstraintLists(
+		reqs,
+		["require", "prefer", "runtimes"],
+		"bindleRequirements",
+	);
+	validateConstraintLabels(reqs.labels, "bindleRequirements.labels");
+	if (raw.resources !== undefined && !Array.isArray(raw.resources))
+		throw new TypeError("resources must be an array");
+	const resourceIds = new Set<string>();
+	const resources = (Array.isArray(raw.resources) ? raw.resources : []).map(
+		(row) => {
+			if (!isJsonObject(row) || Array.isArray(row))
+				throw new TypeError("resource must be an object");
+			if (!isJsonString(row.resourceId) || !row.resourceId.trim())
+				throw new TypeError("resource identity must be a nonempty string");
+			if (resourceIds.has(row.resourceId))
+				throw new TypeError(`duplicate resource identity ${row.resourceId}`);
+			resourceIds.add(row.resourceId);
+			if (!isJsonString(row.port) || !row.port.trim())
+				throw new TypeError("resource port must be a nonempty string");
+			if (row.features !== undefined && !Array.isArray(row.features))
+				throw new TypeError("resource features must be an array");
+			const features = (Array.isArray(row.features) ? row.features : []).map(
+				(feature) => {
+					if (!isJsonString(feature) || !feature.trim())
+						throw new TypeError("resource feature must be a nonempty string");
+					return feature;
+				},
+			);
+			if (
+				row.region !== undefined &&
+				(!isJsonString(row.region) || !row.region.trim())
+			)
+				throw new TypeError("resource region must be a nonempty string");
+			return Object.freeze({
+				resourceId: row.resourceId,
+				port: row.port,
+				features: Object.freeze(features),
+				...(isJsonString(row.region) ? { region: row.region } : undefined),
+			});
+		},
+	);
+	if (raw.camp !== undefined && !isJsonObject(raw.camp))
+		throw new TypeError("camp must be an object");
+	if (isJsonObject(raw.camp)) {
+		if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)
+			throw new TypeError("exact Camp selection requires campId");
+		if (
+			raw.camp.campId !== undefined &&
+			(!isJsonString(raw.camp.campId) || !raw.camp.campId.trim())
+		)
+			throw new TypeError("campId must be a nonempty string");
+		validateRequestedCampLayout(raw.camp.layout, "camp.layout");
+	}
 
 	return Object.freeze({
 		schemaVersion: BINDLE_DEPLOYMENT_REQUEST_SCHEMA,
@@ -861,41 +2148,16 @@ export function parseBindleDeploymentRequest(
 		...(isJsonObject(raw.camp)
 			? {
 					camp: Object.freeze({
-						selectionMode: parseSelectionMode(
-							raw.camp.selectionMode ?? "compatible",
-						),
+						selectionMode: parseSelectionMode(raw.camp.selectionMode),
 						...(isJsonString(raw.camp.campId)
 							? { campId: raw.camp.campId }
 							: undefined),
-						layout: Object.freeze({
-							require: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.require
-									: undefined,
-							),
-							prefer: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.prefer
-									: undefined,
-							),
-							labels: stringMap(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.labels
-									: undefined,
-							),
-							runtimeRequirements: list(
-								isJsonObject(raw.camp.layout)
-									? raw.camp.layout.runtimeRequirements
-									: undefined,
-							),
-						}),
+						layout: parseCampLayout(raw.camp.layout),
 					}),
 				}
 			: undefined),
 		objective: isJsonString(raw.objective) ? raw.objective : "min-cost",
-		spendEstimateUsd: isJsonNumber(raw.spendEstimateUsd)
-			? raw.spendEstimateUsd
-			: 0,
+		spendEstimateUsd: raw.spendEstimateUsd,
 		ownerTenantId: isJsonString(raw.ownerTenantId)
 			? raw.ownerTenantId
 			: "local",
@@ -964,11 +2226,19 @@ export function buildDeploymentRequestFromParts(options: {
 function selectOrGenerateCamp(
 	request: BindleDeploymentRequest,
 	yardId: string,
-): string {
+): string | undefined {
 	if (request.camp?.campId) {
-		return request.camp.campId.includes("/")
-			? request.camp.campId
-			: `${yardId}/${request.camp.campId}`;
+		const campId = request.camp.campId;
+		if (!campId.includes("/"))
+			return campId === "." || campId === ".."
+				? undefined
+				: `${yardId}/${campId}`;
+		const prefix = `${yardId}/`;
+		if (!campId.startsWith(prefix)) return undefined;
+		const child = campId.slice(prefix.length);
+		if (!child.trim() || child.includes("/") || child === "." || child === "..")
+			return undefined;
+		return campId;
 	}
 	const env = request.camp?.layout.envType ?? "dev";
 	return `${yardId}/camp:${env}`;
@@ -981,54 +2251,205 @@ function placeResourcesUnderYard(
 ):
 	| { readonly decisions: readonly PlacementDecision[] }
 	| { readonly error: string; readonly code: string } {
-	const defs = catalog
-		.definitions()
-		.filter((d) => d.providerId === providerId || d.providerId === "*");
+	const invalid = (code: string, error: string) => ({ code, error });
+	let defs: ReturnType<BrokerCatalog["definitions"]>;
+	let providers: Array<{ source: (typeof defs)[number]; provider: string }>;
+	try {
+		providers = catalog.definitions().map((source) => ({
+			source,
+			provider: source.providerId,
+		}));
+		defs = providers
+			.filter((item) => item.provider === providerId || item.provider === "*")
+			.map((item) => item.source);
+	} catch {
+		return invalid(
+			"catalog-definition-invalid",
+			"yard catalog could not be read",
+		);
+	}
+	type Candidate = {
+		source: (typeof defs)[number];
+		id: string;
+		provider: string;
+		sku: string;
+		unit: string;
+		priceText: string;
+		price: Decimal;
+		regions: string[];
+		region: string;
+	};
+	const evidence: Candidate[] = [];
 	const decisions: PlacementDecision[] = [];
-
 	for (const req of request.resources) {
-		const candidates = defs.filter((d) => {
-			const sat = d.satisfies({
-				port: req.port,
-				features: [...req.features],
-			});
-			return sat.kind === "full" || sat.kind === "partial";
-		});
-		if (candidates.length === 0) {
-			// Wildcard fallback on same provider
-			const any = defs.find((d) => d.port === "*");
-			if (!any) {
-				return {
-					error: `no catalog definition for ${req.resourceId} under yard provider ${providerId}`,
-					code: "no-definition-in-yard-provider",
+		const candidates: Candidate[] = [];
+		const ids = new Set<string>();
+		let unit: string | undefined;
+		for (const d of defs) {
+			try {
+				if (!Array.isArray(d.regions))
+					return invalid(
+						"catalog-definition-invalid",
+						"yard regions must be an array",
+					);
+				const before = {
+					id: d.id,
+					provider: d.providerId,
+					sku: d.cost.sku,
+					unit: d.cost.unit,
+					priceText: d.cost.marginalPrice,
+					regions: [...d.regions],
 				};
+				if (before.provider !== providerId && before.provider !== "*")
+					return invalid(
+						"catalog-definition-invalid",
+						"catalog provider changed during placement",
+					);
+				const verdict = d.satisfies({
+					port: req.port,
+					features: [...req.features],
+				});
+				if (!Array.isArray(d.regions))
+					return invalid(
+						"catalog-definition-invalid",
+						"yard regions changed during capability check",
+					);
+				const after = {
+					id: d.id,
+					provider: d.providerId,
+					sku: d.cost.sku,
+					unit: d.cost.unit,
+					priceText: d.cost.marginalPrice,
+					regions: [...d.regions],
+				};
+				if (JSON.stringify(before) !== JSON.stringify(after))
+					return invalid(
+						"catalog-definition-invalid",
+						"catalog definition changed during capability check",
+					);
+				if (verdict.kind !== "full") continue;
+				if (req.region && !before.regions.includes(req.region)) continue;
+				if (
+					!isJsonString(before.id) ||
+					!before.id.trim() ||
+					!isJsonString(before.provider) ||
+					!before.provider.trim() ||
+					!isJsonString(before.sku) ||
+					!before.sku.trim() ||
+					!isJsonString(before.unit) ||
+					!before.unit.trim() ||
+					before.regions.length === 0 ||
+					before.regions.some(
+						(region) => !isJsonString(region) || !region.trim(),
+					)
+				)
+					return invalid(
+						"catalog-definition-invalid",
+						"eligible yard definition lacks identity, SKU, unit or region",
+					);
+				if (ids.has(before.id))
+					return invalid(
+						"catalog-definition-conflict",
+						"eligible yard definition identities must be distinct",
+					);
+				ids.add(before.id);
+				const price = isJsonString(before.priceText)
+					? parseDecimal(before.priceText)
+					: undefined;
+				if (!price || price.coefficient < 0n)
+					return invalid(
+						"catalog-price-invalid",
+						"eligible yard price must be a nonnegative decimal",
+					);
+				if (unit !== undefined && unit !== before.unit)
+					return invalid(
+						"catalog-price-incomparable",
+						"eligible yard prices use different units",
+					);
+				unit = before.unit;
+				const region = req.region ?? before.regions[0];
+				if (!region)
+					return invalid(
+						"catalog-definition-invalid",
+						"eligible yard definition lacks a region",
+					);
+				candidates.push({ source: d, ...before, price, region });
+			} catch {
+				return invalid(
+					"catalog-definition-invalid",
+					"yard catalog capability or evidence check failed",
+				);
 			}
-			candidates.push(any);
 		}
-		// Deterministic pick: lowest marginal price then id.
-		candidates.sort((a, b) => {
-			const pa = Number(a.cost.marginalPrice);
-			const pb = Number(b.cost.marginalPrice);
-			if (pa !== pb) return pa - pb;
-			return a.id < b.id ? -1 : 1;
-		});
+		if (candidates.length === 0)
+			return invalid(
+				"no-definition-in-yard-provider",
+				`no complete catalog definition for ${req.resourceId} under yard provider ${providerId}`,
+			);
+		candidates.sort(
+			(a, b) =>
+				compareDecimal(a.price, b.price) ||
+				(a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+		);
+		evidence.push(...candidates);
 		const winner = first(candidates);
-		// Enforce no silent cross-provider placement.
-		if (winner.providerId !== providerId && winner.providerId !== "*") {
-			return {
-				error: `candidate ${winner.id} provider ${winner.providerId} != yard ${providerId}`,
-				code: "cross-yard-split-forbidden",
-			};
-		}
 		decisions.push({
 			resourceId: req.resourceId,
 			providerId,
 			definitionId: winner.id,
-			region: req.region ?? winner.regions[0] ?? "local",
-			sku: winner.cost.sku,
-			unit: winner.cost.unit,
-			marginalPrice: winner.cost.marginalPrice,
+			region: winner.region,
+			sku: winner.sku,
+			unit: winner.unit,
+			marginalPrice: winner.priceText,
 		});
+	}
+	try {
+		if (providers.some((item) => item.source.providerId !== item.provider))
+			return invalid(
+				"catalog-definition-invalid",
+				"catalog provider changed during placement",
+			);
+	} catch {
+		return invalid(
+			"catalog-definition-invalid",
+			"yard catalog could not be rechecked",
+		);
+	}
+	for (const item of evidence) {
+		try {
+			if (!Array.isArray(item.source.regions))
+				return invalid(
+					"catalog-definition-invalid",
+					"yard regions changed during placement",
+				);
+			if (
+				JSON.stringify({
+					id: item.source.id,
+					provider: item.source.providerId,
+					sku: item.source.cost.sku,
+					unit: item.source.cost.unit,
+					priceText: item.source.cost.marginalPrice,
+					regions: [...item.source.regions],
+				}) !==
+				JSON.stringify({
+					id: item.id,
+					provider: item.provider,
+					sku: item.sku,
+					unit: item.unit,
+					priceText: item.priceText,
+					regions: item.regions,
+				})
+			)
+				return invalid(
+					"catalog-definition-invalid",
+					"yard catalog changed during placement",
+				);
+		} catch {
+			return invalid(
+				"catalog-definition-invalid",
+				"yard catalog could not be rechecked",
+			);
+		}
 	}
 	return { decisions: Object.freeze(decisions) };
 }
@@ -1049,6 +2470,114 @@ function rejectResult(
 	};
 }
 
+function validateConstraintLists(
+	input: JsonObject,
+	fields: readonly string[],
+	path: string,
+): void {
+	for (const field of fields) {
+		const value = input[field];
+		if (value === undefined) continue;
+		if (
+			!Array.isArray(value) ||
+			value.some((item) => !isJsonString(item) || !item.trim())
+		)
+			throw new TypeError(
+				`${path}.${field} must be an array of nonempty strings`,
+			);
+	}
+}
+
+function validateConstraintLabels(
+	value: JsonValue | undefined,
+	path: string,
+): void {
+	if (value === undefined) return;
+	if (
+		!isJsonObject(value) ||
+		Object.values(value).some((item) => !isJsonString(item))
+	)
+		throw new TypeError(`${path} must be a string map`);
+}
+
+function validateRequestedCampLayout(
+	value: JsonValue | undefined,
+	path: string,
+): void {
+	if (value === undefined) return;
+	if (!isJsonObject(value)) throw new TypeError(`${path} must be an object`);
+	for (const key of ["id", "env"] as const) {
+		if (value[key] !== undefined && !isJsonString(value[key]))
+			throw new TypeError(`${path}.${key} must be a string`);
+	}
+	if (
+		value.envType !== undefined &&
+		(!isJsonString(value.envType) ||
+			!value.envType.trim() ||
+			value.envType.includes("/"))
+	)
+		throw new TypeError("camp envType must be a nonempty path segment");
+	validateConstraintLists(
+		value,
+		["require", "prefer", "runtimeRequirements"],
+		path,
+	);
+	validateConstraintLabels(value.labels, `${path}.labels`);
+}
+
+function validateRequestedYardLayout(value: JsonValue | undefined): void {
+	if (value === undefined) return;
+	if (!isJsonObject(value))
+		throw new TypeError("yard requestedLayout must be an object");
+	for (const key of ["providerId", "runtimeId"] as const) {
+		if (
+			value[key] !== undefined &&
+			(!isJsonString(value[key]) || !value[key].trim())
+		)
+			throw new TypeError(
+				`yard requestedLayout.${key} must be a nonempty string`,
+			);
+	}
+	validateConstraintLists(
+		value,
+		[
+			"regions",
+			"require",
+			"prefer",
+			"residency",
+			"isolation",
+			"network",
+			"componentHosts",
+		],
+		"yard requestedLayout",
+	);
+	if (Array.isArray(value.residency)) {
+		for (const entry of value.residency) {
+			try {
+				parseYardResidencyTag(entry);
+			} catch {
+				throw new TypeError(
+					`yard requestedLayout.residency contains an invalid tag: ${String(entry)}`,
+				);
+			}
+		}
+	}
+	validateConstraintLabels(value.labels, "yard requestedLayout.labels");
+	if (value.properties !== undefined && !isJsonObject(value.properties))
+		throw new TypeError("yard requestedLayout.properties must be an object");
+	if (value.camps !== undefined) {
+		if (!Array.isArray(value.camps))
+			throw new TypeError("yard requestedLayout.camps must be an array");
+		for (const camp of value.camps) {
+			if (camp === null || camp === undefined)
+				throw new TypeError(
+					"yard requestedLayout.camps entries must be objects",
+				);
+			validateRequestedCampLayout(camp, "yard requestedLayout.camps entry");
+		}
+	}
+}
+
 function parseSelectionMode(
 	value: JsonValue | undefined,
 ): YardPlacementRequest["selectionMode"] {
@@ -1059,7 +2588,10 @@ function parseSelectionMode(
 	) {
 		return value;
 	}
-	return "compatible";
+	if (value === undefined) return "compatible";
+	throw new TypeError(
+		"selectionMode must be exact, compatible, or compatible-or-generate",
+	);
 }
 
 function asHash(value: JsonValue | undefined): ContentHash {
@@ -1087,12 +2619,12 @@ function stringMap(
 	if (!value || !isJsonObject(value) || Array.isArray(value)) {
 		return Object.freeze({});
 	}
-	const out: Record<string, string> = {};
+	const entries: Array<[string, string]> = [];
 	// SAFETY: assertion required at this I/O or test boundary.
 	for (const k of Object.keys(value as object).sort()) {
 		// SAFETY: assertion required at this I/O or test boundary.
 		const v = (value as JsonObject)[k];
-		if (isJsonString(v)) out[k] = v;
+		if (isJsonString(v)) entries.push([k, v]);
 	}
-	return Object.freeze(out);
+	return Object.freeze(Object.fromEntries(entries));
 }

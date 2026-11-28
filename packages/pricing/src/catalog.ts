@@ -12,19 +12,9 @@ import {
 } from "./_generated/pricing_pb.js";
 import { compareDecimal, DECIMAL_ZERO, parseDecimal } from "./decimal.js";
 import { stableHash } from "./json.js";
-import {
-	codeUnitPricingOrder,
-	legacyPricingOrder,
-	type PricingOrder,
-} from "./ordering.js";
-import {
-	exactPricingTimeOrder,
-	intervalCovers,
-	LEGACY_TIME,
-	PricingFault,
-	type TemporalPolicy,
-} from "./state.js";
-import { type PricingTimeOrder, utcPricingTimeOrder } from "./time-order.js";
+import { codeUnitPricingOrder as order } from "./ordering.js";
+import { intervalCovers, PricingFault } from "./state.js";
+import { utcPricingTimeOrder as timeOrder } from "./time-order.js";
 import type { PricingRejectionCode } from "./types.js";
 
 function validateTierBoundaries(tiers: readonly Tier[]): void {
@@ -137,17 +127,15 @@ export function resolveRateCard(
 	agreement: ProviderAgreement,
 	at: string,
 	horizon: string,
-	order: PricingTimeOrder = exactPricingTimeOrder,
-	time: TemporalPolicy = LEGACY_TIME,
 ): RateCard {
 	const schedule = agreement.rateSchedule
 		.filter(
 			(entry) =>
 				entry.effective !== undefined &&
-				intervalCovers(entry.effective, at, horizon, time),
+				intervalCovers(entry.effective, at, horizon),
 		)
 		.sort((left, right) =>
-			order(right.effective?.start, left.effective?.start),
+			timeOrder(right.effective?.start, left.effective?.start),
 		);
 	const selected = schedule[0];
 	if (selected === undefined) {
@@ -157,11 +145,10 @@ export function resolveRateCard(
 		);
 	}
 	if (
-		order === utcPricingTimeOrder &&
 		schedule.some(
 			(entry) =>
 				entry.rateCardId !== selected.rateCardId &&
-				order(entry.effective?.start, selected.effective?.start) === 0,
+				timeOrder(entry.effective?.start, selected.effective?.start) === 0,
 		)
 	)
 		throw new PricingFault(
@@ -172,7 +159,7 @@ export function resolveRateCard(
 		(card) =>
 			card.id === selected.rateCardId &&
 			card.effective !== undefined &&
-			intervalCovers(card.effective, at, horizon, time),
+			intervalCovers(card.effective, at, horizon),
 	);
 	const card = cards[0];
 	if (cards.length !== 1 || card === undefined) {
@@ -181,138 +168,135 @@ export function resolveRateCard(
 			`expected one effective rate card ${selected.rateCardId}, found ${cards.length}`,
 		);
 	}
-	if (order === utcPricingTimeOrder) {
-		if (!/^[A-Z]{3}$/u.test(card.currency))
+	if (!/^[A-Z]{3}$/u.test(card.currency))
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"rate-card currency is invalid",
+		);
+	const validAmount = (amount: Money | undefined) => {
+		if (
+			amount === undefined ||
+			amount.currency !== card.currency ||
+			amount.decimal.length > 128
+		)
+			return false;
+		const value = parseDecimal(amount.decimal);
+		return value !== undefined && value.coefficient >= 0n;
+	};
+	const identities = new Set<string>();
+	const groupKinds = new Map<string, string>();
+	if (card.charges.length === 0)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"rate card requires explicit charges",
+		);
+	for (const charge of card.charges) {
+		const id = charge.base?.id;
+		if (
+			id === undefined ||
+			id.length === 0 ||
+			id.length > 200 ||
+			id.trim() !== id ||
+			/[\p{Cc}]/u.test(id) ||
+			identities.has(id) ||
+			(charge.variant.case !== "fixed" && charge.variant.case !== "usage")
+		)
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
-				"rate-card currency is invalid",
+				"rate-card charges require unique bounded identities, bases and variants",
 			);
-		const validAmount = (amount: Money | undefined) => {
+		identities.add(id);
+		const group = charge.base?.exclusiveGroup;
+		if (group === undefined) {
+			if (charge.base?.fallback === true)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"a fallback charge requires an exclusive group",
+				);
+		} else {
 			if (
-				amount === undefined ||
-				amount.currency !== card.currency ||
-				amount.decimal.length > 128
-			)
-				return false;
-			const value = parseDecimal(amount.decimal);
-			return value !== undefined && value.coefficient >= 0n;
-		};
-		const identities = new Set<string>();
-		const groupKinds = new Map<string, string>();
-		if (card.charges.length === 0)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"rate card requires explicit charges",
-			);
-		for (const charge of card.charges) {
-			const id = charge.base?.id;
-			if (
-				id === undefined ||
-				id.length === 0 ||
-				id.length > 200 ||
-				id.trim() !== id ||
-				/[\p{Cc}]/u.test(id) ||
-				identities.has(id) ||
-				(charge.variant.case !== "fixed" && charge.variant.case !== "usage")
+				group.length === 0 ||
+				group.length > 200 ||
+				group.trim() !== group ||
+				/[\p{Cc}]/u.test(group)
 			)
 				throw new PricingFault(
 					"INVALID_PRICING_INPUT",
-					"rate-card charges require unique bounded identities, bases and variants",
+					"exclusive group identity is invalid",
 				);
-			identities.add(id);
-			const group = charge.base?.exclusiveGroup;
-			if (group === undefined) {
-				if (charge.base?.fallback === true)
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"a fallback charge requires an exclusive group",
-					);
-			} else {
-				if (
-					group.length === 0 ||
-					group.length > 200 ||
-					group.trim() !== group ||
-					/[\p{Cc}]/u.test(group)
-				)
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"exclusive group identity is invalid",
-					);
-				const groupKind =
-					charge.variant.case === "usage"
-						? JSON.stringify(["usage", charge.variant.value.dimension])
-						: JSON.stringify(["fixed"]);
-				const previous = groupKinds.get(group);
-				if (previous !== undefined && previous !== groupKind)
-					throw new PricingFault(
-						"PRICING_MODEL_UNSUPPORTED",
-						"exclusive alternatives across charge types or dimensions are unsupported",
-					);
-				groupKinds.set(group, groupKind);
-			}
-			if (charge.variant.case === "fixed") {
-				if (!validAmount(charge.variant.value.amount))
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"fixed charge requires a nonnegative amount in the rate-card currency",
-					);
-				continue;
-			}
-			if (charge.variant.case !== "usage")
+			const groupKind =
+				charge.variant.case === "usage"
+					? JSON.stringify(["usage", charge.variant.value.dimension])
+					: JSON.stringify(["fixed"]);
+			const previous = groupKinds.get(group);
+			if (previous !== undefined && previous !== groupKind)
 				throw new PricingFault(
-					"INVALID_PRICING_INPUT",
-					"charge variant is invalid",
+					"PRICING_MODEL_UNSUPPORTED",
+					"exclusive alternatives across charge types or dimensions are unsupported",
 				);
-			const price = charge.variant.value.price;
-			const valid =
-				price.case === "perUnit"
-					? validAmount(price.value)
-					: price.case === "package"
-						? validAmount(price.value.packageAmount)
-						: price.case === "graduated" || price.case === "volume"
-							? price.value.tiers.length > 0 &&
-								price.value.tiers.every(
-									(tier) =>
-										validAmount(tier.flatAmount) &&
-										validAmount(tier.unitAmount),
-								)
-							: false;
-			if (!valid)
-				throw new PricingFault(
-					"INVALID_PRICING_INPUT",
-					"usage charge requires nonnegative amounts in the rate-card currency",
-				);
-			if (price.case === "package") {
-				const size =
-					price.value.packageSize.length <= 128
-						? parseDecimal(price.value.packageSize)
-						: undefined;
-				if (size === undefined || size.coefficient <= 0n)
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"package size must be positive",
-					);
-				const rounding = price.value.rounding;
-				const multiple =
-					rounding !== undefined && rounding.multiple.length <= 128
-						? parseDecimal(rounding.multiple)
-						: undefined;
-				if (
-					rounding === undefined ||
-					rounding.scope !== "period" ||
-					multiple === undefined ||
-					multiple.coefficient !== 1n ||
-					multiple.scale !== 0 ||
-					!new Set(["ceil", "floor", "half-up"]).has(rounding.mode)
-				)
-					throw new PricingFault(
-						"PRICING_MODEL_UNSUPPORTED",
-						"package pricing requires period rounding to whole packages",
-					);
-			}
-			if (price.case === "graduated" || price.case === "volume")
-				validateTierBoundaries(price.value.tiers);
+			groupKinds.set(group, groupKind);
 		}
+		if (charge.variant.case === "fixed") {
+			if (!validAmount(charge.variant.value.amount))
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"fixed charge requires a nonnegative amount in the rate-card currency",
+				);
+			continue;
+		}
+		if (charge.variant.case !== "usage")
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"charge variant is invalid",
+			);
+		const price = charge.variant.value.price;
+		const valid =
+			price.case === "perUnit"
+				? validAmount(price.value)
+				: price.case === "package"
+					? validAmount(price.value.packageAmount)
+					: price.case === "graduated" || price.case === "volume"
+						? price.value.tiers.length > 0 &&
+							price.value.tiers.every(
+								(tier) =>
+									validAmount(tier.flatAmount) && validAmount(tier.unitAmount),
+							)
+						: false;
+		if (!valid)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"usage charge requires nonnegative amounts in the rate-card currency",
+			);
+		if (price.case === "package") {
+			const size =
+				price.value.packageSize.length <= 128
+					? parseDecimal(price.value.packageSize)
+					: undefined;
+			if (size === undefined || size.coefficient <= 0n)
+				throw new PricingFault(
+					"INVALID_PRICING_INPUT",
+					"package size must be positive",
+				);
+			const rounding = price.value.rounding;
+			const multiple =
+				rounding !== undefined && rounding.multiple.length <= 128
+					? parseDecimal(rounding.multiple)
+					: undefined;
+			if (
+				rounding === undefined ||
+				rounding.scope !== "period" ||
+				multiple === undefined ||
+				multiple.coefficient !== 1n ||
+				multiple.scale !== 0 ||
+				!new Set(["ceil", "floor", "half-up"]).has(rounding.mode)
+			)
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					"package pricing requires period rounding to whole packages",
+				);
+		}
+		if (price.case === "graduated" || price.case === "volume")
+			validateTierBoundaries(price.value.tiers);
 	}
 	return card;
 }
@@ -335,7 +319,6 @@ function matchesSelectors(
 	component: ChargeComponent,
 	workload: WorkloadDelta | undefined,
 	dimension: string | undefined,
-	order: PricingOrder,
 ): boolean {
 	const selectors = component.base?.selectors ?? {};
 	for (const [key, expected] of Object.entries(selectors).sort(([a], [b]) =>
@@ -352,7 +335,6 @@ export function selectChargeComponents(
 	workload: WorkloadDelta | undefined,
 	dimension: string | undefined,
 	variant: "fixed" | "usage",
-	order: PricingOrder = legacyPricingOrder,
 ): readonly ChargeComponent[] {
 	const relevant = rateCard.charges.filter(
 		(component) =>
@@ -362,24 +344,22 @@ export function selectChargeComponents(
 					component.variant.value.dimension === dimension)),
 	);
 	const matching = relevant.filter((component) =>
-		matchesSelectors(component, workload, dimension, order),
+		matchesSelectors(component, workload, dimension),
 	);
-	if (order === codeUnitPricingOrder) {
-		const required = new Set<string>();
-		const matched = new Set<string>();
-		for (const component of relevant)
-			if (component.base?.exclusiveGroup !== undefined)
-				required.add(component.base.exclusiveGroup);
-		for (const component of matching)
-			if (component.base?.exclusiveGroup !== undefined)
-				matched.add(component.base.exclusiveGroup);
-		for (const group of [...required].sort(order))
-			if (!matched.has(group))
-				throw new PricingFault(
-					"MISSING_EXCLUSIVE_FALLBACK",
-					`exclusive group ${group} has no matching charge`,
-				);
-	}
+	const required = new Set<string>();
+	const matched = new Set<string>();
+	for (const component of relevant)
+		if (component.base?.exclusiveGroup !== undefined)
+			required.add(component.base.exclusiveGroup);
+	for (const component of matching)
+		if (component.base?.exclusiveGroup !== undefined)
+			matched.add(component.base.exclusiveGroup);
+	for (const group of [...required].sort(order))
+		if (!matched.has(group))
+			throw new PricingFault(
+				"MISSING_EXCLUSIVE_FALLBACK",
+				`exclusive group ${group} has no matching charge`,
+			);
 	const selected: ChargeComponent[] = [];
 	const groups = new Map<string, ChargeComponent[]>();
 	for (const component of matching) {

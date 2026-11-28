@@ -18,6 +18,7 @@ import {
 	BudgetLedgerSnapshotSchema,
 	createPostgresBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
+	hostingQuoteDigest,
 	IacTargetLiabilityEvidenceSchema,
 } from "../src/index.js";
 
@@ -120,6 +121,7 @@ describe.skipIf(url === undefined)(
 							proof: create(HostingPolicyProofSchema, {
 								requestDigest,
 								quoteId: quote.quoteId,
+								quoteDigest: hostingQuoteDigest(quote),
 								identity,
 								effect: "allow",
 								policyHash: "policy:1",

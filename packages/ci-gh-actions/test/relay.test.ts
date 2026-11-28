@@ -52,6 +52,7 @@ it("discovers and settles an uncertain host when its completion webhook was lost
 	h.api.uncertain = true;
 	await h.relay.dispatchPending();
 	h.api.host.status = "completed";
+	h.clock.now = h.api.host.updated_at;
 	await h.relay.discover(lease.id);
 	expect(h.store.get(lease.id)).toMatchObject({
 		state: "completed",
@@ -97,6 +98,7 @@ it("requeues displaced original demand after a host executed a different queued 
 	const request = signed(finished);
 	await h.relay.webhook(request.body, request.signature, "workflow_job");
 	h.api.host.status = "completed";
+	h.clock.now = h.api.host.updated_at;
 	await h.relay.reconcile(lease.id, 22);
 	expect(h.store.pendingJobs().map((job) => job.id)).toEqual([2]);
 	h.store.rebuild();
@@ -106,6 +108,18 @@ it("requeues displaced original demand after a host executed a different queued 
 	expect(h.store.all().filter((entry) => entry.jobId === 2)).toHaveLength(2);
 	expect(h.api.dispatches).toBe(2);
 });
+it("does not launch when a pinned free window misses the fractional runtime end", async () => {
+	const h = setup();
+	const offer = h.configuration.accounts[0]?.offers[0];
+	if (!offer) throw new Error("missing offer");
+	offer.validUntil = "2026-10-26T12:10:00.0000001Z";
+	const lease = await reserve(h);
+	h.clock.now = "2026-10-26T12:00:00.0000009Z";
+	await h.relay.dispatchPending();
+	expect(h.api.dispatches).toBe(0);
+	expect(h.store.get(lease.id)?.state).toBe("cancelled");
+});
+
 it("does not launch expired free evidence after a reserved job waits", async () => {
 	const h = setup();
 	const lease = await reserve(h);
@@ -269,6 +283,32 @@ it("does not extend a pinned free window merely because fresh evidence expires l
 	await h.relay.dispatchPending();
 	expect(h.api.dispatches).toBe(0);
 	expect(h.store.get(lease.id)?.state).toBe("cancelled");
+});
+
+it("rounds a fractional extra host runtime up to the next minute", async () => {
+	const h = setup();
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	h.api.host.status = "completed";
+	h.api.host.run_started_at = "2026-10-26T12:00:00.0000001Z";
+	h.api.host.updated_at = "2026-10-26T12:01:00.0000009Z";
+	h.clock.now = h.api.host.updated_at;
+	await h.relay.reconcile(lease.id, 22);
+	expect(h.store.get(lease.id)?.billedMinutes).toBe(2);
+});
+
+it("keeps the hold and runner when host completion is in the future", async () => {
+	const h = setup();
+	const lease = await reserve(h);
+	await h.relay.dispatchPending();
+	await h.relay.claim(lease.id, "valid");
+	h.api.host.status = "completed";
+	h.api.host.updated_at = "2026-10-26T12:00:00.0000009Z";
+	await expect(h.relay.reconcile(lease.id, 22)).rejects.toThrow(
+		/completion time/iu,
+	);
+	expect(h.api.deletes).toBe(0);
+	expect(h.store.get(lease.id)?.state).toBe("running");
 });
 
 it("does not settle a delayed host outside its pinned allocation window as free", async () => {
@@ -480,6 +520,7 @@ describe("host billing and journal replay", () => {
 		await expect(h.relay.reconcile(lease.id, 22)).rejects.toThrow(/completion/);
 		h.api.host.status = "completed";
 		h.api.host.updated_at = "2026-10-26T12:12:01Z";
+		h.clock.now = h.api.host.updated_at;
 		await h.relay.reconcile(lease.id, 22);
 		await h.relay.reconcile(lease.id, 22);
 		expect(h.store.get(lease.id)).toMatchObject({
@@ -495,6 +536,7 @@ describe("host billing and journal replay", () => {
 		await h.relay.dispatchPending();
 		await h.relay.claim(lease.id, "valid");
 		h.api.host.status = "completed";
+		h.clock.now = h.api.host.updated_at;
 		h.api.deleteStatus = 409;
 		await expect(h.relay.reconcile(lease.id, 22)).rejects.toThrow(/cleanup/);
 		expect(h.store.get(lease.id)?.state).toBe("running");

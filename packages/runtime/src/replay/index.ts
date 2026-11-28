@@ -1,5 +1,8 @@
 export { createDeterministicContext } from "./context.js";
-export { digest, ReplayDivergenceError } from "./divergence.js";
+export {
+	digest,
+	ReplayDivergenceError,
+} from "./divergence.js";
 export {
 	assertReplayEqualsLive,
 	compareCanonicalEventOrder,
@@ -16,6 +19,12 @@ export {
 	parseReplayReport,
 	ReplayParseError,
 } from "./parse.js";
+export {
+	parseReplayDivergenceBinary,
+	parseReplayDivergenceProtoJson,
+	parseReplayReportBinary,
+	parseReplayReportProtoJson,
+} from "./proto.js";
 export { nextEnvelope, recordEffect } from "./recorder.js";
 export {
 	canonicalStateBytes,

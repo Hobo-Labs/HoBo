@@ -43,7 +43,7 @@ export const BUILTIN_TRAINING_ENGINE_ID = "hobo-builtin-opto";
 // public-contract: engine version pinned into every emitted TrainingArtifact.
 export const BUILTIN_TRAINING_ENGINE_VERSION = "0.1.0";
 
-const MAX_SEED = 0xff_ff_ff_ff;
+const MAX_UINT32 = 0xff_ff_ff_ff;
 const DEFAULT_MAX_ITERATIONS = 8;
 const DEFAULT_DEMOS_PER_CANDIDATE = 2;
 
@@ -110,8 +110,13 @@ function parsePositiveInt(
 	fallback: number,
 ): number {
 	if (value === undefined) return fallback;
-	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 1) {
-		fail(path, "integer >= 1", value);
+	if (
+		!isJsonNumber(value) ||
+		!Number.isInteger(value) ||
+		value < 1 ||
+		value > MAX_UINT32
+	) {
+		fail(path, "integer in [1, 4294967295]", value);
 	}
 	return value;
 }
@@ -132,7 +137,7 @@ export function parseOptimizerConfig(value: JsonValue): OptimizerConfig {
 		!isJsonNumber(seed) ||
 		!Number.isInteger(seed) ||
 		seed < 0 ||
-		seed > MAX_SEED
+		seed > MAX_UINT32
 	) {
 		fail("config.seed", "integer in [0, 4294967295]", seed);
 	}
@@ -193,6 +198,17 @@ function demoPool(trajectories: readonly Trajectory[]): DemoExample[] {
 		const reward = trajectory.reward;
 		if (reward === undefined) {
 			fail(`request.trajectories.${index}.reward`, "present", reward);
+		}
+		if (
+			!Number.isFinite(reward.score) ||
+			reward.score < 0 ||
+			reward.score > 1
+		) {
+			fail(
+				`request.trajectories.${index}.reward.score`,
+				"number in [0, 1]",
+				reward.score,
+			);
 		}
 		const span =
 			trajectory.spans.find(
@@ -308,6 +324,7 @@ export function createBuiltinTrainingEngine(
 		// OPTO loop: propose -> score -> keep-best. Best score never regresses;
 		// a proposal only replaces the incumbent on a strict improvement.
 		let best: Proposal | undefined;
+		const traceBatch: OptimizerTraceSpan[] = [];
 		for (let iteration = 0; iteration < parsed.maxIterations; iteration += 1) {
 			const proposal = propose(
 				prng,
@@ -317,7 +334,9 @@ export function createBuiltinTrainingEngine(
 			);
 			const kept = best === undefined || proposal.score > best.score;
 			if (kept) best = proposal;
-			sink.record(stepSpan(iteration, proposal, kept ? "kept" : "rejected"));
+			traceBatch.push(
+				stepSpan(iteration, proposal, kept ? "kept" : "rejected"),
+			);
 		}
 		// SAFETY: `const winner = best as Proposal;` is required at this I/O or test boundary.
 		const winner = best as Proposal;
@@ -340,7 +359,7 @@ export function createBuiltinTrainingEngine(
 		// Lower onto the wire candidate through core's parse-don't-validate
 		// constructor so every invariant (provenance hashes, program shape)
 		// holds before the candidate leaves the engine.
-		return parseTrainingCandidate({
+		const candidate = parseTrainingCandidate({
 			id: `opto-${winner.digest.slice("sha256:".length, "sha256:".length + 16)}`,
 			engineId: parsed.engineId,
 			provenance: {
@@ -357,6 +376,8 @@ export function createBuiltinTrainingEngine(
 				programJson,
 			},
 		});
+		for (const span of traceBatch) sink.record(span);
+		return candidate;
 	}
 
 	return {

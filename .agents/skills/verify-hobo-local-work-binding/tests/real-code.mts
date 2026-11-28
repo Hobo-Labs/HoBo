@@ -1,0 +1,17 @@
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const build=spawnSync('pnpm',['exec','turbo','run','build','--filter=@hobo/hobo','--concurrency=2'],{stdio:'inherit'});
+if(build.error) throw build.error;
+if(build.status !== 0) process.exit(build.status ?? 1);
+const scratchRoot=process.env.HOBO_LOCAL_WORK_VERIFY_PACKAGE_ROOT;
+const root=scratchRoot ?? path.resolve('packages/hobo');
+const config=fileURLToPath(new URL('../models/vitest.config.mts',import.meta.url));
+const vitest=path.resolve('node_modules/vitest/vitest.mjs');
+const cli=spawnSync(process.execPath,[vitest,'run','test/runtime-created-loader.test.ts','--root',path.resolve('packages/cli'),'--maxWorkers=1','--no-file-parallelism'],{stdio:'inherit'});
+if(cli.error) throw cli.error;
+if(cli.status !== 0) process.exit(cli.status ?? 1);
+const tests=['test/local-work-binding.test.ts','test/local-budget-fallback.test.ts',...(scratchRoot ? [] : ['test/persistent-local-deployment.test.ts'])];
+const result=spawnSync(process.execPath,[vitest,'run',...tests,'--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'],{stdio:'inherit'});
+if(result.error) throw result.error;
+if(result.status !== 0) process.exit(result.status ?? 1);

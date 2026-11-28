@@ -37,7 +37,7 @@ cases = [
     ("commit before state", authority, "\t\tcommitting = true;", "\t\tcurrent = clone(BudgetLedgerSnapshotSchema, next);\n\t\treservations = new Map(rows);\n\t\tcommitting = true;", properties, commit, True),
     ("reentrant commit", authority, 'if (committing) throw new Error("budget authority mutation during commit");', 'if (false) throw new Error("budget authority mutation during commit");', properties, reentry, True),
     ("zero-unit configuration", authority, "active().some((row) =>\n\t\t\t\t\t\t\trow.entitlementClaims.some((claim) =>\n\t\t\t\t\t\t\t\tsameEntitlementScope(claim, old),\n\t\t\t\t\t\t\t),\n\t\t\t\t\t\t)", "false", properties, scope, True),
-    ("replayed unit", authority, "row.bucketId,\n\t\trow.unit,\n\t]);", "row.bucketId,\n\t]);", properties, scope, True),
+    ("replayed unit", authority, "[row.kind, row.bucketId, row.unit]);", "[row.kind, row.bucketId]);", properties, scope, True),
     ("replayed period", authority, "(row.identity === undefined ||\n\t\t\t\t\t\t\t\t\tbucket.periodId === row.identity.periodId),", "true,", properties, scope, True),
     ("receiver signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", fenced, signed, True),
     ("finance signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", fenced, signed, True),

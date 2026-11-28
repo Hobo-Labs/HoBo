@@ -1,13 +1,17 @@
 import { externalBoundaryViolations } from "@hobo/bindles";
 
 import type { CommandResult } from "../types/envelope.js";
-import { loadBindleDefinition } from "./loader.js";
+import { type BindleLoaderOptions, loadBindleDefinition } from "./loader.js";
 
 export async function externalBoundaryRefusal(
 	projectDir: string,
 	command: string,
+	loaderOptions?: BindleLoaderOptions,
 ): Promise<CommandResult | undefined> {
-	const definition = await loadBindleDefinition(projectDir);
+	const definition = await loadBindleDefinition(
+		projectDir,
+		loaderOptions ?? {},
+	);
 	if (definition === null) return undefined;
 	const violations = externalBoundaryViolations(definition);
 	if (violations.length === 0) return undefined;

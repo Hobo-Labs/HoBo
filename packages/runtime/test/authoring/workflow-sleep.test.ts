@@ -137,58 +137,6 @@ describe("workflow sleep deadlines", () => {
 		);
 	});
 
-	it("rebases an old unbounded sleep once and keeps that deadline on restart", async () => {
-		let now = 1_000;
-		const store = createInMemoryEventStore();
-		const stream = "run/legacy-timer";
-		await store.append(
-			nextEnvelope(stream, 1, "run.Started", {
-				args: null,
-				seed: "s",
-				workflowName: "legacy",
-			}),
-			0,
-		);
-		await store.append(
-			nextEnvelope(stream, 2, "run.SleepScheduled", { index: 0, delayMs: 10 }),
-			1,
-		);
-		const clock = { now: () => new Date(now).toISOString(), nowMs: () => now };
-		const wf = defineWorkflow({
-			name: "legacy",
-			async run(ctx) {
-				await ctx.sleep(10);
-				return now;
-			},
-		});
-		const first = createWorkflowEngine({
-			store,
-			clock,
-			wait: async () => {
-				throw new Error("host stopped");
-			},
-		});
-		await expect(first.resume(wf, "legacy-timer", null)).rejects.toThrow(
-			"host stopped",
-		);
-		now += 4;
-		const waits: number[] = [];
-		const resumed = createWorkflowEngine({
-			store,
-			clock,
-			wait: async (delay) => {
-				waits.push(delay);
-				now += delay;
-			},
-		});
-		expect((await resumed.resume(wf, "legacy-timer", null)).result).toBe(1_010);
-		expect(waits).toEqual([6]);
-		const journal = await resumed.journal("legacy-timer");
-		expect(
-			journal.filter((event) => event.type === "run.SleepDeadlineSet"),
-		).toHaveLength(1);
-	});
-
 	it("uses the persisted deadline after reopening a SQLite journal", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-workflow-sleep-"));
 		let now = 1_000;

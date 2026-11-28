@@ -63,6 +63,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 	it("signs resolutions when a key is configured and verification round-trips", async () => {
 		const key = generateResolutionSigningKey();
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -84,7 +85,7 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 		const receipt = result.receipt as ResolutionReceipt;
 		const signature = result.signature;
 		if (signature === undefined) throw new Error("expected a signature");
-		expect(verifyResolution(receipt, signature)).toBe(true);
+		expect(verifyResolution(receipt, signature, key.publicKeyPem)).toBe(true);
 
 		// Tampering with a single placement field fails verification.
 		const tampered: ResolutionReceipt = {
@@ -94,12 +95,13 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 				marginalPrice: "0.00",
 			})),
 		};
-		expect(verifyResolution(tampered, signature)).toBe(false);
+		expect(verifyResolution(tampered, signature, key.publicKeyPem)).toBe(false);
 	});
 
 	it("signs rejections too, and a foreign key does not verify", async () => {
 		const key = generateResolutionSigningKey();
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -117,12 +119,16 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 		if (rejection === undefined || signature === undefined) {
 			throw new Error("expected a signed rejection");
 		}
-		expect(verifyResolution(rejection, signature)).toBe(true);
+		expect(verifyResolution(rejection, signature, key.publicKeyPem)).toBe(true);
 
 		const foreign = signResolution(rejection, generateResolutionSigningKey());
-		expect(verifyResolution(rejection, signature)).toBe(true);
+		expect(verifyResolution(rejection, signature, key.publicKeyPem)).toBe(true);
 		expect(
-			verifyResolution({ ...rejection, requestId: "req-forged" }, foreign),
+			verifyResolution(
+				{ ...rejection, requestId: "req-forged" },
+				foreign,
+				key.publicKeyPem,
+			),
 		).toBe(false);
 	});
 });
@@ -144,6 +150,7 @@ describe("metered billing plane", () => {
 
 	it("authorizes against the metered remaining budget", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",
@@ -163,6 +170,65 @@ describe("metered billing plane", () => {
 		expect(over.outcome).toBe("rejected");
 		expect(over.rejection?.reasons[0]?.code).toBe("budget-exceeded");
 	});
+
+	it("does not release a prior successful reservation when a replay cannot place", async () => {
+		let available = true;
+		const plane = createMeteredBillingPlane([]);
+		const broker = createBroker({
+			trustLegacyEstimates: true,
+			policies: {
+				...basePolicies,
+				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
+			},
+			catalog: {
+				...catalog,
+				definitions: () => (available ? catalog.definitions() : []),
+			},
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			billingPlane: plane,
+		});
+		expect((await broker.resolve(baseRequest)).outcome).toBe("resolved");
+		available = false;
+		const replay = await broker.resolve(baseRequest);
+		expect(replay.outcome).toBe("rejected");
+		expect(replay.rejection?.reasons[0]?.code).toBe(
+			"reservation-replay-requires-reconciliation",
+		);
+		available = true;
+		const next = await broker.resolve({
+			...baseRequest,
+			requestId: "req-2",
+			spendEstimateUsd: 1,
+		});
+		expect(next.outcome).toBe("rejected");
+		expect(next.rejection?.reasons[0]?.code).toBe("budget-exceeded");
+	});
+
+	it("releases a newly created hold if placement fails before any receipt", async () => {
+		let available = false;
+		const broker = createBroker({
+			trustLegacyEstimates: true,
+			policies: {
+				...basePolicies,
+				billing: { ...basePolicies.billing, budgetUsd: 10, spendCapUsd: 10 },
+			},
+			catalog: {
+				...catalog,
+				definitions: () => (available ? catalog.definitions() : []),
+			},
+			stationId: "station:test",
+			railHash:
+				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			billingPlane: createMeteredBillingPlane([]),
+		});
+		expect((await broker.resolve(baseRequest)).outcome).toBe("rejected");
+		available = true;
+		expect(
+			(await broker.resolve({ ...baseRequest, requestId: "req-2" })).outcome,
+		).toBe("resolved");
+	});
 });
 
 describe("rejection matrix", () => {
@@ -176,6 +242,7 @@ describe("rejection matrix", () => {
 
 	it("covers every reason the broker's own reject paths emit", async () => {
 		const broker = createBroker({
+			trustLegacyEstimates: true,
 			policies: basePolicies,
 			catalog,
 			stationId: "station:test",

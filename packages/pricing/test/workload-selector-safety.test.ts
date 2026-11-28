@@ -72,29 +72,25 @@ describe("workload selectors and shared agreements", () => {
 	it.each([
 		false,
 		true,
-	])("rejects different selected attributes for two candidates in either order (reverse=%s)", (reverse) => {
+	])("rates different selected attributes for two candidates per workload in either order (reverse=%s)", (reverse) => {
 		const scenario = selectedScenario();
 		if (reverse) scenario.candidate.reverse();
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "PRICING_MODEL_UNSUPPORTED",
+			incremental: { billed: { decimal: "101", currency: "USD" } },
 		});
 		expect(targetQuote(scenario)).toMatchObject({
-			ok: false,
-			code: "PRICING_MODEL_UNSUPPORTED",
+			ok: true,
+			quote: { incremental: { billed: { decimal: "101", currency: "USD" } } },
 		});
 	});
 
-	it("rejects selected attributes that differ between baseline and candidate", () => {
+	it("rates selected attributes that differ between baseline and candidate per workload", () => {
 		const scenario = selectedScenario();
 		const baseline = scenario.candidate.shift();
 		if (!baseline) throw new Error("missing baseline fixture");
 		scenario.baseline.push(baseline);
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "PRICING_MODEL_UNSUPPORTED",
-		});
-		expect(targetQuote(scenario)).toMatchObject({
-			ok: false,
-			code: "PRICING_MODEL_UNSUPPORTED",
+			incremental: { billed: { decimal: "100", currency: "USD" } },
 		});
 	});
 
@@ -104,7 +100,7 @@ describe("workload selectors and shared agreements", () => {
 		if (!first) throw new Error("missing workload fixture");
 		first.attributes = {};
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "PRICING_MODEL_UNSUPPORTED",
+			code: "RATE_CARD_NOT_FOUND",
 		});
 	});
 
@@ -118,25 +114,24 @@ describe("workload selectors and shared agreements", () => {
 				first.attributes = left === undefined ? {} : { region: left };
 				second.attributes = right === undefined ? {} : { region: right };
 				const result = quoteScenario(scenario);
-				if (left !== right)
-					expect(result).toMatchObject({ code: "PRICING_MODEL_UNSUPPORTED" });
-				else if (left === undefined)
+				if (left === undefined || right === undefined)
 					expect(result).toMatchObject({ code: "RATE_CARD_NOT_FOUND" });
 				else expect(result.$typeName).toBe("hobo.pricing.v1.QuoteVector");
 			}
 		}
 	});
 
-	it("checks baseline workloads before the candidate snapshot", () => {
+	it("rates baseline workloads per workload before the candidate snapshot", () => {
 		const scenario = selectedScenario();
 		scenario.baseline.push(...scenario.candidate);
 		scenario.candidate = [];
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "PRICING_MODEL_UNSUPPORTED",
+			baseline: { billed: { decimal: "101", currency: "USD" } },
+			incremental: { billed: { decimal: "0", currency: "USD" } },
 		});
 	});
 
-	it("checks selectors on fixed charges as well as usage charges", () => {
+	it("refuses a fixed selector that the baseline agreement cannot resolve", () => {
 		const scenario = makeScenario({
 			charges: [
 				fixedCharge("regional-fee", "10"),
@@ -156,7 +151,7 @@ describe("workload selectors and shared agreements", () => {
 		second.attributes = { region: "west" };
 		rehashScenario(scenario);
 		expect(quoteScenario(scenario)).toMatchObject({
-			code: "PRICING_MODEL_UNSUPPORTED",
+			code: "PRICING_FIXED_SELECTOR_UNAVAILABLE",
 		});
 	});
 

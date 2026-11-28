@@ -165,6 +165,24 @@ describe.skipIf(!cue)("promotion.cue", () => {
 				emittedType: "",
 			}),
 		).toBe(false);
+		const executionClaim = {
+			sagaId: "cd.promotion:rollback_0123456789abcdef01234567",
+			step: "dev-1|rollback-execution-claimed",
+			emittedType: "rollback execution claimed",
+		};
+		expect(vets("#PromotionSagaStep", executionClaim)).toBe(true);
+		expect(
+			vets("#PromotionSagaStep", {
+				...executionClaim,
+				sagaId: "cd.promotion:promo_0123456789abcdef01234567",
+			}),
+		).toBe(false);
+		expect(
+			vets("#PromotionSagaStep", {
+				...executionClaim,
+				emittedType: "different effect",
+			}),
+		).toBe(false);
 		expect(
 			vets("#PreviewEnvironmentRecord", {
 				campId: "dev-1",

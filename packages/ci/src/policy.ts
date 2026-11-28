@@ -3,6 +3,7 @@ import {
 	fromJsonString,
 	type JsonObject,
 } from "@bufbuild/protobuf";
+import { budgetSignalThresholdUsd } from "@hobo/broker";
 import {
 	type BudgetPolicy,
 	budgetScopeIdentityKey,
@@ -244,7 +245,7 @@ export function ciBudgetSignalUpdate(
 		data.budgetUsd < 0 ||
 		!Number.isFinite(data.thresholdUsd) ||
 		data.thresholdUsd !==
-			Number((data.thresholdFraction * data.budgetUsd).toFixed(9)) ||
+			budgetSignalThresholdUsd(data.budgetUsd, data.thresholdFraction) ||
 		!Number.isFinite(data.netSpentUsd) ||
 		!Number.isSafeInteger(data.cycle) ||
 		data.cycle < 0 ||

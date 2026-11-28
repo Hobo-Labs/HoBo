@@ -74,6 +74,18 @@ function assertOnlyFactKeys(
 	}
 }
 
+export function isPrimitiveString(
+	value: JsonValue | undefined,
+): value is string {
+	return Object(value) !== value && isJsonString(value);
+}
+
+export function isNonEmptyPrimitiveString(
+	value: JsonValue | undefined,
+): value is string {
+	return isPrimitiveString(value) && value.length > 0;
+}
+
 function isBoundedJournalIndex(value: JsonValue | undefined): value is number {
 	return (
 		isJsonNumber(value) &&
@@ -85,51 +97,43 @@ function isBoundedJournalIndex(value: JsonValue | undefined): value is number {
 }
 
 export type ParsedRunStarted = {
-	args: JsonValue | null;
+	args: JsonValue;
 	seed: string;
-	workflowName?: string;
+	workflowName: string;
 };
 
-export function parseRunStartedFact(
-	data: JsonValue,
-	defaultSeed: string,
-): ParsedRunStarted {
+export function parseRunStartedFact(data: JsonValue): ParsedRunStarted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Started");
 	assertOnlyFactKeys(
 		data,
-		new Set(["args", "seed", "workflowName"]),
+		new Set(["args", "seed", "workflowName", "commandTreeVersion"]),
 		"invalid run.Started",
 	);
-	const hasWorkflowName = Object.hasOwn(data, "workflowName");
-	let args: JsonValue | null;
-	if (!Object.hasOwn(data, "args")) {
-		if (hasWorkflowName) throw new TypeError("invalid run.Started");
-		args = null;
-	} else {
-		const rawArgs = data.args;
-		if (rawArgs === null) args = null;
-		else if (rawArgs === undefined || !isStoredJsonValue(rawArgs))
-			throw new TypeError("invalid run.Started");
-		else args = rawArgs;
-	}
-	let workflowName: string | undefined;
-	if (hasWorkflowName) {
-		if (!isJsonString(data.workflowName))
-			throw new TypeError("invalid run.Started");
-		workflowName = data.workflowName;
-	}
-	let runSeed: string;
-	if (Object.hasOwn(data, "seed")) {
-		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
-		runSeed = data.seed;
-	} else if (hasWorkflowName) {
+	const implementedCommandTreeVersion = 3;
+	if (
+		Object.hasOwn(data, "commandTreeVersion") &&
+		data.commandTreeVersion !== implementedCommandTreeVersion
+	) {
 		throw new TypeError("invalid run.Started");
-	} else {
-		runSeed = defaultSeed;
 	}
-	const parsed: ParsedRunStarted = { args, seed: runSeed };
-	if (workflowName !== undefined) parsed.workflowName = workflowName;
-	return parsed;
+	const { args, seed, workflowName } = data;
+	if (
+		!Object.hasOwn(data, "args") ||
+		args === undefined ||
+		!isStoredJsonValue(args)
+	)
+		throw new TypeError(
+			"invalid run.Started: workflow input missing from run.Started",
+		);
+	if (!isNonEmptyPrimitiveString(seed))
+		throw new TypeError(
+			"invalid run.Started: workflow seed missing from run.Started",
+		);
+	if (!isNonEmptyPrimitiveString(workflowName))
+		throw new TypeError(
+			"invalid run.Started: workflow name missing from run.Started",
+		);
+	return { args, seed, workflowName };
 }
 
 export type ParsedRunFailed = {
@@ -146,7 +150,19 @@ export type ParsedRunStepFailed = {
 export type ParsedRunStepScheduled = {
 	name: string;
 	index: number;
+	parentStepIndex: number | null;
 };
+
+function parseParentStepIndex(
+	data: JsonObject,
+	message: string,
+): number | null {
+	if (!Object.hasOwn(data, "parentStepIndex")) return null;
+	const parent = data.parentStepIndex;
+	if (parent === null) return null;
+	if (!isBoundedJournalIndex(parent)) throw new TypeError(message);
+	return parent;
+}
 
 export function parseRunStepScheduledFact(
 	data: JsonValue,
@@ -154,21 +170,37 @@ export function parseRunStepScheduledFact(
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepScheduled");
 	assertOnlyFactKeys(
 		data,
-		new Set(["name", "index"]),
+		new Set(["name", "index", "parentStepIndex"]),
 		"invalid run.StepScheduled",
 	);
 	if (!isJsonString(data.name))
 		throw new TypeError("invalid run.StepScheduled");
 	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepScheduled");
-	return { name: data.name, index: data.index };
+	return {
+		name: data.name,
+		index: data.index,
+		parentStepIndex: parseParentStepIndex(data, "invalid run.StepScheduled"),
+	};
 }
 
 export type ParsedRunSleepScheduled = {
 	delayMs: number;
 	index: number;
+	parentStepIndex: number | null;
+	scheduledAtMs?: number;
+	deadlineMs?: number;
 	label?: string;
 };
+
+function isTimestampMs(value: JsonValue | undefined): value is number {
+	return (
+		isJsonNumber(value) &&
+		Number.isSafeInteger(value) &&
+		value >= 0 &&
+		!Object.is(value, -0)
+	);
+}
 
 export function parseRunSleepScheduledFact(
 	data: JsonValue,
@@ -176,7 +208,14 @@ export function parseRunSleepScheduledFact(
 	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepScheduled");
 	assertOnlyFactKeys(
 		data,
-		new Set(["delayMs", "index", "label"]),
+		new Set([
+			"delayMs",
+			"index",
+			"label",
+			"parentStepIndex",
+			"scheduledAtMs",
+			"deadlineMs",
+		]),
 		"invalid run.SleepScheduled",
 	);
 	if (
@@ -191,16 +230,107 @@ export function parseRunSleepScheduledFact(
 	}
 	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.SleepScheduled");
+	const hasScheduledAt = Object.hasOwn(data, "scheduledAtMs");
+	const hasDeadline = Object.hasOwn(data, "deadlineMs");
+	if (hasScheduledAt !== hasDeadline) {
+		throw new TypeError(
+			"invalid run.SleepScheduled: invalid recorded workflow sleep deadline",
+		);
+	}
+	let recordedDeadline:
+		| { scheduledAtMs: number; deadlineMs: number }
+		| undefined;
+	if (hasScheduledAt) {
+		const scheduledAtMs = data.scheduledAtMs;
+		const deadlineMs = data.deadlineMs;
+		if (
+			!isTimestampMs(scheduledAtMs) ||
+			!isTimestampMs(deadlineMs) ||
+			!Number.isSafeInteger(scheduledAtMs + delayMs) ||
+			deadlineMs !== scheduledAtMs + delayMs
+		) {
+			throw new TypeError(
+				"invalid run.SleepScheduled: invalid recorded workflow sleep deadline",
+			);
+		}
+		recordedDeadline = { scheduledAtMs, deadlineMs };
+	}
 	const parsed: ParsedRunSleepScheduled = {
 		delayMs,
 		index: data.index,
+		parentStepIndex: parseParentStepIndex(data, "invalid run.SleepScheduled"),
 	};
+	if (recordedDeadline) {
+		parsed.scheduledAtMs = recordedDeadline.scheduledAtMs;
+		parsed.deadlineMs = recordedDeadline.deadlineMs;
+	}
 	if (Object.hasOwn(data, "label")) {
 		if (data.label === undefined || !isJsonString(data.label))
 			throw new TypeError("invalid run.SleepScheduled");
 		parsed.label = data.label;
 	}
 	return parsed;
+}
+
+export type ParsedRunSleepCompleted = {
+	index: number;
+	completedAtMs: number;
+};
+
+export type ParsedRunSleepDeadlineSet = {
+	index: number;
+	scheduledAtMs: number;
+	deadlineMs: number;
+};
+
+export function parseRunSleepDeadlineSetFact(
+	data: JsonValue,
+): ParsedRunSleepDeadlineSet {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepDeadlineSet");
+	assertOnlyFactKeys(
+		data,
+		new Set(["index", "scheduledAtMs", "deadlineMs"]),
+		"invalid run.SleepDeadlineSet",
+	);
+	if (!isBoundedJournalIndex(data.index))
+		throw new TypeError("invalid run.SleepDeadlineSet");
+	if (!isTimestampMs(data.scheduledAtMs) || !isTimestampMs(data.deadlineMs)) {
+		throw new TypeError(
+			"invalid run.SleepDeadlineSet: invalid recorded workflow sleep deadline",
+		);
+	}
+	return {
+		index: data.index,
+		scheduledAtMs: data.scheduledAtMs,
+		deadlineMs: data.deadlineMs,
+	};
+}
+
+export function parseRunHookResumedFact(data: JsonValue): JsonValue {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.HookResumed");
+	assertOnlyFactKeys(data, new Set(["payload"]), "invalid run.HookResumed");
+	if (
+		!Object.hasOwn(data, "payload") ||
+		data.payload === undefined ||
+		!isStoredJsonValue(data.payload)
+	) {
+		throw new TypeError("invalid run.HookResumed");
+	}
+	return data.payload;
+}
+
+export function parseRunSleepCompletedFact(
+	data: JsonValue,
+): ParsedRunSleepCompleted {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepCompleted");
+	assertOnlyFactKeys(
+		data,
+		new Set(["index", "completedAtMs"]),
+		"invalid run.SleepCompleted",
+	);
+	if (!isBoundedJournalIndex(data.index) || !isTimestampMs(data.completedAtMs))
+		throw new TypeError("invalid run.SleepCompleted");
+	return { index: data.index, completedAtMs: data.completedAtMs };
 }
 
 export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {

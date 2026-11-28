@@ -3,11 +3,13 @@ import { basename, join } from "node:path";
 import {
 	type BrokerCatalog,
 	BrokerParseError,
+	type BrokerPricingAuthority,
 	type ConnectorRegistry,
 	createBroker,
 	createCedarGatePlane,
 	createConnectorRegistry,
 	createLocalHostCatalog,
+	createLocalHostPricingAuthority,
 	createOpaGatePlane,
 	defaultLocalPolicySet,
 	type FetchLike,
@@ -62,6 +64,8 @@ export interface BrokerCommandDeps {
 	// supplied. The composed Yard runtime's PlannerRegistry satisfies this
 	// structurally; tests inject fixtures.
 	readonly catalog: BrokerCatalog;
+	readonly pricingAuthority?: BrokerPricingAuthority;
+	readonly trustLegacyEstimates?: boolean;
 	// Injectable for tests; defaults to global fetch for OPA/Cedar engines.
 	readonly fetchFn?: FetchLike;
 }
@@ -227,10 +231,17 @@ async function assembleBroker(
 async function deriveRequest(
 	flags: JsonObject,
 	projectDir: string,
+	catalogKind: AssembledBroker["catalogKind"],
 ): Promise<JsonValue> {
 	const explicit = flags.request;
 	if (isJsonString(explicit)) {
 		return readJson(explicit, "broker request");
+	}
+	if (catalogKind !== "local-host") {
+		throw new BrokerParseError(
+			"estimate-required",
+			"estimate-required: registry-backed broker up requires --request with an explicit spend estimate",
+		);
 	}
 	const manifest = await loadProjectManifest(projectDir);
 	const requirements =
@@ -367,6 +378,11 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 					const broker = createBroker({
 						policies: assembled.policies,
 						catalog: assembled.catalog,
+						...(assembled.catalogKind === "local-host"
+							? { pricingAuthority: createLocalHostPricingAuthority() }
+							: deps.pricingAuthority
+								? { pricingAuthority: deps.pricingAuthority }
+								: { trustLegacyEstimates: deps.trustLegacyEstimates === true }),
 						stationId: pins.stationId,
 						railHash: pins.railHash,
 						...(assembled.connectors !== undefined
@@ -377,7 +393,7 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 							: undefined),
 					});
 					const resolution = await broker.resolve(
-						await deriveRequest(flags, projectDir),
+						await deriveRequest(flags, projectDir, assembled.catalogKind),
 					);
 					for (const event of resolution.events) emitProgress(event.type);
 
@@ -460,6 +476,9 @@ export function createBrokerCommand(deps: BrokerCommandDeps): CommandModule {
 					const broker = createBroker({
 						policies: await readJson(policiesPath, "broker policy set"),
 						catalog: deps.catalog,
+						...(deps.pricingAuthority
+							? { pricingAuthority: deps.pricingAuthority }
+							: { trustLegacyEstimates: deps.trustLegacyEstimates === true }),
 						stationId: pins.stationId,
 						railHash: pins.railHash,
 					});

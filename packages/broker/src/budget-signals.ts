@@ -1,25 +1,26 @@
-// Budget signal plane: turns the static spend-cap check (planes.ts /
-// metering.ts) into a stream. The same `meter.UsageRecorded` facts the metered
-// billing plane folds are folded here into per-tenant budget state, and
-// threshold transitions emit `budget.ThresholdCrossed` / `budget.Recovered`
-// facts a routing control loop can subscribe to (the "decide" trigger the
-// FinOps control-plane design defers — only the threshold evaluator is lifted,
-// not the Pareto pipeline).
-//
-// Exactly-once under journal replay, twice over:
-// - the fold derives state ONLY from usage/credit facts, and skips emitting
-//   any signal whose deterministic `signalKey` already appears in the input
-//   stream (a re-fold over a journal that contains previously appended
-//   signals emits nothing new);
-// - `budgetSignalEventInputs` carries the signalKey as `meta.idempotencyKey`,
-//   so even a blind re-append is deduped by the SQLite journal (ADR-0135).
 import { createHash } from "node:crypto";
 import {
 	type BudgetScopeIdentity,
 	budgetScopeIdentityKey,
 	budgetThresholdSignalKey,
 } from "@hobo/core";
-import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
+import {
+	addDecimal,
+	compareDecimal,
+	DECIMAL_ZERO,
+	type Decimal,
+	formatDecimal,
+	multiplyDecimal,
+	subtractDecimal,
+} from "@hobo/pricing";
+import { decimalFromNumber } from "./billing-decimal.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "./json.js";
 import { METER_USAGE_RECORDED_EVENT } from "./metering.js";
 
 export const BUDGET_EVENTS = Object.freeze({
@@ -78,11 +79,72 @@ export interface BudgetSignal {
 interface FactLike {
 	type: string;
 	data?: unknown;
+	meta?: unknown;
 }
 
 export interface BudgetSignalFold {
 	state: BudgetSignalState;
 	signals: BudgetSignal[];
+}
+
+function sameIdentity(
+	value: JsonValue | undefined,
+	identity: BudgetScopeIdentity,
+): boolean {
+	return (
+		isJsonObject(value) &&
+		value.tenantId === identity.tenantId &&
+		value.budgetId === identity.budgetId &&
+		value.periodId === identity.periodId &&
+		value.policyRevision === identity.policyRevision
+	);
+}
+
+function matchesSignal(data: JsonObject, expected: BudgetSignalData): boolean {
+	return (
+		data.tenantId === expected.tenantId &&
+		data.thresholdFraction === expected.thresholdFraction &&
+		data.thresholdUsd === expected.thresholdUsd &&
+		data.budgetUsd === expected.budgetUsd &&
+		data.netSpentUsd === expected.netSpentUsd &&
+		data.cycle === expected.cycle &&
+		data.signalKey === expected.signalKey &&
+		data.policyDigest === expected.policyDigest &&
+		data.crossed === expected.crossed &&
+		(expected.identity
+			? sameIdentity(data.identity, expected.identity)
+			: data.identity === undefined)
+	);
+}
+
+function projectSignalAmount(
+	amount: Decimal,
+	description = "budget signal amount",
+): number {
+	const projected = Number(formatDecimal(amount));
+	if (
+		!Number.isFinite(projected) ||
+		(amount.coefficient !== 0n && projected === 0)
+	)
+		throw new RangeError(
+			`${description} cannot be represented on the numeric wire`,
+		);
+	return projected;
+}
+
+function thresholdAmount(budgetUsd: number, fraction: number): Decimal {
+	const budget = decimalFromNumber(budgetUsd);
+	const threshold = decimalFromNumber(fraction);
+	if (!budget || !threshold || fraction <= 0 || fraction > 1)
+		throw new TypeError("budget and threshold must be finite and nonnegative");
+	return multiplyDecimal(budget, threshold);
+}
+
+export function budgetSignalThresholdUsd(
+	budgetUsd: number,
+	fraction: number,
+): number {
+	return projectSignalAmount(thresholdAmount(budgetUsd, fraction));
 }
 
 // Deterministic fold: same stream + same policy -> same state and the same
@@ -104,6 +166,15 @@ export function foldBudgetSignals(
 	) {
 		throw new TypeError("policy.thresholds must be fractions in (0, 1]");
 	}
+	const thresholdAmounts = new Map(
+		thresholds.map((fraction) => {
+			const exact = thresholdAmount(budgetUsd, fraction);
+			return [
+				String(fraction),
+				{ exact, projected: projectSignalAmount(exact) },
+			] as const;
+		}),
+	);
 	const identity = policy.identity
 		? {
 				tenantId: policy.identity.tenantId,
@@ -112,7 +183,7 @@ export function foldBudgetSignals(
 				policyRevision: policy.identity.policyRevision,
 			}
 		: undefined;
-	const identityKey = identity ? budgetScopeIdentityKey(identity) : undefined;
+	if (identity) budgetScopeIdentityKey(identity);
 	if (
 		identity &&
 		policy.tenantId !== undefined &&
@@ -154,52 +225,99 @@ export function foldBudgetSignals(
 	// signals sit after the usage facts in global order, and dedupe must not
 	// depend on where in the stream they landed.
 	const buffered = Array.isArray(events) ? events : [...events];
-	const seenKeys = new Set<string>();
+	type RecordedEntry = { type: string; data: unknown; metadataKey: unknown };
+	const recorded = new Map<string, RecordedEntry[]>();
+	const unmatched = new Set<RecordedEntry>();
 	for (const event of buffered) {
-		if (
+		const isSignal =
 			event.type === BUDGET_EVENTS.ThresholdCrossed ||
 			event.type === BUDGET_EVENTS.Recovered ||
-			event.type === BUDGET_EVENTS.StateReset
-		) {
-			// SAFETY: assertion required at this I/O or test boundary.
-			const key = (event.data as BudgetSignalData | undefined)?.signalKey;
-			// SAFETY: event kinds above identify the recorded budget-signal contract.
-			const data = event.data as BudgetSignalData | undefined;
-			if (
-				identity &&
-				data?.identity &&
-				budgetScopeIdentityKey(data.identity) === identityKey &&
-				data.policyDigest !== policyDigest
-			)
-				throw new TypeError(
-					"budget cap or thresholds changed without a policy revision",
-				);
-			if (isJsonString(key) && key.length > 0) seenKeys.add(key);
+			event.type === BUDGET_EVENTS.StateReset;
+		const data = event.data;
+		const metadataKey = isJsonObject(event.meta)
+			? event.meta.idempotencyKey
+			: undefined;
+		const entry: RecordedEntry = { type: event.type, data, metadataKey };
+		if (isSignal && isJsonObject(data)) {
+			const belongsToPolicy = identity
+				? sameIdentity(data.identity, identity)
+				: data.tenantId === tenantId && data.identity === undefined;
+			if (belongsToPolicy) {
+				unmatched.add(entry);
+				if (data.tenantId !== tenantId)
+					throw new TypeError(
+						"budget signal scope conflicts with its identity; reconcile the journal",
+					);
+				if (identity && data.policyDigest !== policyDigest)
+					throw new TypeError(
+						"budget cap or thresholds changed without a policy revision",
+					);
+				if (!isJsonString(data.signalKey) || !data.signalKey)
+					throw new TypeError(
+						"budget signal identity is missing; reconcile the journal",
+					);
+			}
 		}
+		const keys = new Set<string>();
+		if (
+			isSignal &&
+			isJsonObject(data) &&
+			isJsonString(data.signalKey) &&
+			data.signalKey
+		)
+			keys.add(data.signalKey);
+		if (isJsonString(metadataKey) && metadataKey) keys.add(metadataKey);
+		for (const key of keys) {
+			const entries = recorded.get(key) ?? [];
+			entries.push(entry);
+			recorded.set(key, entries);
+		}
+	}
+	const emitted = new Set<string>();
+	function emitOrCheck(signal: BudgetSignal): void {
+		const key = signal.data.signalKey;
+		const entries = recorded.get(key) ?? [];
+		if (
+			entries.some(
+				(entry) =>
+					entry.type !== signal.type ||
+					!isJsonObject(entry.data) ||
+					!matchesSignal(entry.data, signal.data) ||
+					(entry.metadataKey !== undefined && entry.metadataKey !== key),
+			)
+		)
+			throw new TypeError(
+				"budget signal conflicts with reconstructed transition; reconcile the journal",
+			);
+		for (const entry of entries) unmatched.delete(entry);
+		if (entries.length || emitted.has(key)) return;
+		emitted.add(key);
+		signals.push(signal);
 	}
 	// Reset is an explicit V2 fact, so subscribers can retire the old period or
 	// revision before consuming its independently numbered threshold transitions.
 	if (identity)
 		for (const threshold of thresholds) {
 			const key = signalKey(threshold, "reset", 0);
-			if (!seenKeys.has(key))
-				signals.push({
-					type: BUDGET_EVENTS.StateReset,
-					data: {
-						tenantId,
-						identity,
-						policyDigest,
-						thresholdFraction: threshold,
-						thresholdUsd: round(threshold * budgetUsd),
-						budgetUsd,
-						netSpentUsd: 0,
-						cycle: 0,
-						crossed: budgetUsd === 0,
-						signalKey: key,
-					},
-				});
+			emitOrCheck({
+				type: BUDGET_EVENTS.StateReset,
+				data: {
+					tenantId,
+					identity,
+					policyDigest,
+					thresholdFraction: threshold,
+					thresholdUsd: budgetSignalThresholdUsd(budgetUsd, threshold),
+					budgetUsd,
+					netSpentUsd: 0,
+					cycle: 0,
+					crossed: budgetUsd === 0,
+					signalKey: key,
+				},
+			});
 		}
 
+	let exactSpent = DECIMAL_ZERO;
+	let exactCredit = DECIMAL_ZERO;
 	for (const event of buffered) {
 		if (
 			event.type === BUDGET_EVENTS.ThresholdCrossed ||
@@ -208,38 +326,70 @@ export function foldBudgetSignals(
 		) {
 			continue;
 		}
-
-		// SAFETY: assertion required at this I/O or test boundary.
-		const data = (event.data ?? {}) as JsonObject;
-		if (tenantId !== null && data.tenantId !== tenantId) continue;
 		if (
-			identity &&
-			(data.budgetId !== identity.budgetId ||
-				data.periodId !== identity.periodId)
+			event.type !== METER_USAGE_RECORDED_EVENT &&
+			event.type !== BUDGET_EVENTS.CreditApplied
 		)
 			continue;
+		const data = event.data;
+		if (!isJsonObject(data))
+			throw new TypeError("financial fact scope and amount are required");
+		if (tenantId !== null) {
+			if (!isJsonString(data.tenantId) || !data.tenantId)
+				throw new TypeError("financial fact tenant scope is required");
+			if (data.tenantId !== tenantId) continue;
+		}
+		if (identity) {
+			if (
+				!isJsonString(data.budgetId) ||
+				!data.budgetId ||
+				!isJsonString(data.periodId) ||
+				!data.periodId
+			)
+				throw new TypeError(
+					"financial fact budget and period scope are required",
+				);
+			if (
+				data.budgetId !== identity.budgetId ||
+				data.periodId !== identity.periodId
+			)
+				continue;
+		}
 
 		if (event.type === METER_USAGE_RECORDED_EVENT) {
 			const cost = data.costUsd;
 			if (!isJsonNumber(cost) || !Number.isFinite(cost) || cost < 0) {
-				continue;
+				throw new TypeError("usage charge must be finite and nonnegative");
 			}
-			state.spentUsd += cost;
+			const amount = decimalFromNumber(cost);
+			if (!amount)
+				throw new TypeError("usage charge must be finite and nonnegative");
+			exactSpent = addDecimal(exactSpent, amount);
+			state.spentUsd = projectSignalAmount(exactSpent, "usage spend");
 			state.sampleCount += 1;
 		} else if (event.type === BUDGET_EVENTS.CreditApplied) {
 			const amount = data.amountUsd;
 			if (!isJsonNumber(amount) || !Number.isFinite(amount) || amount < 0) {
-				continue;
+				throw new TypeError("credit amount must be finite and nonnegative");
 			}
-			state.creditUsd += amount;
-		} else {
-			continue;
+			const value = decimalFromNumber(amount);
+			if (!value)
+				throw new TypeError("credit amount must be finite and nonnegative");
+			exactCredit = addDecimal(exactCredit, value);
+			state.creditUsd = projectSignalAmount(exactCredit, "credit total");
 		}
 
-		state.netSpentUsd = round(state.spentUsd - state.creditUsd);
+		const exactNet = subtractDecimal(exactSpent, exactCredit);
+		state.netSpentUsd = projectSignalAmount(exactNet);
 		for (const threshold of thresholds) {
 			const key = String(threshold);
-			const crossedNow = state.netSpentUsd >= round(threshold * budgetUsd);
+			const amount = thresholdAmounts.get(key);
+			if (!amount) throw new Error("budget threshold is missing");
+			const crossedNow = compareDecimal(exactNet, amount.exact) >= 0;
+			if (state.netSpentUsd >= amount.projected !== crossedNow)
+				throw new RangeError(
+					"budget threshold decision cannot be represented on the numeric wire",
+				);
 			if (crossedNow === state.crossed[key]) continue;
 			state.crossed[key] = crossedNow;
 			const cycle = (cycles[key] ?? 0) + 1;
@@ -251,7 +401,7 @@ export function foldBudgetSignals(
 				data: {
 					tenantId,
 					thresholdFraction: threshold,
-					thresholdUsd: round(threshold * budgetUsd),
+					thresholdUsd: budgetSignalThresholdUsd(budgetUsd, threshold),
 					budgetUsd,
 					netSpentUsd: state.netSpentUsd,
 					cycle,
@@ -267,12 +417,14 @@ export function foldBudgetSignals(
 				signal.data.policyDigest = policyDigest;
 				signal.data.crossed = crossedNow;
 			}
-			if (seenKeys.has(signal.data.signalKey)) continue;
-			seenKeys.add(signal.data.signalKey);
-			signals.push(signal);
+			emitOrCheck(signal);
 		}
 	}
 
+	if (unmatched.size)
+		throw new TypeError(
+			"recorded budget signal has no reconstructed transition; reconcile the journal",
+		);
 	return { state, signals };
 }
 
@@ -289,8 +441,4 @@ export function budgetSignalEventInputs(signals: readonly BudgetSignal[]): {
 		data: signal.data,
 		meta: { idempotencyKey: signal.data.signalKey },
 	}));
-}
-
-function round(value: number): number {
-	return Number(value.toFixed(9));
 }

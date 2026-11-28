@@ -1,3 +1,3 @@
-export function hasV2BaselineCharges(status: string): boolean {
+export function hasBaselineCharges(status: string): boolean {
 	return status === "active" || status === "past-due";
 }

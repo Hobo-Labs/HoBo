@@ -48,6 +48,7 @@ const activeCiFiles = new Set([
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 	"fleet-integration.yml",
+	"fleet-enrollment.yml",
 ]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
@@ -887,7 +888,11 @@ export function draftGateEntryJobs(
 	if (file === "actions-lock.yml") return ["actions-lock"];
 	if (file === "release-hobo-pr.yml")
 		return ["release-integration", ...aggregateJobs];
-	if (file === "dev-env-smoke.yml" || file === "examples-e2e.yml")
+	if (
+		file === "dev-env-smoke.yml" ||
+		file === "examples-e2e.yml" ||
+		file === "fleet-enrollment.yml"
+	)
 		return jobIds;
 	return [];
 }

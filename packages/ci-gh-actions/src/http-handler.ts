@@ -280,7 +280,11 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				path === "/v1/fleet/members") &&
+				path === "/v1/fleet/members" ||
+				path === "/v1/mesh/nodes" ||
+				path.startsWith("/v1/fleet/verdicts/") ||
+				path.startsWith("/v1/fleet/reporters/") ||
+				path === "/v1/fleet/start-fence") &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {

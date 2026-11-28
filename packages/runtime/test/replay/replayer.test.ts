@@ -27,6 +27,7 @@ describe("replayRun", () => {
 			nextEnvelope(streamId, 1, "run.Started", {
 				seed: "seed-1",
 				args: { amount: 5 },
+				workflowName: "adder",
 			}),
 		);
 		await recordEffect(

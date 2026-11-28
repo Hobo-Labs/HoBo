@@ -15,6 +15,120 @@ export interface RejectionMatrixRow {
 // public-contract: the closed rejection-code catalog agents self-correct against.
 export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 	{
+		code: "billing-denied",
+		plane: "billing",
+		remediation: "inspect the billing authority and reconcile its refusal",
+	},
+	{
+		code: "quote-search-limit",
+		plane: "placement",
+		remediation:
+			"narrow the policy or request until all candidate plans can be quoted",
+	},
+	{
+		code: "catalog-definition-invalid",
+		plane: "placement",
+		remediation: "repair the catalog definition and its capability check",
+	},
+	{
+		code: "resolver-composition-failed",
+		plane: "placement",
+		remediation:
+			"repair the Yard resolver configuration and reconcile any generated Yard",
+	},
+	{
+		code: "catalog-definition-conflict",
+		plane: "placement",
+		remediation:
+			"remove duplicate catalog definition identities and republish the catalog",
+	},
+	{
+		code: "catalog-price-invalid",
+		plane: "placement",
+		remediation:
+			"provide a nonnegative decimal marginal price and unit for each eligible definition",
+	},
+	{
+		code: "catalog-price-incomparable",
+		plane: "placement",
+		remediation: "supply comparable price units or use whole-request pricing",
+	},
+	{
+		code: "reservation-evidence-required",
+		plane: "billing",
+		remediation:
+			"configure a billing plane that confirms creation of a new hold",
+	},
+	{
+		code: "environment-stale",
+		plane: "policy",
+		remediation: "reload the approved environment and retry the resolution",
+	},
+	{
+		code: "quote-authority-required",
+		plane: "billing",
+		remediation:
+			"configure a trusted pricing authority bound to the selected work",
+	},
+	{
+		code: "quote-authority-stale",
+		plane: "billing",
+		remediation: "obtain a fresh quote and rerun policy evaluation",
+	},
+	{
+		code: "quote-authority-unavailable",
+		plane: "billing",
+		remediation:
+			"restore the pricing authority and reconcile its quote evidence",
+	},
+	{
+		code: "quote-invalid",
+		plane: "billing",
+		remediation:
+			"provide an intact quote in the current pricing format and currency",
+	},
+	{
+		code: "quote-ineligible",
+		plane: "billing",
+		remediation:
+			"resolve incomplete pricing evidence before requesting authorization",
+	},
+	{
+		code: "quote-evidence-required",
+		plane: "billing",
+		remediation: "provide a complete quote and trusted attestation",
+	},
+	{
+		code: "quote-provenance-required",
+		plane: "billing",
+		remediation:
+			"configure a trusted authority that authenticates and binds the quote",
+	},
+	{
+		code: "quote-provenance-invalid",
+		plane: "billing",
+		remediation:
+			"reconcile the quote attestation, scope, freshness and content",
+	},
+	{
+		code: "quote-bound-invalid",
+		plane: "billing",
+		remediation:
+			"provide a conservative liability bound covering the quoted amount",
+	},
+	{
+		code: "estimate-untrusted",
+		plane: "billing",
+		remediation:
+			"provide a trusted quote or explicitly configure a trusted legacy estimate",
+	},
+	{
+		code: "spend-estimate-invalid",
+		plane: "billing",
+		remediation:
+			"provide a finite nonnegative amount that can be represented safely",
+	},
+	{
 		code: "invalid-spend-estimate",
 		plane: "billing",
 		remediation:
@@ -27,6 +141,23 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 			"use a new request identity for changed work; reconcile the existing reservation",
 	},
 	{
+		code: "reservation-already-finalized",
+		plane: "billing",
+		remediation:
+			"use a new request identity; the prior reservation has already been finalized",
+	},
+	{
+		code: "reservation-replay-requires-reconciliation",
+		plane: "billing",
+		remediation: "reconcile the prior resolution before issuing any new work",
+	},
+	{
+		code: "billing-policy-invalid",
+		plane: "billing",
+		remediation:
+			"provide finite nonnegative bounds or explicitly select unlimited mode",
+	},
+	{
 		code: "metering-evidence-incomplete",
 		plane: "billing",
 		remediation:
@@ -37,6 +168,52 @@ export const REJECTION_MATRIX: readonly RejectionMatrixRow[] = [
 		plane: "billing",
 		remediation:
 			"supply fresh scoped bounded quotes, fulfilled policy evidence and an affordable durable shared reservation",
+	},
+	{
+		code: "hosting-budget-evidence-unavailable",
+		plane: "billing",
+		remediation:
+			"restore budget evidence and reconcile any existing generation or reservation before retrying",
+	},
+	{
+		code: "hosting-quote-invalid",
+		plane: "billing",
+		remediation: "restore complete, stable hosting quote evidence",
+	},
+	{
+		code: "camp-constraints-unverified",
+		plane: "placement",
+		remediation:
+			"implement and verify Camp capability, runtime, label and nested-layout matching before retrying",
+	},
+	{
+		code: "yard-generation-denied",
+		plane: "policy",
+		remediation:
+			"review the generation policy and request; approval, attestation, locked properties or dedicated generation need a verified evidence path",
+	},
+	{
+		code: "yard-generation-quota-unavailable",
+		plane: "policy",
+		remediation: "configure a shared durable generation quota authority",
+	},
+	{
+		code: "yard-generation-quota-denied",
+		plane: "policy",
+		remediation:
+			"review the generation and tenant Yard limits and reconcile existing quota claims",
+	},
+	{
+		code: "yard-generation-quota-uncertain",
+		plane: "policy",
+		remediation:
+			"reconcile generation readiness and its retained quota and budget reservations",
+	},
+	{
+		code: "yard-runtime-catalog-unavailable",
+		plane: "placement",
+		remediation:
+			"restore current Yard runtime catalog evidence before retrying",
 	},
 	{
 		code: "yard-generation-uncertain",

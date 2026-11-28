@@ -1,7 +1,9 @@
 import { createServer, type Server } from "node:http";
 import type { HoboBroker } from "./broker.js";
+import { parseGuestResolutionEvidence } from "./guest-evidence.js";
 import {
 	cloneAsJson,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -46,6 +48,7 @@ function brandedPolicyHash(value: string): PolicyHash {
 
 function parseHttpResolutionReceipt(value: JsonObject): ResolutionReceipt {
 	if (
+		value.schemaVersion !== BROKER_SCHEMA_VERSION ||
 		!isJsonString(value.requestId) ||
 		!isJsonString(value.brokerId) ||
 		!isJsonString(value.catalogHash) ||
@@ -59,6 +62,73 @@ function parseHttpResolutionReceipt(value: JsonObject): ResolutionReceipt {
 			"deliver requires a complete resolution receipt",
 		);
 	}
+	if (!Array.isArray(value.placements) || value.placements.length === 0) {
+		throw new BrokerParseError(
+			"invalid-receipt",
+			"deliver requires placements",
+		);
+	}
+	const placements = value.placements.map((placement) => {
+		if (
+			!isJsonObject(placement) ||
+			!isJsonString(placement.resourceId) ||
+			!isJsonString(placement.providerId) ||
+			!isJsonString(placement.definitionId) ||
+			!isJsonString(placement.region) ||
+			!isJsonString(placement.sku) ||
+			!isJsonString(placement.unit) ||
+			!isJsonString(placement.marginalPrice) ||
+			[
+				placement.resourceId,
+				placement.providerId,
+				placement.definitionId,
+				placement.region,
+				placement.sku,
+				placement.unit,
+				placement.marginalPrice,
+			].some((field) => field.length === 0)
+		) {
+			throw new BrokerParseError(
+				"invalid-receipt",
+				"deliver requires complete placements",
+			);
+		}
+		return {
+			resourceId: placement.resourceId,
+			providerId: placement.providerId,
+			definitionId: placement.definitionId,
+			region: placement.region,
+			sku: placement.sku,
+			unit: placement.unit,
+			marginalPrice: placement.marginalPrice,
+		};
+	});
+	const guest =
+		value.guest === undefined
+			? undefined
+			: parseGuestResolutionEvidence(value.guest);
+	const quoteHash = value.quoteHash;
+	const pricingBindingDigest = value.pricingBindingDigest;
+	const authorizedUsd = value.authorizedUsd;
+	const hasPricing =
+		quoteHash !== undefined ||
+		pricingBindingDigest !== undefined ||
+		authorizedUsd !== undefined;
+	if (
+		hasPricing &&
+		(!isJsonString(quoteHash) ||
+			!quoteHash.startsWith("sha256:") ||
+			!isJsonString(pricingBindingDigest) ||
+			!pricingBindingDigest.startsWith("sha256:") ||
+			!isJsonNumber(authorizedUsd) ||
+			!Number.isFinite(authorizedUsd) ||
+			authorizedUsd < 0)
+	) {
+		throw new BrokerParseError(
+			"invalid-receipt",
+			"deliver requires complete pricing authorization",
+		);
+	}
 	return {
 		schemaVersion: BROKER_SCHEMA_VERSION,
 		requestId: value.requestId,
@@ -66,9 +136,15 @@ function parseHttpResolutionReceipt(value: JsonObject): ResolutionReceipt {
 		catalogHash: value.catalogHash,
 		policyHash: brandedPolicyHash(value.policyHash),
 		placementPolicyId: value.placementPolicyId,
-		placements: [],
+		placements,
+		...(guest === undefined ? undefined : { guest }),
 		stationId: value.stationId,
 		railHash: value.railHash,
+		...(isJsonString(quoteHash) &&
+		isJsonString(pricingBindingDigest) &&
+		isJsonNumber(authorizedUsd)
+			? { quoteHash, pricingBindingDigest, authorizedUsd }
+			: undefined),
 	};
 }
 

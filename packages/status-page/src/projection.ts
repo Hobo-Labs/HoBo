@@ -30,6 +30,7 @@ import {
 	type JsonObject,
 	type JsonValue,
 	type MaintenanceRecord,
+	type MaintenanceState,
 	type Mutable,
 	worstComponentStatus,
 } from "./types.js";
@@ -61,7 +62,11 @@ export interface StatusPageRow {
 	readonly scopeKey: string;
 	readonly components: Readonly<Record<string, ComponentRow>>;
 	readonly incidents: Readonly<Record<string, IncidentRecord>>;
+	readonly pendingIncidentOpens?: Readonly<Record<string, true>>;
 	readonly maintenances: Readonly<Record<string, MaintenanceRecord>>;
+	readonly pendingMaintenanceStates?: Readonly<
+		Record<string, MaintenanceState>
+	>;
 	readonly published?: {
 		readonly at: string;
 		readonly contentHash: `sha256:${string}`;
@@ -202,9 +207,12 @@ function isValidSlo(
 	const attainment = data?.attainment;
 	const target = data?.target;
 	const measuredAt = data?.measuredAt;
+	const componentLabel = data?.componentLabel;
 	return (
 		isStringValue(componentId) &&
 		componentId.length > 0 &&
+		(componentLabel === undefined ||
+			(isStringValue(componentLabel) && componentLabel.length > 0)) &&
 		isFiniteNumber(attainment) &&
 		isFiniteNumber(target) &&
 		target > 0 &&
@@ -232,7 +240,9 @@ function applySloMeasured(
 	const date = utcDate(data.measuredAt);
 	const component: ComponentRow = {
 		id: data.componentId,
-		label: data.componentLabel ?? existing?.label ?? data.componentId,
+		label: isLate
+			? (existing?.label ?? data.componentLabel ?? data.componentId)
+			: (data.componentLabel ?? existing?.label ?? data.componentId),
 		status: isLate ? (existing?.status ?? status) : status,
 		lastSignalAt: isLate
 			? (existing?.lastSignalAt ?? data.measuredAt)
@@ -249,6 +259,21 @@ function applySloMeasured(
 	});
 }
 
+function finishIncidentOpen(
+	base: StatusPageRow,
+	event: EventEnvelope,
+	incident: IncidentRecord,
+): StatusPageRow {
+	const pending = { ...base.pendingIncidentOpens };
+	delete pending[incident.id];
+	const { pendingIncidentOpens: _pending, ...withoutPending } = base;
+	const patch: Mutable<Partial<StatusPageRow>> = {
+		incidents: { ...base.incidents, [incident.id]: incident },
+	};
+	if (Object.keys(pending).length > 0) patch.pendingIncidentOpens = pending;
+	return touch(withoutPending, event, patch);
+}
+
 function applyIncidentOpened(
 	row: StatusPageRow | undefined,
 	event: EventEnvelope,
@@ -258,7 +283,12 @@ function applyIncidentOpened(
 	if (!isStringValue(data?.incidentId) || data.incidentId.length === 0) {
 		return touch(base, event, {});
 	}
-	const existing = base.incidents[data.incidentId];
+	const existing = Object.hasOwn(base.incidents, data.incidentId)
+		? base.incidents[data.incidentId]
+		: undefined;
+	const needsImpact =
+		base.pendingIncidentOpens !== undefined &&
+		Object.hasOwn(base.pendingIncidentOpens, data.incidentId);
 	const impact =
 		data.impact === "minor" ||
 		data.impact === "major" ||
@@ -278,8 +308,13 @@ function applyIncidentOpened(
 		: [];
 	if (existing) {
 		// Idempotent duplicate / late open: backfill fields, never reopen.
+		const mergedState = needsImpact
+			? advanceIncidentState(existing.state, state)
+			: existing.state;
 		const incident: Mutable<IncidentRecord> = {
 			...existing,
+			state: mergedState,
+			impact: needsImpact ? impact : existing.impact,
 			title:
 				existing.title === existing.id && isStringValue(data.title)
 					? data.title
@@ -292,10 +327,14 @@ function applyIncidentOpened(
 				Date.parse(event.ts) < Date.parse(existing.openedAt)
 					? event.ts
 					: existing.openedAt,
+			updatedAt:
+				needsImpact && Date.parse(event.ts) > Date.parse(existing.updatedAt)
+					? event.ts
+					: existing.updatedAt,
 		};
-		return touch(base, event, {
-			incidents: { ...base.incidents, [incident.id]: incident },
-		});
+		if (mergedState === "resolved" && incident.resolvedAt === undefined)
+			incident.resolvedAt = event.ts;
+		return finishIncidentOpen(base, event, incident);
 	}
 	const incident: Mutable<IncidentRecord> = {
 		id: data.incidentId,
@@ -311,9 +350,7 @@ function applyIncidentOpened(
 		updates: Object.freeze([]),
 	};
 	if (state === "resolved") incident.resolvedAt = event.ts;
-	return touch(base, event, {
-		incidents: { ...base.incidents, [incident.id]: incident },
-	});
+	return finishIncidentOpen(base, event, incident);
 }
 
 function applyIncidentProgress(
@@ -333,7 +370,10 @@ function applyIncidentProgress(
 		data.currentStatus === "resolved"
 			? data.currentStatus
 			: "investigating";
-	const existing: IncidentRecord = base.incidents[data.incidentId] ?? {
+	const prior = Object.hasOwn(base.incidents, data.incidentId)
+		? base.incidents[data.incidentId]
+		: undefined;
+	const existing: IncidentRecord = prior ?? {
 		// Update arrived before the open: create a placeholder that a late
 		// `incident.Opened` will backfill.
 		id: data.incidentId,
@@ -371,9 +411,15 @@ function applyIncidentProgress(
 	if (state === "resolved" && existing.resolvedAt === undefined) {
 		incident.resolvedAt = event.ts;
 	}
-	return touch(base, event, {
+	const patch: Mutable<Partial<StatusPageRow>> = {
 		incidents: { ...base.incidents, [incident.id]: incident },
-	});
+	};
+	if (!prior)
+		patch.pendingIncidentOpens = {
+			...base.pendingIncidentOpens,
+			[incident.id]: true,
+		};
+	return touch(base, event, patch);
 }
 
 function applyIncidentResolved(
@@ -385,7 +431,10 @@ function applyIncidentResolved(
 	if (!isStringValue(data?.incidentId) || data.incidentId.length === 0) {
 		return touch(base, event, {});
 	}
-	const existing: IncidentRecord = base.incidents[data.incidentId] ?? {
+	const prior = Object.hasOwn(base.incidents, data.incidentId)
+		? base.incidents[data.incidentId]
+		: undefined;
+	const existing: IncidentRecord = prior ?? {
 		// Resolved before opened: keep a resolved tombstone so the late open
 		// cannot resurrect the incident.
 		id: data.incidentId,
@@ -423,9 +472,15 @@ function applyIncidentResolved(
 				: []),
 		]),
 	};
-	return touch(base, event, {
+	const patch: Mutable<Partial<StatusPageRow>> = {
 		incidents: { ...base.incidents, [incident.id]: incident },
-	});
+	};
+	if (!prior)
+		patch.pendingIncidentOpens = {
+			...base.pendingIncidentOpens,
+			[incident.id]: true,
+		};
+	return touch(base, event, patch);
 }
 
 function applyMaintenanceScheduled(
@@ -445,14 +500,22 @@ function applyMaintenanceScheduled(
 	) {
 		return touch(base, event, {});
 	}
-	const existing = base.maintenances[data.maintenanceId];
+	const existing = Object.hasOwn(base.maintenances, data.maintenanceId)
+		? base.maintenances[data.maintenanceId]
+		: undefined;
+	const pendingStates = { ...base.pendingMaintenanceStates };
+	const pendingState = Object.hasOwn(pendingStates, data.maintenanceId)
+		? pendingStates[data.maintenanceId]
+		: undefined;
+	delete pendingStates[data.maintenanceId];
+	const { pendingMaintenanceStates: _pending, ...withoutPending } = base;
 	const maintenance: MaintenanceRecord = {
 		id: data.maintenanceId,
 		title:
 			isStringValue(data.title) && data.title.length > 0
 				? data.title
 				: data.maintenanceId,
-		state: existing?.state ?? "scheduled",
+		state: existing?.state ?? pendingState ?? "scheduled",
 		windowStart: data.windowStart,
 		windowEnd: data.windowEnd,
 		affectedComponents: Object.freeze(
@@ -466,9 +529,12 @@ function applyMaintenanceScheduled(
 			? data.expectedImpact
 			: "",
 	};
-	return touch(base, event, {
+	const patch: Mutable<Partial<StatusPageRow>> = {
 		maintenances: { ...base.maintenances, [maintenance.id]: maintenance },
-	});
+	};
+	if (Object.keys(pendingStates).length > 0)
+		patch.pendingMaintenanceStates = pendingStates;
+	return touch(withoutPending, event, patch);
 }
 
 function applyMaintenanceUpdated(
@@ -480,15 +546,29 @@ function applyMaintenanceUpdated(
 	if (!isStringValue(data?.maintenanceId) || data.maintenanceId.length === 0) {
 		return touch(base, event, {});
 	}
-	const existing = base.maintenances[data.maintenanceId];
-	if (!existing) return touch(base, event, {});
 	const next =
 		data.state === "scheduled" ||
 		data.state === "in-progress" ||
 		data.state === "completed" ||
 		data.state === "canceled"
 			? data.state
-			: existing.state;
+			: undefined;
+	if (next === undefined) return touch(base, event, {});
+	const existing = Object.hasOwn(base.maintenances, data.maintenanceId)
+		? base.maintenances[data.maintenanceId]
+		: undefined;
+	if (!existing) {
+		const pendingStates = { ...base.pendingMaintenanceStates };
+		const previous = Object.hasOwn(pendingStates, data.maintenanceId)
+			? (pendingStates[data.maintenanceId] ?? "scheduled")
+			: "scheduled";
+		return touch(base, event, {
+			pendingMaintenanceStates: {
+				...pendingStates,
+				[data.maintenanceId]: advanceMaintenanceState(previous, next),
+			},
+		});
+	}
 	const maintenance: MaintenanceRecord = {
 		...existing,
 		state: advanceMaintenanceState(existing.state, next),

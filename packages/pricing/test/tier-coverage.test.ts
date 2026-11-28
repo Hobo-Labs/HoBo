@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { TieredPriceSchema } from "../src/_generated/pricing_pb.js";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -63,7 +63,7 @@ describe("tier coverage", () => {
 			[{ from: "-1", price: "1" }],
 		];
 		for (const bounds of malformed)
-			expect(quoteScenarioV2(scenario(mode, bounds))).toMatchObject({
+			expect(quoteScenario(scenario(mode, bounds))).toMatchObject({
 				code: "INVALID_PRICING_INPUT",
 			});
 	});
@@ -73,7 +73,7 @@ describe("tier coverage", () => {
 		"volume",
 	] as const)("rejects %s usage beyond a finite last tier", (mode) => {
 		expect(
-			quoteScenarioV2(
+			quoteScenario(
 				scenario(mode, [
 					{ from: "0", to: "2", price: "1" },
 					{ from: "2", to: "3", price: "2" },
@@ -100,7 +100,7 @@ describe("tier coverage", () => {
 				{ from: "2", price: "2" },
 			],
 		])
-			expect(quoteScenarioV2(scenario(mode, bounds))).toMatchObject({
+			expect(quoteScenario(scenario(mode, bounds))).toMatchObject({
 				$typeName: "hobo.pricing.v1.QuoteVector",
 				incremental: { billed: { decimal: expected, currency: "USD" } },
 			});
@@ -111,7 +111,7 @@ describe("tier coverage", () => {
 		["volume", "6"],
 	] as const)("rates %s usage inside a finite final tier", (mode, expected) => {
 		expect(
-			quoteScenarioV2(
+			quoteScenario(
 				scenario(
 					mode,
 					[
@@ -132,11 +132,11 @@ describe("tier coverage", () => {
 			{ from: "0", to: "2", price: "1" },
 			{ from: "2", to: "4", price: "2" },
 		];
-		expect(quoteScenarioV2(scenario("graduated", bounds))).toMatchObject({
+		expect(quoteScenario(scenario("graduated", bounds))).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "6", currency: "USD" } },
 		});
-		expect(quoteScenarioV2(scenario("volume", bounds))).toMatchObject({
+		expect(quoteScenario(scenario("volume", bounds))).toMatchObject({
 			code: "RATE_CARD_NOT_FOUND",
 		});
 	});

@@ -205,12 +205,9 @@ const entitlement: Check = (value) =>
 			unit: named,
 			units: nonnegative,
 			kind: (item) =>
-				item === "" ||
-				item === "allowance" ||
-				item === "credit" ||
-				item === "commitment",
+				item === "allowance" || item === "credit" || item === "commitment",
 		},
-		["bucketId", "unit", "units"],
+		["bucketId", "unit", "units", "kind"],
 	);
 const accounts: Check = (value) => list(value, account);
 const entitlements: Check = (value) => list(value, entitlement);
@@ -247,6 +244,8 @@ const pricedPolicy: Check = (value) =>
 			effect: (item) => item === "allow" || item === "allow-degraded",
 			evidenceRef: named,
 			obligationsSatisfied: (item) => item === true,
+			quoteDigest: (item) =>
+				typeof item === "string" && /^[a-f0-9]{64}$/u.test(item),
 		},
 		[
 			"requestDigest",
@@ -256,6 +255,7 @@ const pricedPolicy: Check = (value) =>
 			"effect",
 			"evidenceRef",
 			"obligationsSatisfied",
+			"quoteDigest",
 		],
 	);
 const component: Check = (value) =>
@@ -284,6 +284,7 @@ const quote: Check = (value) =>
 			providerAccounts: accounts,
 			entitlementClaims: entitlements,
 			financialPlanHash: named,
+			workDigest: (item) => item === "",
 		},
 		[
 			"quoteId",
@@ -313,13 +314,8 @@ function scopedIdentity(
 	identityKey: string | readonly string[],
 ): string | undefined {
 	const keys = typeof identityKey === "string" ? [identityKey] : identityKey;
-	const values = keys.map((key) => {
-		const value = ownData(row, key);
-		return key === "kind" && (value === undefined || value === "")
-			? "allowance"
-			: value;
-	});
-	return values.every((value) => typeof value === "string")
+	const values = keys.map((key) => ownData(row, key));
+	return values.every((value) => typeof value === "string" && value !== "")
 		? JSON.stringify(values)
 		: undefined;
 }
@@ -488,7 +484,6 @@ export function validFinancialMetadata(
 						: /^sha256:[a-f0-9]{64}$/u.test(item)),
 				financialPlanHash: text,
 				fenceSettlementGuard: (item) => item === undefined,
-				fenceSettlementPayloadVersion: (item) => item === "" || item === "v2",
 				unboundedExposure: flag,
 
 				unpricedPolicyProof: () => true,

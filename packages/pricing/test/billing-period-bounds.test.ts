@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	fixedCharge,
 	makeScenario,
@@ -29,7 +29,7 @@ describe("billing-period bounds", () => {
 		["monthly", "2026-01-31T23:59:59Z"],
 		["yearly", "2026-12-31T23:59:59Z"],
 	] as const)("rates a horizon contained within one %s period", (interval, horizon) => {
-		expect(quoteScenarioV2(scenario(interval, horizon))).toMatchObject({
+		expect(quoteScenario(scenario(interval, horizon))).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			incremental: { billed: { decimal: "4", currency: "USD" } },
 		});
@@ -41,7 +41,7 @@ describe("billing-period bounds", () => {
 		["monthly", "2026-02-01T00:00:00Z"],
 		["yearly", "2027-01-01T00:00:00Z"],
 	] as const)("rejects a horizon reaching the next %s period", (interval, horizon) => {
-		expect(quoteScenarioV2(scenario(interval, horizon))).toMatchObject({
+		expect(quoteScenario(scenario(interval, horizon))).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -55,7 +55,7 @@ describe("billing-period bounds", () => {
 		if (!period) throw new Error("missing billing period fixture");
 		period.anchor = anchor;
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -66,7 +66,7 @@ describe("billing-period bounds", () => {
 		if (!period) throw new Error("missing billing period fixture");
 		period.anchor = "2026-01-02T00:00:00Z";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -78,11 +78,9 @@ describe("billing-period bounds", () => {
 		period.anchor = "2026-01-15T12:00:00Z";
 		input.at = "2026-02-14T00:00:00Z";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input).$typeName).toBe(
-			"hobo.pricing.v1.QuoteVector",
-		);
+		expect(quoteScenario(input).$typeName).toBe("hobo.pricing.v1.QuoteVector");
 		input.horizon = "2026-02-15T12:00:00Z";
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -98,11 +96,11 @@ describe("billing-period bounds", () => {
 			const next = Date.UTC(2026, month + 1, 15, 12);
 			input.at = new Date(start).toISOString();
 			input.horizon = new Date(next - 1).toISOString();
-			expect(quoteScenarioV2(input).$typeName).toBe(
+			expect(quoteScenario(input).$typeName).toBe(
 				"hobo.pricing.v1.QuoteVector",
 			);
 			input.horizon = new Date(next).toISOString();
-			expect(quoteScenarioV2(input)).toMatchObject({
+			expect(quoteScenario(input)).toMatchObject({
 				code: "PRICING_MODEL_UNSUPPORTED",
 			});
 		}
@@ -115,9 +113,7 @@ describe("billing-period bounds", () => {
 		period.anchor = "2025-01-31T00:00:00Z";
 		input.at = "2026-02-01T00:00:00Z";
 		rehashScenario(input);
-		expect(quoteScenarioV2(input).$typeName).toBe(
-			"hobo.pricing.v1.QuoteVector",
-		);
+		expect(quoteScenario(input).$typeName).toBe("hobo.pricing.v1.QuoteVector");
 	});
 
 	it.each([
@@ -138,7 +134,7 @@ describe("billing-period bounds", () => {
 			throw new Error("missing fixed charge fixture");
 		fixed.variant.value.cadence = cadence;
 		rehashScenario(input);
-		expect(quoteScenarioV2(input)).toMatchObject({
+		expect(quoteScenario(input)).toMatchObject({
 			code: "PRICING_MODEL_UNSUPPORTED",
 		});
 	});
@@ -159,9 +155,7 @@ describe("billing-period bounds", () => {
 			throw new Error("missing fixed charge fixture");
 		fixed.variant.value.cadence = cadence;
 		rehashScenario(input);
-		expect(quoteScenarioV2(input).$typeName).toBe(
-			"hobo.pricing.v1.QuoteVector",
-		);
+		expect(quoteScenario(input).$typeName).toBe("hobo.pricing.v1.QuoteVector");
 	});
 
 	it("ignores an inactive agreement that is not part of the rated workloads", () => {
@@ -177,8 +171,6 @@ describe("billing-period bounds", () => {
 			billingPeriod: { ...first.billingPeriod, anchor: "2025-12-31T00:00:00Z" },
 		});
 		rehashScenario(input);
-		expect(quoteScenarioV2(input).$typeName).toBe(
-			"hobo.pricing.v1.QuoteVector",
-		);
+		expect(quoteScenario(input).$typeName).toBe("hobo.pricing.v1.QuoteVector");
 	});
 });

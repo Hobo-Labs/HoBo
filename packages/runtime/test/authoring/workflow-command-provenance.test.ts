@@ -90,8 +90,6 @@ describe("workflow command provenance", () => {
 					const result = await engine.start(wf, null);
 					expect(result.result).toEqual(["left", "right"]);
 					const journal = await engine.journal(result.runId);
-					const started = journal.find((event) => event.type === "run.Started");
-					expect(started?.data).toMatchObject({ commandTreeVersion: 3 });
 					const steps = journal.filter(
 						(event) => event.type === "run.StepScheduled",
 					);

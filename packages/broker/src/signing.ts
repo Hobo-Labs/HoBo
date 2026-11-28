@@ -10,6 +10,7 @@ import {
 import {
 	cloneAsJson,
 	isJsonObject,
+	isJsonString,
 	type JsonObject,
 	type JsonValue,
 } from "./json.js";
@@ -35,8 +36,6 @@ export interface ResolutionSignature {
 	payloadDigest: string;
 }
 
-// Canonical JSON: recursively key-sorted, no whitespace — the same document
-// always serializes to the same bytes, so signatures are replayable.
 export function canonicalResolutionJson<T>(value: T): string {
 	return canonicalJsonValue(cloneAsJson(value));
 }
@@ -49,7 +48,7 @@ function canonicalJsonValue(value: JsonValue): string {
 		// SAFETY: assertion required at this I/O or test boundary.
 		const entries = Object.entries(value as JsonObject)
 			.filter(([, entryValue]) => entryValue !== undefined)
-			.sort(([a], [b]) => a.localeCompare(b))
+			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 			.map(
 				([key, entryValue]) =>
 					`${JSON.stringify(key)}:${canonicalJsonValue(entryValue)}`,
@@ -82,16 +81,50 @@ export function importResolutionSigningKey(
 	return { privateKey, publicKeyPem };
 }
 
+function isPublicKeyPem(value: string | undefined): value is string {
+	return (
+		isJsonString(value) &&
+		/^\s*-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----\s*$/u.test(
+			value,
+		)
+	);
+}
+
 export function signResolution(
 	resolution: ResolutionReceipt | ResolutionRejection,
 	key: ResolutionSigningKey,
 ): ResolutionSignature {
+	const privateKey = key.privateKey;
+	const advertisedPem = key.publicKeyPem;
+	let publicKeyPem: string;
+	try {
+		if (!isPublicKeyPem(advertisedPem)) throw new Error("public key required");
+		const actual = createPublicKey(privateKey);
+		const advertised = createPublicKey(advertisedPem);
+		if (
+			actual.asymmetricKeyType !== "ed25519" ||
+			advertised.asymmetricKeyType !== "ed25519" ||
+			!actual
+				.export({ type: "spki", format: "der" })
+				.equals(advertised.export({ type: "spki", format: "der" }))
+		) {
+			throw new Error("signing key mismatch");
+		}
+		publicKeyPem = advertised
+			.export({ type: "spki", format: "pem" })
+			.toString();
+	} catch {
+		throw new BrokerParseError(
+			"signing-key-mismatch",
+			"signing-key-mismatch: the Ed25519 private key and advertised public key must match",
+		);
+	}
 	const payload = canonicalResolutionJson(resolution);
 	const payloadBytes = Buffer.from(payload, "utf8");
-	const signature = edSign(null, payloadBytes, key.privateKey);
+	const signature = edSign(null, payloadBytes, privateKey);
 	return {
 		algorithm: RESOLUTION_SIGNATURE_ALGORITHM,
-		publicKeyPem: key.publicKeyPem,
+		publicKeyPem,
 		signature: signature.toString("base64"),
 		payloadDigest: `sha256:${createHash("sha256").update(payloadBytes).digest("hex")}`,
 	};
@@ -100,21 +133,43 @@ export function signResolution(
 export function verifyResolution(
 	resolution: ResolutionReceipt | ResolutionRejection,
 	signature: ResolutionSignature,
+	trustedPublicKeyPem: string,
 ): boolean {
-	if (signature.algorithm !== RESOLUTION_SIGNATURE_ALGORITHM) {
+	const {
+		algorithm,
+		publicKeyPem,
+		signature: encoded,
+		payloadDigest,
+	} = signature;
+	if (algorithm !== RESOLUTION_SIGNATURE_ALGORITHM) {
 		throw new BrokerParseError(
 			"unsupported-signature-algorithm",
-			`unsupported-signature-algorithm: ${String(signature.algorithm)}`,
+			`unsupported-signature-algorithm: ${String(algorithm)}`,
 		);
 	}
 	const payloadBytes = Buffer.from(canonicalResolutionJson(resolution), "utf8");
+	if (
+		payloadDigest !==
+		`sha256:${createHash("sha256").update(payloadBytes).digest("hex")}`
+	)
+		return false;
 	try {
-		return edVerify(
-			null,
-			payloadBytes,
-			createPublicKey(signature.publicKeyPem),
-			Buffer.from(signature.signature, "base64"),
-		);
+		if (!isPublicKeyPem(trustedPublicKeyPem) || !isPublicKeyPem(publicKeyPem))
+			return false;
+		const trusted = createPublicKey(trustedPublicKeyPem);
+		const advertised = createPublicKey(publicKeyPem);
+		if (
+			trusted.asymmetricKeyType !== "ed25519" ||
+			advertised.asymmetricKeyType !== "ed25519" ||
+			!trusted
+				.export({ type: "spki", format: "der" })
+				.equals(advertised.export({ type: "spki", format: "der" }))
+		)
+			return false;
+		const bytes = Buffer.from(encoded, "base64");
+		if (bytes.length !== 64 || bytes.toString("base64") !== encoded)
+			return false;
+		return edVerify(null, payloadBytes, trusted, bytes);
 	} catch {
 		return false;
 	}

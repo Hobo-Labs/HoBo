@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	createTargetPricingInventory,
 	quoteTargetPricing,
@@ -53,7 +53,7 @@ describe("unique financial scope identities", () => {
 			candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
 			commitments: [commitmentState()],
 		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			$typeName: "hobo.pricing.v1.QuoteVector",
 			consumption: [
 				{
@@ -90,7 +90,7 @@ describe("unique financial scope identities", () => {
 			commitment.id = "shared";
 			rehashScenario(scenario);
 		}
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 		expect(quoteTarget(scenario)).toMatchObject({
@@ -110,7 +110,7 @@ describe("unique financial scope identities", () => {
 			candidate: [workload("agreement-a", [usage("minute", "1", "minute")])],
 			credits: [creditState(id, "zero", 0)],
 		});
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

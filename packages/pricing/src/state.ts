@@ -19,12 +19,8 @@ import {
 	parseDecimal,
 } from "./decimal.js";
 import { stableHash } from "./json.js";
-import {
-	codeUnitPricingOrder,
-	legacyPricingOrder,
-	type PricingOrder,
-} from "./ordering.js";
-import { legacyPricingTimeOrder, type PricingTimeOrder } from "./time-order.js";
+import { codeUnitPricingOrder as order } from "./ordering.js";
+import { utcPricingTimeOrder as timeOrder } from "./time-order.js";
 import type { PricingRejectionCode } from "./types.js";
 import { convertQuantity } from "./units.js";
 
@@ -42,7 +38,7 @@ export class PricingFault extends Error {
 	}
 }
 
-function parseLegacyUtc(value: string, path: string): number {
+export function parseUtc(value: string, path: string): number {
 	if (!UTC_PATTERN.test(value)) {
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
@@ -50,81 +46,29 @@ function parseLegacyUtc(value: string, path: string): number {
 		);
 	}
 	const parsed = Date.parse(value);
-	if (!Number.isFinite(parsed)) {
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			`${path} is not a valid timestamp`,
-		);
-	}
-	return parsed;
-}
-
-export function parseUtc(value: string, path: string): number {
-	const parsed = parseLegacyUtc(value, path);
-	if (new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19))
+	if (
+		!Number.isFinite(parsed) ||
+		new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19)
+	) {
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
 			`${path} is not a valid calendar timestamp`,
 		);
+	}
 	return parsed;
-}
-
-export function compareUtcExact(left: string, right: string): number {
-	parseUtc(left, "timestamp");
-	parseUtc(right, "timestamp");
-	const second = codeUnitPricingOrder(left.slice(0, 19), right.slice(0, 19));
-	if (second !== 0) return second;
-	const fraction = (value: string) =>
-		value[19] === "." ? value.slice(20, -1).replace(/0+$/, "") : "";
-	return codeUnitPricingOrder(fraction(left), fraction(right));
-}
-
-export type TemporalPolicy = Readonly<{
-	parse(value: string, path: string): number;
-	compare(left: string, right: string): number;
-}>;
-export const EXACT_TIME: TemporalPolicy = {
-	parse: parseUtc,
-	compare: compareUtcExact,
-};
-export const LEGACY_TIME: TemporalPolicy = {
-	parse: parseLegacyUtc,
-	compare: (left, right) => Math.sign(Date.parse(left) - Date.parse(right)),
-};
-
-export const exactPricingTimeOrder: PricingTimeOrder = (left, right) => {
-	if (left === undefined) return right === undefined ? 0 : 1;
-	if (right === undefined) return -1;
-	return compareUtcExact(left, right);
-};
-
-function compareChecked(
-	left: string,
-	leftPath: string,
-	right: string,
-	rightPath: string,
-	time: TemporalPolicy,
-): number {
-	time.parse(left, leftPath);
-	time.parse(right, rightPath);
-	return time.compare(left, right);
 }
 
 export function intervalCovers(
 	interval: EffectiveInterval,
 	at: string,
 	horizon: string,
-	time: TemporalPolicy = EXACT_TIME,
 ): boolean {
-	time.parse(interval.start, "interval.start");
-	if (interval.end !== undefined) time.parse(interval.end, "interval.end");
-	time.parse(at, "at");
-	if (time.compare(interval.start, at) > 0) return false;
-	time.parse(horizon, "horizon");
-	return (
-		time.compare(at, horizon) <= 0 &&
-		(interval.end === undefined || time.compare(interval.end, horizon) >= 0)
-	);
+	const start = parseUtc(interval.start, "interval.start");
+	const end =
+		interval.end === undefined
+			? Number.POSITIVE_INFINITY
+			: parseUtc(interval.end, "interval.end");
+	return start <= parseUtc(at, "at") && end >= parseUtc(horizon, "horizon");
 }
 
 function validateEvidence(
@@ -132,7 +76,6 @@ function validateEvidence(
 	at: string,
 	horizon: string,
 	path: string,
-	time: TemporalPolicy,
 ): void {
 	if (evidence === undefined) {
 		throw new PricingFault(
@@ -141,17 +84,10 @@ function validateEvidence(
 		);
 	}
 	if (
-		compareChecked(evidence.observedAt, `${path}.observedAt`, at, "at", time) >
-			0 ||
-		compareChecked(evidence.validFrom, `${path}.validFrom`, at, "at", time) >
-			0 ||
-		compareChecked(
-			evidence.validUntil,
-			`${path}.validUntil`,
-			horizon,
-			"horizon",
-			time,
-		) < 0
+		parseUtc(evidence.observedAt, `${path}.observedAt`) > parseUtc(at, "at") ||
+		parseUtc(evidence.validFrom, `${path}.validFrom`) > parseUtc(at, "at") ||
+		parseUtc(evidence.validUntil, `${path}.validUntil`) <
+			parseUtc(horizon, "horizon")
 	) {
 		throw new PricingFault(
 			"STALE_OBSERVATION",
@@ -170,15 +106,406 @@ export function stateHashOf(state: FinancialStateView): string {
 	);
 }
 
-function validateFinancialSourceIds(state: FinancialStateView): void {
+export function validateScenarioState(scenario: QuoteScenario): void {
+	const catalog = scenario.catalog;
+	const state = scenario.state;
+	if (catalog === undefined || state === undefined) {
+		throw new PricingFault(
+			"INCOMPLETE_FINANCIAL_STATE",
+			"catalog and financial state are required",
+		);
+	}
+	if (
+		!new Set(["place", "dispatch", "rebalance", "migrate", "cancel"]).has(
+			scenario.action,
+		) &&
+		scenario.action !== "destroy"
+	) {
+		throw new PricingFault("INVALID_PRICING_INPUT", "unknown quote action");
+	}
+	const at = parseUtc(scenario.at, "scenario.at");
+	const horizon = parseUtc(scenario.horizon, "scenario.horizon");
+	if (horizon < at) {
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"quote horizon precedes quote time",
+		);
+	}
+	if (catalog.schema !== "hobo.pricing.catalog/v1") {
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown pricing catalog schema",
+		);
+	}
+	if (
+		!DIGEST_PATTERN.test(catalog.catalogHash) ||
+		scenario.pricingCatalogHash !== catalog.catalogHash
+	) {
+		throw new PricingFault(
+			"CATALOG_HASH_MISMATCH",
+			"scenario and catalog hashes differ",
+		);
+	}
+	if (state.schema !== "hobo.pricing/v1") {
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown financial state schema",
+		);
+	}
+	if (state.completeness !== "complete" && state.completeness !== "partial")
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown financial state completeness",
+		);
+	const allowPartial = scenario.options?.allowPartialFinancialState === true;
+	if (state.completeness !== "complete" && !allowPartial) {
+		throw new PricingFault(
+			"INCOMPLETE_FINANCIAL_STATE",
+			"financial state must be complete hobo.pricing/v1",
+		);
+	}
+	if (!DIGEST_PATTERN.test(state.stateHash)) {
+		throw new PricingFault(
+			"STATE_HASH_MISMATCH",
+			"invalid financial state hash",
+		);
+	}
+	if (parseUtc(state.asOf, "state.asOf") > at) {
+		throw new PricingFault(
+			"STALE_OBSERVATION",
+			"financial state is from the future",
+		);
+	}
+	if (state.observations.length === 0) {
+		throw new PricingFault(
+			"INCOMPLETE_FINANCIAL_STATE",
+			"financial state has no observations",
+		);
+	}
+	for (const [index, observation] of state.observations.entries()) {
+		if (
+			parseUtc(observation.observedAt, `observations.${index}.observedAt`) >
+				at ||
+			parseUtc(observation.validUntil, `observations.${index}.validUntil`) <
+				horizon
+		) {
+			throw new PricingFault(
+				"STALE_OBSERVATION",
+				`observation ${index} does not cover the quote horizon`,
+			);
+		}
+	}
+	for (const agreement of state.agreements) {
+		if (
+			agreement.tenantId !== state.tenantId ||
+			agreement.billingPeriod?.timeZone !== "UTC"
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				`agreement ${agreement.id} has a tenant or non-UTC billing-period mismatch`,
+			);
+		}
+		if (
+			agreement.term === undefined ||
+			!intervalCovers(agreement.term, scenario.at, scenario.horizon)
+		) {
+			throw new PricingFault(
+				"STALE_OBSERVATION",
+				`agreement ${agreement.id} term does not cover the quote horizon`,
+			);
+		}
+		validateEvidence(
+			agreement.evidence,
+			scenario.at,
+			scenario.horizon,
+			`agreement.${agreement.id}`,
+		);
+	}
+	for (const allowance of state.allowances) {
+		if (allowance.grant === undefined) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"allowance grant is required",
+			);
+		}
+		if (allowance.grant.tenantId !== state.tenantId) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"allowance tenant differs from financial state",
+			);
+		}
+		validateEvidence(
+			allowance.grant?.evidence,
+			scenario.at,
+			scenario.horizon,
+			`allowance.${allowance.grant?.id ?? "unknown"}`,
+		);
+		if (
+			allowance.grant?.effective === undefined ||
+			!intervalCovers(allowance.grant.effective, scenario.at, scenario.horizon)
+		) {
+			throw new PricingFault(
+				"STALE_OBSERVATION",
+				`allowance ${allowance.grant?.id ?? "unknown"} is not effective`,
+			);
+		}
+	}
+	for (const credit of state.credits) {
+		if (credit.grant === undefined) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit grant is required",
+			);
+		}
+		if (credit.grant.tenantId !== state.tenantId) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit tenant differs from financial state",
+			);
+		}
+		validateEvidence(
+			credit.grant?.evidence,
+			scenario.at,
+			scenario.horizon,
+			`credit.${credit.grant?.id ?? "unknown"}`,
+		);
+		if (
+			credit.grant?.effective === undefined ||
+			!intervalCovers(credit.grant.effective, scenario.at, scenario.horizon)
+		) {
+			throw new PricingFault(
+				"STALE_OBSERVATION",
+				`credit ${credit.grant?.id ?? "unknown"} is not effective`,
+			);
+		}
+	}
+	for (const commitment of state.commitments) {
+		if (commitment.commitment === undefined) {
+			throw new PricingFault("INVALID_PRICING_INPUT", "commitment is required");
+		}
+		if (commitment.commitment.tenantId !== state.tenantId) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"commitment tenant differs from financial state",
+			);
+		}
+		validateEvidence(
+			commitment.commitment?.evidence,
+			scenario.at,
+			scenario.horizon,
+			`commitment.${commitment.commitment?.id ?? "unknown"}`,
+		);
+		if (
+			commitment.commitment?.term === undefined ||
+			!intervalCovers(commitment.commitment.term, scenario.at, scenario.horizon)
+		) {
+			throw new PricingFault(
+				"STALE_OBSERVATION",
+				`commitment ${commitment.commitment?.id ?? "unknown"} is not effective`,
+			);
+		}
+	}
+}
+
+export function validateFinancialIdentities(
+	state: FinancialStateView | undefined,
+): void {
+	if (state === undefined)
+		throw new PricingFault(
+			"INCOMPLETE_FINANCIAL_STATE",
+			"financial state is required",
+		);
+	const ids = [
+		...state.allowances.map((item) => item.grant?.id),
+		...state.credits.map((item) => item.grant?.id),
+		...state.commitments.map((item) => item.commitment?.id),
+	];
+	const seen = new Set<string>();
+	for (const id of ids) {
+		if (
+			id === undefined ||
+			id.length === 0 ||
+			id.length > 200 ||
+			id.trim() !== id ||
+			/[\p{Cc}]/u.test(id) ||
+			seen.has(id)
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"allowances, credits and commitments require distinct bounded identities",
+			);
+		seen.add(id);
+	}
+}
+
+function validateBalance(
+	value: Money | Quantity | undefined,
+	path: string,
+): void {
+	const decimal = value === undefined ? undefined : parseDecimal(value.decimal);
+	if (
+		value === undefined ||
+		decimal === undefined ||
+		decimal.coefficient < 0n ||
+		("currency" in value
+			? !/^[A-Z]{3}$/u.test(value.currency)
+			: value.unit.length === 0)
+	)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			`${path} requires a nonnegative amount with a valid unit`,
+		);
+}
+
+function validateBalanceValue(
+	value:
+		| { readonly case: "money"; readonly value: Money }
+		| { readonly case: "quantity"; readonly value: Quantity }
+		| { readonly case: undefined }
+		| undefined,
+	path: string,
+): void {
+	validateBalance(value?.case === undefined ? undefined : value.value, path);
+}
+
+export function validateFinancialBalances(state: FinancialStateView): void {
+	for (const allowance of state.allowances) {
+		validateBalance(allowance.grant?.included, "allowance.included");
+		validateBalance(allowance.remaining, "allowance.remaining");
+		validateBalance(allowance.used, "allowance.used");
+	}
+	for (const credit of state.credits) {
+		validateBalanceValue(credit.grant?.faceValue?.value, "credit.faceValue");
+		validateBalanceValue(credit.remaining?.value, "credit.remaining");
+		validateBalanceValue(credit.used?.value, "credit.used");
+		validateBalance(credit.remainingBasis, "credit.remainingBasis");
+		validateBalance(credit.usedBasis, "credit.usedBasis");
+		const basis = credit.grant?.economicBasis;
+		if (
+			basis === undefined ||
+			!["zero", "face-value", "acquisition"].includes(basis.kind) ||
+			(basis.kind !== "acquisition" && basis.acquisitionAmount !== undefined)
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"credit economic basis terms are invalid",
+			);
+		if (basis.kind === "acquisition")
+			validateBalance(basis.acquisitionAmount, "credit.acquisitionAmount");
+		const face = credit.grant?.faceValue?.value;
+		if (face?.case === "money") {
+			for (const balance of [credit.remaining?.value, credit.used?.value]) {
+				if (balance?.case !== "money")
+					throw new PricingFault(
+						"PRICING_MODEL_UNSUPPORTED",
+						"money credit balances must use money",
+					);
+				if (balance.value.currency !== face.value.currency)
+					throw new PricingFault("CROSS_CURRENCY", "credit currencies differ");
+			}
+			for (const amount of [
+				credit.remainingBasis,
+				credit.usedBasis,
+				basis?.acquisitionAmount,
+			]) {
+				if (amount !== undefined && amount.currency !== face.value.currency)
+					throw new PricingFault(
+						"CROSS_CURRENCY",
+						"credit basis currency differs",
+					);
+			}
+		}
+		if (
+			credit.grant?.derivedFrom !== undefined &&
+			(basis?.kind === "face-value" ||
+				(basis?.kind === "acquisition" &&
+					parseDecimal(basis.acquisitionAmount?.decimal ?? "")?.coefficient !==
+						0n))
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"derived credits must have zero economic basis",
+			);
+		if (
+			(basis.kind === "zero" || credit.grant?.derivedFrom !== undefined) &&
+			[credit.remainingBasis, credit.usedBasis].some(
+				(amount) => parseDecimal(amount?.decimal ?? "")?.coefficient !== 0n,
+			)
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"zero-basis credits cannot retain or consume economic basis",
+			);
+	}
+	for (const commitment of state.commitments) {
+		validateBalanceValue(
+			commitment.commitment?.amount?.value,
+			"commitment.amount",
+		);
+		validateBalanceValue(commitment.remaining?.value, "commitment.remaining");
+		validateBalanceValue(commitment.used?.value, "commitment.used");
+		const amount = commitment.commitment?.amount?.value;
+		const kind = commitment.commitment?.kind;
+		if (
+			(kind !== "spend" && kind !== "usage") ||
+			(kind === "spend" && amount?.case !== "money") ||
+			(kind === "usage" && amount?.case !== "quantity")
+		)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"commitment kind and amount do not agree",
+			);
+		if (amount?.case === "money") {
+			for (const balance of [
+				commitment.remaining?.value,
+				commitment.used?.value,
+			]) {
+				if (balance?.case !== "money")
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						"money commitments require money balances",
+					);
+				if (balance.value.currency !== amount.value.currency)
+					throw new PricingFault(
+						"CROSS_CURRENCY",
+						"commitment currencies differ",
+					);
+			}
+		}
+	}
+}
+
+function validateGrantScope(scope: GrantScope | undefined): void {
+	if (
+		scope === undefined ||
+		[
+			...scope.productIds,
+			...scope.rateCardIds,
+			...scope.chargeIds,
+			...scope.dimensions,
+		].some((value) => value.length === 0)
+	)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"financial grants require an explicit scope with nonempty identifiers",
+		);
+}
+
+export function validateGrantScopes(state: FinancialStateView): void {
+	for (const allowance of state.allowances)
+		validateGrantScope(allowance.grant?.scope);
+	for (const credit of state.credits) validateGrantScope(credit.grant?.scope);
+	for (const commitment of state.commitments)
+		validateGrantScope(commitment.commitment?.scope);
+}
+
+export function validateFinancialSourceIds(state: FinancialStateView): void {
 	if (!state.tenantId)
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
 			"financial state tenant is missing",
 		);
 	const accounts = new Set<string>();
-	const rateCardAccounts = new Map<string, string>();
-	let hasCrossAccountRateCard = false;
 	for (const agreement of state.agreements) {
 		if (!agreement.providerAccountRef)
 			throw new PricingFault(
@@ -186,16 +513,9 @@ function validateFinancialSourceIds(state: FinancialStateView): void {
 				"agreement provider account is missing",
 			);
 		accounts.add(agreement.providerAccountRef);
-		for (const entry of agreement.rateSchedule) {
-			const account = rateCardAccounts.get(entry.rateCardId);
-			if (account !== undefined && account !== agreement.providerAccountRef)
-				hasCrossAccountRateCard = true;
-			rateCardAccounts.set(entry.rateCardId, agreement.providerAccountRef);
-		}
 	}
 	if (
 		accounts.size > 1 &&
-		hasCrossAccountRateCard &&
 		(state.allowances.length > 0 ||
 			state.credits.length > 0 ||
 			state.commitments.length > 0)
@@ -272,7 +592,7 @@ function sourceUnit(value: CreditValue | CommitmentAmount | undefined): string {
 	);
 }
 
-function validateFinancialSourceValues(state: FinancialStateView): void {
+export function validateFinancialSourceValues(state: FinancialStateView): void {
 	for (const allowance of state.allowances) {
 		const grant = allowance.grant;
 		const included = nonnegativeAmount(grant?.included, "allowance included");
@@ -465,452 +785,7 @@ function validateFinancialSourceValues(state: FinancialStateView): void {
 	}
 }
 
-export function validateScenarioState(
-	scenario: QuoteScenario,
-	time: TemporalPolicy = EXACT_TIME,
-	strictSourceIdentity = true,
-	strictSourceValues = true,
-	strictCompleteness = true,
-	allowDestroy = false,
-): void {
-	const catalog = scenario.catalog;
-	const state = scenario.state;
-	if (catalog === undefined || state === undefined) {
-		throw new PricingFault(
-			"INCOMPLETE_FINANCIAL_STATE",
-			"catalog and financial state are required",
-		);
-	}
-	if (
-		!new Set(["place", "dispatch", "rebalance", "migrate", "cancel"]).has(
-			scenario.action,
-		) &&
-		!(allowDestroy && scenario.action === "destroy")
-	) {
-		throw new PricingFault("INVALID_PRICING_INPUT", "unknown quote action");
-	}
-	time.parse(scenario.at, "scenario.at");
-	time.parse(scenario.horizon, "scenario.horizon");
-	if (time.compare(scenario.horizon, scenario.at) < 0) {
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"quote horizon precedes quote time",
-		);
-	}
-	if (catalog.schema !== "hobo.pricing.catalog/v1") {
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"unknown pricing catalog schema",
-		);
-	}
-	if (
-		!DIGEST_PATTERN.test(catalog.catalogHash) ||
-		scenario.pricingCatalogHash !== catalog.catalogHash
-	) {
-		throw new PricingFault(
-			"CATALOG_HASH_MISMATCH",
-			"scenario and catalog hashes differ",
-		);
-	}
-	if (state.schema !== "hobo.pricing/v1") {
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"unknown financial state schema",
-		);
-	}
-	if (strictSourceIdentity) validateFinancialSourceIds(state);
-	if (strictSourceValues) validateFinancialSourceValues(state);
-	if (
-		strictCompleteness &&
-		state.completeness !== "complete" &&
-		state.completeness !== "partial"
-	)
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"unknown financial state completeness",
-		);
-	const allowPartial = scenario.options?.allowPartialFinancialState === true;
-	if (state.completeness !== "complete" && !allowPartial) {
-		throw new PricingFault(
-			"INCOMPLETE_FINANCIAL_STATE",
-			"financial state must be complete hobo.pricing/v1",
-		);
-	}
-	if (!DIGEST_PATTERN.test(state.stateHash)) {
-		throw new PricingFault(
-			"STATE_HASH_MISMATCH",
-			"invalid financial state hash",
-		);
-	}
-	if (
-		compareChecked(state.asOf, "state.asOf", scenario.at, "scenario.at", time) >
-		0
-	) {
-		throw new PricingFault(
-			"STALE_OBSERVATION",
-			"financial state is from the future",
-		);
-	}
-	if (state.observations.length === 0) {
-		throw new PricingFault(
-			"INCOMPLETE_FINANCIAL_STATE",
-			"financial state has no observations",
-		);
-	}
-	for (const [index, observation] of state.observations.entries()) {
-		if (
-			compareChecked(
-				observation.observedAt,
-				`observations.${index}.observedAt`,
-				scenario.at,
-				"scenario.at",
-				time,
-			) > 0 ||
-			compareChecked(
-				observation.validUntil,
-				`observations.${index}.validUntil`,
-				scenario.horizon,
-				"scenario.horizon",
-				time,
-			) < 0
-		) {
-			throw new PricingFault(
-				"STALE_OBSERVATION",
-				`observation ${index} does not cover the quote horizon`,
-			);
-		}
-	}
-	for (const agreement of state.agreements) {
-		if (
-			agreement.tenantId !== state.tenantId ||
-			agreement.billingPeriod?.timeZone !== "UTC"
-		) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				`agreement ${agreement.id} has a tenant or non-UTC billing-period mismatch`,
-			);
-		}
-		if (
-			agreement.term === undefined ||
-			!intervalCovers(agreement.term, scenario.at, scenario.horizon, time)
-		) {
-			throw new PricingFault(
-				"STALE_OBSERVATION",
-				`agreement ${agreement.id} term does not cover the quote horizon`,
-			);
-		}
-		validateEvidence(
-			agreement.evidence,
-			scenario.at,
-			scenario.horizon,
-			`agreement.${agreement.id}`,
-			time,
-		);
-	}
-	for (const allowance of state.allowances) {
-		if (allowance.grant === undefined) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowance grant is required",
-			);
-		}
-		if (strictSourceIdentity && allowance.grant.tenantId !== state.tenantId) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowance tenant differs from financial state",
-			);
-		}
-		validateEvidence(
-			allowance.grant?.evidence,
-			scenario.at,
-			scenario.horizon,
-			`allowance.${allowance.grant?.id ?? "unknown"}`,
-			time,
-		);
-		if (
-			allowance.grant?.effective === undefined ||
-			!intervalCovers(
-				allowance.grant.effective,
-				scenario.at,
-				scenario.horizon,
-				time,
-			)
-		) {
-			throw new PricingFault(
-				"STALE_OBSERVATION",
-				`allowance ${allowance.grant?.id ?? "unknown"} is not effective`,
-			);
-		}
-	}
-	for (const credit of state.credits) {
-		if (credit.grant === undefined) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit grant is required",
-			);
-		}
-		if (strictSourceIdentity && credit.grant.tenantId !== state.tenantId) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit tenant differs from financial state",
-			);
-		}
-		validateEvidence(
-			credit.grant?.evidence,
-			scenario.at,
-			scenario.horizon,
-			`credit.${credit.grant?.id ?? "unknown"}`,
-			time,
-		);
-		if (
-			credit.grant?.effective === undefined ||
-			!intervalCovers(
-				credit.grant.effective,
-				scenario.at,
-				scenario.horizon,
-				time,
-			)
-		) {
-			throw new PricingFault(
-				"STALE_OBSERVATION",
-				`credit ${credit.grant?.id ?? "unknown"} is not effective`,
-			);
-		}
-	}
-	for (const commitment of state.commitments) {
-		if (commitment.commitment === undefined) {
-			throw new PricingFault("INVALID_PRICING_INPUT", "commitment is required");
-		}
-		if (
-			strictSourceIdentity &&
-			commitment.commitment.tenantId !== state.tenantId
-		) {
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"commitment tenant differs from financial state",
-			);
-		}
-		validateEvidence(
-			commitment.commitment?.evidence,
-			scenario.at,
-			scenario.horizon,
-			`commitment.${commitment.commitment?.id ?? "unknown"}`,
-			time,
-		);
-		if (
-			commitment.commitment?.term === undefined ||
-			!intervalCovers(
-				commitment.commitment.term,
-				scenario.at,
-				scenario.horizon,
-				time,
-			)
-		) {
-			throw new PricingFault(
-				"STALE_OBSERVATION",
-				`commitment ${commitment.commitment?.id ?? "unknown"} is not effective`,
-			);
-		}
-	}
-}
-
-export function validateV2FinancialIdentities(
-	state: FinancialStateView | undefined,
-): void {
-	if (state === undefined)
-		throw new PricingFault(
-			"INCOMPLETE_FINANCIAL_STATE",
-			"financial state is required",
-		);
-	const ids = [
-		...state.allowances.map((item) => item.grant?.id),
-		...state.credits.map((item) => item.grant?.id),
-		...state.commitments.map((item) => item.commitment?.id),
-	];
-	const seen = new Set<string>();
-	for (const id of ids) {
-		if (
-			id === undefined ||
-			id.length === 0 ||
-			id.length > 200 ||
-			id.trim() !== id ||
-			/[\p{Cc}]/u.test(id) ||
-			seen.has(id)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"allowances, credits and commitments require distinct bounded identities",
-			);
-		seen.add(id);
-	}
-}
-
-function validateBalance(
-	value: Money | Quantity | undefined,
-	path: string,
-): void {
-	const decimal = value === undefined ? undefined : parseDecimal(value.decimal);
-	if (
-		value === undefined ||
-		decimal === undefined ||
-		decimal.coefficient < 0n ||
-		("currency" in value
-			? !/^[A-Z]{3}$/u.test(value.currency)
-			: value.unit.length === 0)
-	)
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			`${path} requires a nonnegative amount with a valid unit`,
-		);
-}
-
-function validateBalanceValue(
-	value:
-		| { readonly case: "money"; readonly value: Money }
-		| { readonly case: "quantity"; readonly value: Quantity }
-		| { readonly case: undefined }
-		| undefined,
-	path: string,
-): void {
-	validateBalance(value?.case === undefined ? undefined : value.value, path);
-}
-
-export function validateV2FinancialBalances(state: FinancialStateView): void {
-	for (const allowance of state.allowances) {
-		validateBalance(allowance.grant?.included, "allowance.included");
-		validateBalance(allowance.remaining, "allowance.remaining");
-		validateBalance(allowance.used, "allowance.used");
-	}
-	for (const credit of state.credits) {
-		validateBalanceValue(credit.grant?.faceValue?.value, "credit.faceValue");
-		validateBalanceValue(credit.remaining?.value, "credit.remaining");
-		validateBalanceValue(credit.used?.value, "credit.used");
-		validateBalance(credit.remainingBasis, "credit.remainingBasis");
-		validateBalance(credit.usedBasis, "credit.usedBasis");
-		const basis = credit.grant?.economicBasis;
-		if (
-			basis === undefined ||
-			!["zero", "face-value", "acquisition"].includes(basis.kind) ||
-			(basis.kind !== "acquisition" && basis.acquisitionAmount !== undefined)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"credit economic basis terms are invalid",
-			);
-		if (basis.kind === "acquisition")
-			validateBalance(basis.acquisitionAmount, "credit.acquisitionAmount");
-		const face = credit.grant?.faceValue?.value;
-		if (face?.case === "money") {
-			for (const balance of [credit.remaining?.value, credit.used?.value]) {
-				if (balance?.case !== "money")
-					throw new PricingFault(
-						"PRICING_MODEL_UNSUPPORTED",
-						"money credit balances must use money",
-					);
-				if (balance.value.currency !== face.value.currency)
-					throw new PricingFault("CROSS_CURRENCY", "credit currencies differ");
-			}
-			for (const amount of [
-				credit.remainingBasis,
-				credit.usedBasis,
-				basis?.acquisitionAmount,
-			]) {
-				if (amount !== undefined && amount.currency !== face.value.currency)
-					throw new PricingFault(
-						"CROSS_CURRENCY",
-						"credit basis currency differs",
-					);
-			}
-		}
-		if (
-			credit.grant?.derivedFrom !== undefined &&
-			(basis?.kind === "face-value" ||
-				(basis?.kind === "acquisition" &&
-					parseDecimal(basis.acquisitionAmount?.decimal ?? "")?.coefficient !==
-						0n))
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"derived credits must have zero economic basis",
-			);
-		if (
-			(basis.kind === "zero" || credit.grant?.derivedFrom !== undefined) &&
-			[credit.remainingBasis, credit.usedBasis].some(
-				(amount) => parseDecimal(amount?.decimal ?? "")?.coefficient !== 0n,
-			)
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"zero-basis credits cannot retain or consume economic basis",
-			);
-	}
-	for (const commitment of state.commitments) {
-		validateBalanceValue(
-			commitment.commitment?.amount?.value,
-			"commitment.amount",
-		);
-		validateBalanceValue(commitment.remaining?.value, "commitment.remaining");
-		validateBalanceValue(commitment.used?.value, "commitment.used");
-		const amount = commitment.commitment?.amount?.value;
-		const kind = commitment.commitment?.kind;
-		if (
-			(kind !== "spend" && kind !== "usage") ||
-			(kind === "spend" && amount?.case !== "money") ||
-			(kind === "usage" && amount?.case !== "quantity")
-		)
-			throw new PricingFault(
-				"INVALID_PRICING_INPUT",
-				"commitment kind and amount do not agree",
-			);
-		if (amount?.case === "money") {
-			for (const balance of [
-				commitment.remaining?.value,
-				commitment.used?.value,
-			]) {
-				if (balance?.case !== "money")
-					throw new PricingFault(
-						"INVALID_PRICING_INPUT",
-						"money commitments require money balances",
-					);
-				if (balance.value.currency !== amount.value.currency)
-					throw new PricingFault(
-						"CROSS_CURRENCY",
-						"commitment currencies differ",
-					);
-			}
-		}
-	}
-}
-
-function validateGrantScope(scope: GrantScope | undefined): void {
-	if (
-		scope === undefined ||
-		[
-			...scope.productIds,
-			...scope.rateCardIds,
-			...scope.chargeIds,
-			...scope.dimensions,
-		].some((value) => value.length === 0)
-	)
-		throw new PricingFault(
-			"INVALID_PRICING_INPUT",
-			"financial grants require an explicit scope with nonempty identifiers",
-		);
-}
-
-export function validateV2GrantScopes(state: FinancialStateView): void {
-	for (const allowance of state.allowances)
-		validateGrantScope(allowance.grant?.scope);
-	for (const credit of state.credits) validateGrantScope(credit.grant?.scope);
-	for (const commitment of state.commitments)
-		validateGrantScope(commitment.commitment?.scope);
-}
-
-export function workingState(
-	state: FinancialStateView,
-	order: PricingOrder = legacyPricingOrder,
-	timeOrder: PricingTimeOrder = legacyPricingTimeOrder,
-): FinancialStateView {
+export function workingState(state: FinancialStateView): FinancialStateView {
 	const working = clone(FinancialStateViewSchema, state);
 	working.allowances.sort(
 		(left, right) =>

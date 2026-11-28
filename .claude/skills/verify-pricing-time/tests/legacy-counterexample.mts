@@ -9,7 +9,7 @@ const model=fileURLToPath(new URL('../models/PricingTime.tla',import.meta.url));
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-pricing-time-'));
 try {
   copyFileSync(model,path.join(scratch,'PricingTime.tla'));
-  writeFileSync(path.join(scratch,'Legacy.cfg'),'SPECIFICATION Spec\nINVARIANT AllCoverageSafe\n');
+  writeFileSync(path.join(scratch,'Legacy.cfg'),'CONSTANTS CheckCoverage = TRUE\n          OrderByInstant = TRUE\nSPECIFICATION Spec\nINVARIANT AllCoverageSafe\n');
   const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','PricingTime.tla'],{cwd:scratch,encoding:'utf8'});
   if (result.error) throw result.error;
   const output=`${result.stdout}\n${result.stderr}`;

@@ -13,6 +13,7 @@ import {
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
+	hostingQuoteDigest,
 	type IacFinancialServicesOptions,
 	IacTargetLiabilityEvidenceSchema,
 	type IacUnpricedAuthorizationInput,
@@ -172,7 +173,7 @@ function fixture(withPricing: boolean, allowUnpriced = false) {
 				inventoryHash: priced.inventoryHash,
 				modelHash: priced.modelHash,
 				quoteHash: priced.quote.quoteHash,
-				maximumMicros: 1_500_000,
+				maximumMicrosExact: 1_500_000n,
 				observedAt: "2026-01-01T00:00:00Z",
 				validUntil: END,
 				providerAccounts: [
@@ -185,6 +186,7 @@ function fixture(withPricing: boolean, allowUnpriced = false) {
 			proof: create(HostingPolicyProofSchema, {
 				requestDigest,
 				quoteId: quote.quoteId,
+				quoteDigest: hostingQuoteDigest(quote),
 				identity,
 				effect: "allow",
 				policyHash: "policy:1",

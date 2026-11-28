@@ -1,4 +1,17 @@
 import {
+	addDecimal,
+	compareDecimal,
+	DECIMAL_ZERO,
+	type Decimal,
+	formatDecimal,
+	subtractDecimal,
+} from "@hobo/pricing";
+import {
+	billingBounds,
+	decimalFromNumber,
+	upperNumber,
+} from "./billing-decimal.js";
+import {
 	cloneAsJson,
 	isJsonNumber,
 	isJsonObject,
@@ -21,24 +34,52 @@ export interface MeteredUsageFold {
 	unknownSampleCount?: number;
 }
 
-export function foldMeteredUsage(
+interface ExactMeteredUsage {
+	spent: Decimal;
+	sampleCount: number;
+	unknownSampleCount: number;
+	evidence: string[];
+	finalized: Set<string>;
+}
+
+function foldExactMeteredUsage(
 	events: Iterable<{ type: string; data?: unknown }>,
-): MeteredUsageFold {
-	let spentUsd = 0;
+): ExactMeteredUsage {
+	let spent = DECIMAL_ZERO;
 	let sampleCount = 0;
 	let unknownSampleCount = 0;
+	const evidence: string[] = [];
+	const finalized = new Set<string>();
 	for (const event of events) {
 		if (event.type !== METER_USAGE_RECORDED_EVENT) continue;
 		const data = cloneAsJson(event.data);
 		const cost = isJsonObject(data) ? data.costUsd : undefined;
-		if (isJsonNumber(cost) && Number.isFinite(cost) && cost >= 0) {
-			spentUsd += cost;
+		const amount = isJsonNumber(cost) ? decimalFromNumber(cost) : undefined;
+		if (amount !== undefined && isJsonObject(data)) {
+			spent = addDecimal(spent, amount);
 			sampleCount += 1;
+			const id =
+				data.finalized === true && isJsonString(data.reservationId)
+					? data.reservationId
+					: null;
+			evidence.push(JSON.stringify([cost, id]));
+			if (id !== null) finalized.add(id);
 		} else unknownSampleCount += 1;
 	}
-	const usage: MeteredUsageFold = { spentUsd, sampleCount };
-	if (unknownSampleCount) usage.unknownSampleCount = unknownSampleCount;
-	return usage;
+	return { spent, sampleCount, unknownSampleCount, evidence, finalized };
+}
+
+export function foldMeteredUsage(
+	events: Iterable<{ type: string; data?: unknown }>,
+): MeteredUsageFold {
+	const usage = foldExactMeteredUsage(events);
+	const result: MeteredUsageFold = {
+		spentUsd: upperNumber(usage.spent) ?? Number.POSITIVE_INFINITY,
+		sampleCount: usage.sampleCount,
+	};
+	if (usage.unknownSampleCount)
+		result.unknownSampleCount = usage.unknownSampleCount;
+	return result;
 }
 
 export function createMeteredBillingPlane(
@@ -48,9 +89,11 @@ export function createMeteredBillingPlane(
 ): BillingPlane {
 	// One shared single-writer plane owns admission. Cross-process deployments
 	// use BudgetAdmissionAuthority backed by transactional storage instead.
-	const held = new Map<string, { amount: number; digest: string }>();
-	let lastSpentUsd = 0;
-	let lastSampleCount = 0;
+	const held = new Map<
+		string,
+		{ amount: number; exactAmount: Decimal; digest: string }
+	>();
+	let observedEvidence: string[] = [];
 	const readEvents = Array.isArray(events) ? () => events : events;
 	if (!(readEvents instanceof Function))
 		throw new TypeError(
@@ -75,13 +118,27 @@ export function createMeteredBillingPlane(
 						},
 					],
 				};
+			const bounds = billingBounds(billing);
+			if (bounds === undefined)
+				return {
+					ok: false,
+					reasons: [
+						{
+							plane: "billing",
+							code: "billing-policy-invalid",
+							message:
+								"bounded budget and spend cap must be finite and non-negative",
+						},
+					],
+				};
 			const rows = [...readEvents()];
-			const usage = foldMeteredUsage(rows);
+			const usage = foldExactMeteredUsage(rows);
 			if (
 				usage.unknownSampleCount ||
-				usage.spentUsd < lastSpentUsd ||
-				usage.sampleCount < lastSampleCount ||
-				!Number.isFinite(usage.spentUsd)
+				observedEvidence.some(
+					(entry, index) => usage.evidence[index] !== entry,
+				) ||
+				upperNumber(usage.spent) === undefined
 			)
 				return {
 					ok: false,
@@ -94,26 +151,25 @@ export function createMeteredBillingPlane(
 						},
 					],
 				};
-			lastSpentUsd = usage.spentUsd;
-			lastSampleCount = usage.sampleCount;
-			for (const event of rows) {
-				const data = cloneAsJson(event.data);
-				if (!isJsonObject(data)) continue;
-				if (
-					event.type === METER_USAGE_RECORDED_EVENT &&
-					data.finalized === true &&
-					isJsonString(data.reservationId) &&
-					isJsonNumber(data.costUsd) &&
-					data.costUsd >= 0
-				)
-					held.delete(data.reservationId);
-			}
+			observedEvidence = usage.evidence;
+			for (const id of usage.finalized) held.delete(id);
+			if (usage.finalized.has(requestId))
+				return {
+					ok: false,
+					reasons: [
+						{
+							plane: "billing",
+							code: "reservation-already-finalized",
+							message: "request identity has already been finalized",
+						},
+					],
+				};
 			const digest = requestDigest ?? String(spendEstimateUsd);
 			const previous = held.get(requestId);
 			if (previous)
 				return previous.amount === spendEstimateUsd &&
 					previous.digest === digest
-					? { ok: true, reasons: [] }
+					? { ok: true, reasons: [], reservationCreated: false }
 					: {
 							ok: false,
 							reasons: [
@@ -124,9 +180,11 @@ export function createMeteredBillingPlane(
 								},
 							],
 						};
+			const estimate = decimalFromNumber(spendEstimateUsd);
+			if (estimate === undefined) throw new Error("invalid spend estimate");
 			if (
-				!billing.spendCapUnlimited &&
-				spendEstimateUsd > billing.spendCapUsd
+				bounds.cap !== undefined &&
+				compareDecimal(estimate, bounds.cap) > 0
 			) {
 				reasons.push({
 					plane: "billing",
@@ -134,20 +192,30 @@ export function createMeteredBillingPlane(
 					message: `estimated spend ${spendEstimateUsd} USD exceeds per-resolution cap ${billing.spendCapUsd} USD`,
 				});
 			}
-			const remaining =
-				billing.budgetUsd -
-				usage.spentUsd -
-				[...held.values()].reduce((sum, entry) => sum + entry.amount, 0);
-			if (!billing.budgetUnlimited && spendEstimateUsd > remaining) {
+			const exposure = [...held.values()].reduce(
+				(sum, entry) => addDecimal(sum, entry.exactAmount),
+				usage.spent,
+			);
+			if (
+				bounds.budget !== undefined &&
+				compareDecimal(addDecimal(exposure, estimate), bounds.budget) > 0
+			) {
+				const remaining = subtractDecimal(bounds.budget, exposure);
 				reasons.push({
 					plane: "billing",
 					code: "budget-exceeded",
-					message: `estimated spend ${spendEstimateUsd} USD exceeds metered remaining budget ${remaining} USD (${usage.spentUsd} USD observed across ${usage.sampleCount} meter.UsageRecorded facts)`,
+					message: `estimated spend ${spendEstimateUsd} USD exceeds metered remaining budget ${formatDecimal(remaining)} USD (${formatDecimal(usage.spent)} USD observed across ${usage.sampleCount} meter.UsageRecorded facts)`,
 				});
 			}
 			if (reasons.length === 0)
-				held.set(requestId, { amount: spendEstimateUsd, digest });
-			return { ok: reasons.length === 0, reasons };
+				held.set(requestId, {
+					amount: spendEstimateUsd,
+					exactAmount: estimate,
+					digest,
+				});
+			return reasons.length === 0
+				? { ok: true, reasons, reservationCreated: true }
+				: { ok: false, reasons, noReservationCreated: true };
 		},
 		release(requestId, confirmedUnused) {
 			if (confirmedUnused !== true)

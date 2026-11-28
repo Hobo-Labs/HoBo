@@ -9,7 +9,7 @@ const model=fileURLToPath(new URL('../models/PricingEligibility.tla',import.meta
 const scratch=mkdtempSync(path.join(os.tmpdir(),'hobo-pricing-legacy-'));
 try {
   copyFileSync(model,path.join(scratch,'PricingEligibility.tla'));
-  writeFileSync(path.join(scratch,'Legacy.cfg'),'SPECIFICATION Spec\nINVARIANT AllSelectionSafe\n');
+  writeFileSync(path.join(scratch,'Legacy.cfg'),'CONSTANTS CheckCompleteness = TRUE\n          PartialIneligible = TRUE\n          RequireEligible = TRUE\nSPECIFICATION Spec\nINVARIANT AllSelectionSafe\n');
   const result=spawnSync('java',['-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-workers','1','-config','Legacy.cfg','PricingEligibility.tla'],{cwd:scratch,encoding:'utf8'});
   if (result.error) throw result.error;
   const output=`${result.stdout}\n${result.stderr}`;

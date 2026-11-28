@@ -29,6 +29,7 @@ import {
 	deployInProcess,
 	destroyInProcess,
 	type InProcessDeployment,
+	InProcessStartupCleanupError,
 } from "./lanes/in-process.js";
 import {
 	createFetchReadinessProbe,
@@ -114,6 +115,12 @@ interface HarnessState {
 	readonly asserted: Set<string>;
 }
 
+interface HarnessEntry {
+	readonly state: Promise<HarnessState>;
+	closing?: Promise<void>;
+	closeFailure?: { readonly cause: unknown };
+}
+
 function unknownAlias(alias: string, known: readonly string[]): never {
 	throw new TestHarnessError(
 		"HARNESS_ALIAS_UNKNOWN",
@@ -191,7 +198,7 @@ function buildGraph(
 	return Object.freeze({
 		stage,
 		lane,
-		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: this preserves the existing caller-typed open binding map.
+		/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the existing outputs contract lets its caller choose the expected binding type. */
 		outputs<T = Record<string, unknown>>(): T {
 			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: each value comes from the parsed deployment bindings.
 			const record: Record<string, unknown> = {};
@@ -202,6 +209,7 @@ function buildGraph(
 			// SAFETY: the caller selects the existing generic outputs view.
 			return Object.freeze(record) as T;
 		},
+		/* oxlint-enable anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion */
 		resource(alias: string): ResourceHandle {
 			const handle = handles.get(alias);
 			if (handle === undefined) unknownAlias(alias, aliases);
@@ -343,6 +351,8 @@ export interface CreateTestHarnessInternals {
 	readonly probe?: ReadinessProbe;
 	/** Injectable environment for the ephemeral-camp credential gate. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly deployInProcess?: typeof deployInProcess;
+	readonly destroyInProcess?: typeof destroyInProcess;
 }
 
 /* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: Bindle identities are accepted at the public boundary and parsed by deployInProcess before use. */
@@ -365,8 +375,9 @@ export function createTestHarness(
 			: undefined;
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
-	const states = new Map<unknown, Promise<HarnessState>>();
-	const destroying = new Map<unknown, Set<Promise<void>>>();
+	const deployLane = internals.deployInProcess ?? deployInProcess;
+	const destroyLane = internals.destroyInProcess ?? destroyInProcess;
+	const states = new Map<unknown, HarnessEntry>();
 	const deployments = new Map<unknown, Set<InProcessDeployment>>();
 	const deploying = new AsyncLocalStorage<{
 		bindle: unknown;
@@ -376,14 +387,21 @@ export function createTestHarness(
 
 	async function ensure(bindle: unknown): Promise<HarnessState> {
 		const existing = states.get(bindle);
-		if (existing !== undefined) return existing;
-		const pending = (async (): Promise<HarnessState> => {
+		if (existing?.closing !== undefined) {
+			await existing.closing.catch(() => undefined);
+			if (existing.closeFailure !== undefined)
+				throw existing.closeFailure.cause;
+			return ensure(bindle);
+		}
+		if (existing?.closeFailure !== undefined) throw existing.closeFailure.cause;
+		if (existing !== undefined) return existing.state;
+		const pending = Promise.resolve().then(async (): Promise<HarnessState> => {
 			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
 			const frame = { bindle, active: true };
 			let deployment: InProcessDeployment;
 			try {
 				deployment = await deploying.run(frame, () =>
-					deployInProcess(bindle, stage, options.emulators),
+					deployLane(bindle, stage, options.emulators),
 				);
 			} finally {
 				frame.active = false;
@@ -398,15 +416,19 @@ export function createTestHarness(
 				handles: deployment.handles,
 				asserted,
 			};
+			latest = state;
 			return state;
-		})();
-		states.set(bindle, pending);
+		});
+		const entry: HarnessEntry = { state: pending };
+		states.set(bindle, entry);
 		try {
-			const state = await pending;
-			if (states.get(bindle) === pending) latest = state;
-			return state;
+			return await pending;
 		} catch (cause) {
-			if (states.get(bindle) === pending) states.delete(bindle);
+			if (cause instanceof InProcessStartupCleanupError) {
+				entry.closeFailure = { cause };
+			} else if (states.get(bindle) === entry && entry.closing === undefined) {
+				states.delete(bindle);
+			}
 			throw cause;
 		}
 	}
@@ -424,31 +446,47 @@ export function createTestHarness(
 					);
 				for (const deployment of deployments.get(bindle) ?? [])
 					assertNotInScheduleHandler(deployment.schedules.values());
-				const pending = states.get(bindle);
-				if (pending !== undefined) {
-					states.delete(bindle);
-					const cleanups = destroying.get(bindle) ?? new Set<Promise<void>>();
-					destroying.set(bindle, cleanups);
-					const cleanup = (async () => {
-						const state = await pending;
-						if (latest === state) latest = undefined;
-						try {
-							await destroyInProcess(state.deployment);
-						} finally {
-							const activeDeployments = deployments.get(bindle);
-							activeDeployments?.delete(state.deployment);
-							if (activeDeployments?.size === 0) deployments.delete(bindle);
-						}
-					})();
-					cleanups.add(cleanup);
+				const entry = states.get(bindle);
+				if (entry === undefined) return;
+				if (entry.closing !== undefined) return entry.closing;
+				const closing = (async (): Promise<void> => {
+					let state: HarnessState;
 					try {
-						await cleanup;
-					} finally {
-						cleanups.delete(cleanup);
-						if (cleanups.size === 0) destroying.delete(bindle);
+						state = await entry.state;
+					} catch (cause) {
+						if (cause instanceof InProcessStartupCleanupError) {
+							try {
+								await cause.retryCleanup();
+							} catch (cleanupCause) {
+								entry.closeFailure = { cause: cleanupCause };
+								throw cleanupCause;
+							}
+							delete entry.closeFailure;
+							if (states.get(bindle) === entry) states.delete(bindle);
+							return;
+						}
+						if (states.get(bindle) === entry) states.delete(bindle);
+						throw cause;
 					}
+					if (latest === state) latest = undefined;
+					try {
+						await destroyLane(state.deployment);
+					} catch (cause) {
+						entry.closeFailure = { cause };
+						throw cause;
+					}
+					const activeDeployments = deployments.get(bindle);
+					activeDeployments?.delete(state.deployment);
+					if (activeDeployments?.size === 0) deployments.delete(bindle);
+					delete entry.closeFailure;
+					if (states.get(bindle) === entry) states.delete(bindle);
+				})();
+				entry.closing = closing;
+				try {
+					await closing;
+				} finally {
+					if (entry.closing === closing) delete entry.closing;
 				}
-				await Promise.all(destroying.get(bindle) ?? []);
 			};
 		},
 		async untilReady(

@@ -7,10 +7,13 @@ export {
 } from "./connectors.js";
 export {
 	buildDeploymentRequestFromParts,
+	type LocalHostingAuthorizationContext,
 	parseBindleDeploymentRequest,
+	prepareYardHostingWork,
 	resolveBindleDeployment,
 	type YardFirstPlacementDeps,
 	type YardFirstPlacementResult,
+	type YardHostingWorkInput,
 } from "./deploy.js";
 export {
 	createAwsYardEventStoreFoldResolver,
@@ -52,6 +55,14 @@ export {
 	type YardGenerationConnector,
 } from "./generation.js";
 export {
+	createSqliteYardGenerationQuotaAuthority,
+	type YardGenerationQuotaAuthority,
+	type YardGenerationQuotaClaim,
+	YardGenerationQuotaDeniedError,
+	type YardGenerationQuotaRequest,
+	type YardQuotaBaselineEntry,
+} from "./generation-quota.js";
+export {
 	createYardInventory,
 	createYardRuntimeCatalog,
 	localYardInstance,
@@ -76,6 +87,7 @@ export {
 	type ExecutionUnit,
 	emptyYardLayout,
 	type JsonValue,
+	type LocalHostingProof,
 	type PrimitiveResolverConfig,
 	type PrimitiveResolverDescriptor,
 	parseCampLayout,
@@ -103,3 +115,7 @@ export {
 	type YardRuntimeRegistration,
 	type YardSelectionMode,
 } from "./types.js";
+export {
+	decodeBindleDeploymentRequest,
+	encodeBindleDeploymentRequest,
+} from "./wire.js";

@@ -18,8 +18,7 @@ import {
 	isSupportedPricingRealm,
 	type JsonValue,
 } from "./json.js";
-import { quoteScenarioV2 } from "./quote.js";
-import { utcPricingTimeOrder } from "./time-order.js";
+import { quoteScenario } from "./quote.js";
 import { isQuoteVector } from "./types.js";
 
 const cloneData = structuredClone;
@@ -278,7 +277,7 @@ export function quoteAvailablePricing(
 			);
 		}
 	}
-	const quote = quoteScenarioV2(scenario);
+	const quote = quoteScenario(scenario);
 	if (!isQuoteVector(quote))
 		return failed(
 			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
@@ -314,7 +313,6 @@ export function quoteAvailablePricing(
 			agreement,
 			scenario.at,
 			scenario.horizon,
-			utcPricingTimeOrder,
 		);
 		if (
 			rateCard.charges.length === 0 ||

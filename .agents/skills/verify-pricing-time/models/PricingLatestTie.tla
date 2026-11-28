@@ -1,12 +1,13 @@
 ------------------------- MODULE PricingLatestTie -------------------------
 EXTENDS Naturals
+CONSTANTS RejectConflict
 VARIABLES version, timeA, timeB, valueA, valueB, phase, orderAB, orderBA
 vars == <<version,timeA,timeB,valueA,valueB,phase,orderAB,orderBA>>
 Init == /\ version \in {"old","v7"} /\ timeA \in 0..1 /\ timeB \in 0..1
         /\ valueA \in 0..1 /\ valueB \in 0..1 /\ phase = "received"
         /\ orderAB = 0 /\ orderBA = 0
 Choose == /\ phase = "received"
-          /\ IF version = "v7" /\ timeA = timeB /\ valueA # valueB
+          /\ IF version = "v7" /\ RejectConflict /\ timeA = timeB /\ valueA # valueB
              THEN /\ phase' = "rejected" /\ UNCHANGED <<orderAB,orderBA>>
              ELSE /\ phase' = "rated"
                   /\ orderAB' = IF timeA >= timeB THEN valueA ELSE valueB
@@ -19,6 +20,8 @@ TypeOK == /\ version \in {"old","v7"} /\ timeA \in 0..1 /\ timeB \in 0..1
           /\ valueA \in 0..1 /\ valueB \in 0..1 /\ phase \in {"received","rated","rejected"}
           /\ orderAB \in 0..1 /\ orderBA \in 0..1
 CurrentStable == version = "v7" /\ phase = "rated" => orderAB = orderBA
+Stable == CurrentStable
 CurrentNoConflict == version = "v7" /\ phase = "rated" => timeA # timeB \/ valueA = valueB
+NoConflict == CurrentNoConflict
 AllStable == phase = "rated" => orderAB = orderBA
 =============================================================================

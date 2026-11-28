@@ -1,3 +1,8 @@
+import {
+	addFinancialMilliseconds,
+	compareFinancialTime,
+	validFinancialTime,
+} from "@hobo/broker";
 import { evaluateBudgetPolicy } from "@hobo/core";
 import { createDispatcherRegistry, decideDispatch } from "@hobo/dispatcher";
 import type {
@@ -89,12 +94,11 @@ export function shouldCountLocalUsage(
 	lease: Lease,
 	observedAt: string,
 ): boolean {
-	const completed = Date.parse(lease.usageCompletedAt || lease.settledAt);
-	const observed = Date.parse(observedAt);
+	const completed = lease.usageCompletedAt || lease.settledAt;
 	return (
-		!Number.isFinite(completed) ||
-		!Number.isFinite(observed) ||
-		completed >= observed
+		!validFinancialTime(completed) ||
+		!validFinancialTime(observedAt) ||
+		compareFinancialTime(completed, observedAt) >= 0
 	);
 }
 
@@ -108,7 +112,7 @@ export function route(
 	const refuse = (code: string, reason: string, offerId = "") => {
 		options.onRefusal?.({ code, reason, offerId });
 	};
-	if (!Number.isFinite(Date.parse(now))) {
+	if (!validFinancialTime(now)) {
 		refuse(
 			"budget.invalid-time",
 			"CI routing requires an authoritative current time",
@@ -138,8 +142,8 @@ export function route(
 	const strategy = common?.objective ?? account.routingStrategy;
 	if (
 		account.usageObservedAt &&
-		(!Number.isFinite(Date.parse(account.usageObservedAt)) ||
-			Date.parse(account.usageObservedAt) > Date.parse(now))
+		(!validFinancialTime(account.usageObservedAt) ||
+			compareFinancialTime(account.usageObservedAt, now) > 0)
 	)
 		return undefined;
 	const financialScope = (lease: Lease) =>
@@ -155,6 +159,13 @@ export function route(
 		(lease) => financialScope(lease) && lease.state === "completed",
 	);
 	const minutes = account.maxRuntimeMinutes + account.startupMinutes;
+	let requiredUntil: string;
+	try {
+		requiredUntil = addFinancialMilliseconds(now, minutes * 60_000);
+	} catch {
+		refuse("budget.invalid-time", "CI duration cannot be represented");
+		return undefined;
+	}
 	const held = active.reduce((sum, lease) => sum + lease.reservedPaidMicros, 0);
 	const spent =
 		account.spentMicros +
@@ -215,11 +226,11 @@ export function route(
 		if (
 			!offer.enabled ||
 			!offer.bridgeAcknowledged ||
-			!Number.isFinite(Date.parse(offer.observedAt)) ||
-			!Number.isFinite(Date.parse(offer.validUntil)) ||
-			Date.parse(offer.observedAt) > Date.parse(now) ||
-			Date.parse(offer.validUntil) <= Date.parse(now) ||
-			Date.parse(offer.validUntil) < Date.parse(now) + minutes * 60000
+			!validFinancialTime(offer.observedAt) ||
+			!validFinancialTime(offer.validUntil) ||
+			compareFinancialTime(offer.observedAt, now) > 0 ||
+			compareFinancialTime(offer.validUntil, now) <= 0 ||
+			compareFinancialTime(offer.validUntil, requiredUntil) < 0
 		)
 			return [];
 		const accounting = providerAccounting.get(offer);
@@ -274,11 +285,17 @@ export function route(
 			const extraMs = offer.sandboxPricing.proxyVmRequired
 				? offer.sandboxPricing.proxyVmExtraMs
 				: 0;
-			if (
-				Date.parse(offer.validUntil) <
-				Date.parse(now) + minutes * 60000 + extraMs
-			)
+			try {
+				if (
+					compareFinancialTime(
+						offer.validUntil,
+						addFinancialMilliseconds(requiredUntil, extraMs),
+					) < 0
+				)
+					return [];
+			} catch {
 				return [];
+			}
 			try {
 				const quote = sandboxReservationQuote(
 					offer.sandboxPricing,
@@ -317,11 +334,20 @@ export function route(
 				(offer.sandboxPricing?.proxyVmRequired
 					? offer.sandboxPricing.proxyVmExtraMs
 					: 0);
-			if (
-				common.periodKind === "fixed-window" &&
-				(common.periodEndsAtMs === undefined ||
-					Date.parse(now) + durationMs > common.periodEndsAtMs)
-			) {
+			let periodUncovered = false;
+			if (common.periodKind === "fixed-window") {
+				try {
+					periodUncovered =
+						common.periodEndsAtMs === undefined ||
+						compareFinancialTime(
+							addFinancialMilliseconds(now, durationMs),
+							new Date(common.periodEndsAtMs).toISOString(),
+						) > 0;
+				} catch {
+					periodUncovered = true;
+				}
+			}
+			if (periodUncovered) {
 				refuse(
 					"budget.period-uncovered",
 					"CI host duration extends beyond the funded period",

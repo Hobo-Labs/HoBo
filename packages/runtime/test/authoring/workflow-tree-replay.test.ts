@@ -130,12 +130,14 @@ describe("nested workflow replay", () => {
 		});
 		const live = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${live.runId}`);
-		const incomplete = events.filter(
-			(event) =>
-				event.type !== "run.StepCompleted" ||
-				!isJsonObject(event.data) ||
-				event.data.name !== "child",
-		);
+		const incomplete = events
+			.filter(
+				(event) =>
+					event.type !== "run.StepCompleted" ||
+					!isJsonObject(event.data) ||
+					event.data.name !== "child",
+			)
+			.map((event, index) => ({ ...event, seq: index + 1 }));
 		await expect(
 			replayRun(
 				{ ...engine.store, readStream: async () => incomplete },
@@ -248,16 +250,12 @@ describe("nested workflow replay", () => {
 		});
 		const live = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${live.runId}`);
-		const legacy = events
+		const withoutCompletion = events
 			.filter((event) => event.type !== "run.SleepCompleted")
-			.map((event) => {
-				if (event.type !== "run.Started" || !isJsonObject(event.data))
-					return event;
-				return { ...event, data: { ...event.data, commandTreeVersion: 1 } };
-			});
+			.map((event, index) => ({ ...event, seq: index + 1 }));
 		await expect(
 			replayRun(
-				{ ...engine.store, readStream: async () => legacy },
+				{ ...engine.store, readStream: async () => withoutCompletion },
 				live.runId,
 				engine.toReplayDefinition(wf),
 				null,

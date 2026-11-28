@@ -187,6 +187,7 @@ it("discovers page-two host completion after disk reopen and preserves settlemen
 	h.api.host.display_title = `HoBo lease ${lease.id}`;
 	h.api.host.status = "completed";
 	h.api.jobStatus = "completed";
+	h.clock.now = h.api.host.updated_at;
 	const paths: string[] = [];
 	const send = h.api.request.bind(h.api);
 	h.api.request = async (installation, path, method = "GET", body) => {

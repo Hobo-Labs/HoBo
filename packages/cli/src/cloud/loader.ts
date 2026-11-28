@@ -37,8 +37,13 @@ export const DEFAULT_COMPONENT_HOST = {
 	version: "46.0.1",
 } as const;
 
+export interface BindleLoaderOptions {
+	readonly importModule?: (path: string) => Promise<object>;
+}
+
 export async function loadBindleDefinition(
 	projectDir: string,
+	options: BindleLoaderOptions = {},
 ): Promise<BindleDefinition | null> {
 	for (const candidate of BINDLE_SOURCE_CANDIDATES) {
 		if (candidate === "dist/app.js") {
@@ -56,9 +61,16 @@ export async function loadBindleDefinition(
 		let module: BindleModule;
 		try {
 			// SAFETY: ESM namespace from a local bindle source file.
-			module = (await import(pathToFileURL(absolute).href)) as BindleModule;
+			module = (
+				options.importModule
+					? await options.importModule(absolute)
+					: await import(pathToFileURL(absolute).href)
+			) as BindleModule;
 		} catch (error) {
-			if (isUncompiledTypeScript(candidate, error)) {
+			if (
+				options.importModule === undefined &&
+				isUncompiledTypeScript(candidate, error)
+			) {
 				continue;
 			}
 			throw new BindleImportError(absolute, error);

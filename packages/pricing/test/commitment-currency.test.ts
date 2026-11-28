@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { CommitmentAmountSchema } from "../src/_generated/pricing_pb.js";
-import { quoteScenarioV2 } from "../src/quote.js";
+import { quoteScenario } from "../src/quote.js";
 import {
 	commitmentState,
 	makeScenario,
@@ -39,7 +39,7 @@ describe("spend commitment currency", () => {
 		if (value?.case !== "money") throw new Error("missing money fixture");
 		value.value.currency = "EUR";
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({ code: "CROSS_CURRENCY" });
+		expect(quoteScenario(scenario)).toMatchObject({ code: "CROSS_CURRENCY" });
 	});
 
 	it.each([
@@ -55,13 +55,13 @@ describe("spend commitment currency", () => {
 		if (field === "amount") commitment.commitment.amount = quantity;
 		else commitment.used = quantity;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});
 
 	it("rates a consistently denominated spend commitment", () => {
-		expect(quoteScenarioV2(scenarioWithCommitment())).toMatchObject({
+		expect(quoteScenario(scenarioWithCommitment())).toMatchObject({
 			consumption: [
 				{ kind: "commitment", quantity: { decimal: "4", unit: "USD" } },
 			],
@@ -78,7 +78,7 @@ describe("spend commitment currency", () => {
 		commitment.scope.dimensions = ["other"];
 		commitment.kind = kind;
 		rehashScenario(scenario);
-		expect(quoteScenarioV2(scenario)).toMatchObject({
+		expect(quoteScenario(scenario)).toMatchObject({
 			code: "INVALID_PRICING_INPUT",
 		});
 	});

@@ -7,6 +7,11 @@ import { describe, expect, it } from "vitest";
 import { initBareMetalYard } from "../src/bare-metal-yard.js";
 import { resolveBrokerTarget } from "../src/broker-target.js";
 import { createBrokerAwareUpCommand } from "../src/broker-up-command.js";
+import { temporaryHelloBindle } from "./helpers/temporary-hello-bindle.js";
+
+const helloBindleDir = fileURLToPath(
+	new URL("../../../examples/hello-bindle", import.meta.url),
+);
 
 describe("self-hosted broker without hosted services", () => {
 	it.each([
@@ -17,7 +22,9 @@ describe("self-hosted broker without hosted services", () => {
 		flags,
 	}) => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-self-hosted-"));
+		let projectDir: string | undefined;
 		try {
+			projectDir = await temporaryHelloBindle(helloBindleDir);
 			initBareMetalYard({ hoboHome, componentHost: "local" });
 			let remoteCalls = 0;
 			const cli = createHoboCli({
@@ -39,13 +46,9 @@ describe("self-hosted broker without hosted services", () => {
 			});
 			const result = await cli.run(
 				["up", ...flags, "--home", hoboHome, "--json"],
-				{
-					cwd: fileURLToPath(
-						new URL("../../../examples/hello-bindle", import.meta.url),
-					),
-				},
+				{ cwd: projectDir },
 			);
-			expect(result.exitCode).toBe(0);
+			expect(result.exitCode, result.stdout).toBe(0);
 			expect(JSON.parse(result.stdout)).toMatchObject({
 				ok: true,
 				data: {
@@ -56,6 +59,7 @@ describe("self-hosted broker without hosted services", () => {
 			});
 			expect(remoteCalls).toBe(0);
 		} finally {
+			if (projectDir) await rm(projectDir, { recursive: true, force: true });
 			await rm(hoboHome, { recursive: true, force: true });
 		}
 	});
@@ -72,7 +76,9 @@ describe("self-hosted broker without hosted services", () => {
 		ttlSeconds,
 	}) => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-self-hosted-ttl-"));
+		let projectDir: string | undefined;
 		try {
+			projectDir = await temporaryHelloBindle(helloBindleDir);
 			initBareMetalYard({ hoboHome, componentHost: "local" });
 			const asked: number[] = [];
 			const cli = createHoboCli({
@@ -87,13 +93,15 @@ describe("self-hosted broker without hosted services", () => {
 					}),
 				},
 			});
-			await cli.run(["up", ...flags, "--home", hoboHome, "--json"], {
-				cwd: fileURLToPath(
-					new URL("../../../examples/hello-bindle", import.meta.url),
-				),
-			});
-			expect(asked).toEqual([ttlSeconds]);
+			const result = await cli.run(
+				["up", ...flags, "--home", hoboHome, "--json"],
+				{
+					cwd: projectDir,
+				},
+			);
+			expect(asked, result.stdout).toEqual([ttlSeconds]);
 		} finally {
+			if (projectDir) await rm(projectDir, { recursive: true, force: true });
 			await rm(hoboHome, { recursive: true, force: true });
 		}
 	});

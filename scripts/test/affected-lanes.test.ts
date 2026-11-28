@@ -265,6 +265,77 @@ describe("affected-lanes", () => {
 		assert.equal(lanesWithRoots(["turbo.json"], files).mode, "all");
 	});
 
+	it("selects only the package a turbo.json package task names", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({
+					tasks: {
+						build: { dependsOn: ["^build"] },
+						"//#test:unit:root:0": { inputs: ["old"] },
+					},
+				}),
+				head: JSON.stringify({
+					tasks: {
+						build: { dependsOn: ["^build"] },
+						"//#test:unit:root:0": { inputs: ["new"] },
+						"@hobo/hobo#build": {
+							dependsOn: ["^build", "@hobo/adapter-hono#build"],
+						},
+					},
+				}),
+			},
+		};
+		assert.deepEqual(lanesWithRoots(["turbo.json"], files), {
+			mode: "filtered",
+			filters: ["--filter=./packages/hobo"],
+		});
+		assert.deepEqual(
+			lanesWithRoots(["turbo.json", "packages/cli/src/a.ts"], files),
+			{
+				mode: "filtered",
+				filters: ["--filter=./packages/cli", "--filter=./packages/hobo"],
+			},
+		);
+		assert.deepEqual(
+			mainGateScope(["turbo.json"], present, rootReader(files)),
+			{ mode: "affected" },
+		);
+	});
+
+	it("still widens when a shared turbo task changes beside a package task", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({ tasks: { test: { inputs: ["old"] } } }),
+				head: JSON.stringify({
+					tasks: {
+						test: { inputs: ["new"] },
+						"@hobo/hobo#build": { dependsOn: ["^build"] },
+					},
+				}),
+			},
+		};
+		assert.deepEqual(lanesWithRoots(["turbo.json"], files), {
+			mode: "all",
+			reason: "workspace-wide input changed: turbo.json",
+		});
+	});
+
+	it("runs everything when a turbo.json package task names an unknown package", () => {
+		const files = {
+			"turbo.json": {
+				base: JSON.stringify({ tasks: {} }),
+				head: JSON.stringify({
+					tasks: { "@hobo/not-a-workspace-package#build": { outputs: [] } },
+				}),
+			},
+		};
+		assert.deepEqual(lanesWithRoots(["turbo.json"], files), {
+			mode: "all",
+			reason:
+				"turbo.json task names a package outside the workspace: @hobo/not-a-workspace-package",
+		});
+	});
+
 	it("runs everything for missing or unparsable root versions", () => {
 		const cases: Readonly<Record<string, RootVersions>>[] = [
 			{ "package.json": { head: JSON.stringify({ scripts: {} }) } },

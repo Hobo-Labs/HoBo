@@ -1,4 +1,5 @@
 import { clone, create, toJsonString } from "@bufbuild/protobuf";
+import { ceilFinancialMinutes } from "@hobo/broker";
 import { stableHash } from "@hobo/dispatcher";
 import {
 	type Account,
@@ -127,7 +128,7 @@ export class PipelineScheduler {
 				this.now(),
 			);
 			if (!started) throw new Error("pipeline reservation lost");
-			const start = Date.parse(this.now());
+			const start = this.now();
 			try {
 				const scope: PipelineExecutionScope = {
 					...this.usageScope(lease),
@@ -212,10 +213,7 @@ export class PipelineScheduler {
 					pending.error = "native usage finality is pending";
 					return pending;
 				}
-				const minutes = Math.max(
-					1,
-					Math.ceil((Date.parse(ended) - start) / 60000),
-				);
+				const minutes = Math.max(1, ceilFinancialMinutes(start, ended));
 				const settled = this.store.settle(
 					lease.id,
 					0,

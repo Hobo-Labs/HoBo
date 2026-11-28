@@ -13,6 +13,7 @@ import {
 	resolveBindlePlacement,
 	WASM_SANDBOX_PROVIDER_ID,
 } from "../src/index.js";
+import { temporaryHelloBindle } from "./helpers/temporary-hello-bindle.js";
 
 const helloBindleDir = fileURLToPath(
 	new URL("../../../examples/hello-bindle", import.meta.url),
@@ -41,7 +42,7 @@ describe("embedded broker-runtime", () => {
 				config: { componentHost: string };
 			};
 		};
-		expect(envelope.ok).toBe(true);
+		expect(envelope.ok, init.stdout).toBe(true);
 		expect(envelope.data.broker.brokerId).toMatch(/^broker:local\//);
 		expect(["wasm", "isolated-wasm", "local"]).toContain(
 			envelope.data.broker.preferredComponentHost,
@@ -120,12 +121,14 @@ describe("embedded broker-runtime", () => {
 	it("hobo up deploys hello-bindle on local yard (broker or yard lane)", async () => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-broker-up-"));
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
+		const projectDir = await temporaryHelloBindle(helloBindleDir);
+		cleanups.push(() => rm(projectDir, { recursive: true, force: true }));
 		const cli = createComposedHoboCli();
 		cleanups.push(async () => {
-			await cli.run(["down", "--json"], { cwd: helloBindleDir });
+			await cli.run(["down", "--json"], { cwd: projectDir });
 		});
 		const up = await cli.run(["up", "--home", hoboHome, "--json"], {
-			cwd: helloBindleDir,
+			cwd: projectDir,
 		});
 		// SAFETY: assertion required at this I/O or test boundary.
 		const envelope = JSON.parse(up.stdout) as {
@@ -141,7 +144,7 @@ describe("embedded broker-runtime", () => {
 				mode?: string;
 			};
 		};
-		expect(envelope.ok).toBe(true);
+		expect(envelope.ok, up.stdout).toBe(true);
 		expect(envelope.code).toBe("HOBO_OK");
 		// Composed CLI may take event-sourced yard lane or broker-runtime path.
 		if (envelope.data.bindleName !== undefined) {

@@ -1,5 +1,7 @@
 package data_models
 
+import "list"
+
 #ScopeKind: "bindle" | "camp" | "yard" | "junction"
 
 #PlacementObjective: "min-cost" | "pinned"
@@ -99,6 +101,7 @@ package data_models
 	request_id:     string & !=""
 	scope:          #TopologyScope
 	requirements: [...#ResourceRequirement] & [_, ...]
+	_unique_resource_ids: true & list.UniqueItems([for requirement in requirements {requirement.resource_id}])
 	spend_estimate_usd: number & >=0
 	guest?:             #GuestResolutionInput
 }
@@ -207,7 +210,10 @@ package data_models
 	placements: [...#PlacementDecision] & [_, ...]
 	station_id?: string
 	rail_hash?:  string
-	guest?:      #GuestResolutionEvidence
+	guest?:                  #GuestResolutionEvidence
+	quote_hash?:             string & =~"^sha256:"
+	pricing_binding_digest?: string & =~"^sha256:"
+	authorized_usd?:         number & >=0
 }
 
 #RejectionPlane: "policy" | "contracts" | "billing" | "placement" | "connectors" | "residency"

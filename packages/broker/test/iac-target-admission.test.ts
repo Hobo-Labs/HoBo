@@ -1,25 +1,16 @@
-import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	clone,
-	create,
-	fromBinary,
-	toBinary,
-	toJsonString,
-} from "@bufbuild/protobuf";
+import { clone, create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
 	QuoteScenarioSchema,
 	quoteTargetPricing,
-	stableHash,
 	targetPricingModel,
 	targetPricingUnavailable,
 } from "@hobo/pricing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	allowanceState,
 	commitmentState,
 	creditState,
 	fixedCharge,
@@ -39,7 +30,8 @@ import {
 	EntitlementClaimSchema,
 	type GateDecision,
 	HostingPolicyProofSchema,
-	HostingQuoteSchema,
+	type HostingQuote,
+	hostingQuoteDigest,
 	IacTargetLiabilityEvidenceSchema,
 } from "../src/index.js";
 
@@ -170,7 +162,7 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 		verifyLiability: async () => true,
 		authorize: async (input: {
 			requestDigest: string;
-			quote: { quoteId: string };
+			quote: HostingQuote;
 			identity: {
 				tenantId: string;
 				budgetId: string;
@@ -184,6 +176,7 @@ function dependencies(ledger: ReturnType<typeof authority>) {
 				proof: create(HostingPolicyProofSchema, {
 					requestDigest: input.requestDigest,
 					quoteId: input.quote.quoteId,
+					quoteDigest: hostingQuoteDigest(input.quote),
 					identity: input.identity,
 					effect: "allow",
 					policyHash: "sha256:policy",
@@ -724,7 +717,7 @@ describe("provider-neutral IaC target budget admission", () => {
 			});
 			const priced = quoteTargetPricing(inventory, pricing);
 			if (!priced.ok) throw new Error(priced.reason);
-			expect(priced.quote.ratingAlgorithmVersion).toBe("pricing-rating/v2");
+			expect(priced.quote.ratingAlgorithmVersion).toBe("pricing-rating/v1");
 			evidence.inventoryHash = priced.inventoryHash;
 			evidence.modelHash = priced.modelHash;
 			evidence.quoteHash = priced.quote.quoteHash;
@@ -759,146 +752,6 @@ describe("provider-neutral IaC target budget admission", () => {
 						reservedUnits: 5_000_000,
 					}),
 				]),
-			);
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("replays a legacy kindless allowance receipt", async () => {
-		const ledger = authority(3_000_000, true, ["account-a"], ["allowance-a"]);
-		try {
-			const { inventory, pricing, evidence } = fixture();
-			if (pricing.state.case !== "model")
-				throw new Error("missing model fixture");
-			pricing.state.value.scenario = makeScenario({
-				charges: [perUnitCharge("runtime", "minute", "1")],
-				candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
-				allowances: [allowanceState("allowance-a", "10", "0")],
-			});
-			const priced = quoteTargetPricing(inventory, pricing);
-			if (!priced.ok) throw new Error(priced.reason);
-			evidence.inventoryHash = priced.inventoryHash;
-			evidence.modelHash = priced.modelHash;
-			evidence.quoteHash = priced.quote.quoteHash;
-			evidence.entitlementClaims = [
-				create(EntitlementClaimSchema, {
-					bucketId: "allowance-a",
-					kind: "allowance",
-					unit: "minute",
-					units: 4,
-				}),
-			];
-			const request = {
-				requestId: "legacy-allowance",
-				inventory,
-				pricing,
-				evidence,
-			};
-			const deps = dependencies(ledger);
-			expect(await admitIacTarget(request, deps)).toMatchObject({
-				status: "admitted",
-			});
-			const legacyAuthority = {
-				...deps.authority,
-				reserve: (input: Parameters<typeof ledger.reserve>[0]) => {
-					const row = ledger.reserve(input);
-					for (const claim of row.entitlementClaims) claim.kind = "";
-					const legacyQuote = clone(HostingQuoteSchema, input.quote);
-					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
-					row.quoteDigest = createHash("sha256")
-						.update(toJsonString(HostingQuoteSchema, legacyQuote))
-						.digest("hex");
-					return row;
-				},
-			};
-			expect(
-				await admitIacTarget(request, {
-					...deps,
-					authority: legacyAuthority,
-				}),
-			).toMatchObject({
-				status: "replay",
-				code: "EXECUTION_ALREADY_CLAIMED",
-				reservation: { entitlementClaims: [{ kind: "" }] },
-			});
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("replays a legacy priced reservation with empty evidence and receipt claims", async () => {
-		const { inventory, pricing, evidence } = fixture();
-		if (pricing.state.case !== "model")
-			throw new Error("missing model fixture");
-		pricing.state.value.scenario = makeScenario({
-			charges: [perUnitCharge("runtime", "minute", "1")],
-			candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
-			allowances: [allowanceState("allowance-a", "10", "0")],
-		});
-		const priced = quoteTargetPricing(inventory, pricing);
-		if (!priced.ok) throw new Error(priced.reason);
-		evidence.inventoryHash = priced.inventoryHash;
-		evidence.modelHash = priced.modelHash;
-		evidence.quoteHash = priced.quote.quoteHash;
-		evidence.entitlementClaims = [];
-		const request = {
-			requestId: "legacy-empty-claims",
-			inventory,
-			pricing,
-			evidence,
-		};
-		let legacyInput:
-			| Parameters<ReturnType<typeof authority>["reserve"]>[0]
-			| undefined;
-		const captureLedger = authority(
-			3_000_000,
-			true,
-			["account-a"],
-			["allowance-a"],
-		);
-		try {
-			const deps = dependencies(captureLedger);
-			await admitIacTarget(request, {
-				...deps,
-				authority: {
-					...deps.authority,
-					reserve: (input: Parameters<typeof captureLedger.reserve>[0]) => {
-						legacyInput = input;
-						throw new Error("captured legacy reservation input");
-					},
-				},
-			});
-		} finally {
-			captureLedger.close();
-		}
-		if (!legacyInput) throw new Error("legacy reservation input missing");
-		legacyInput.quote.entitlementClaims = [];
-		const ledger = authority(3_000_000, true, ["account-a"], ["allowance-a"]);
-		try {
-			const current = ledger.read(NOW);
-			if (!current.identity) throw new Error("budget identity missing");
-			ledger.reserve({
-				...legacyInput,
-				identity: current.identity,
-				expectedSeq: current.seq,
-			});
-			const executionDigest = stableHash({
-				kind: "iac-target-execution",
-				requestDigest: legacyInput.requestDigest,
-				planDigest: inventory.planDigest,
-			});
-			ledger.claimExecution({
-				reservationId: "iac:legacy-empty-claims",
-				requestDigest: legacyInput.requestDigest,
-				executionDigest,
-			});
-			expect(await admitIacTarget(request, dependencies(ledger))).toMatchObject(
-				{
-					status: "replay",
-					code: "EXECUTION_ALREADY_CLAIMED",
-					reservation: { entitlementClaims: [] },
-				},
 			);
 		} finally {
 			ledger.close();
@@ -1650,7 +1503,6 @@ describe("provider-neutral IaC target budget admission", () => {
 		const ledger = authority();
 		try {
 			const request = fixture();
-			request.evidence.maximumMicros = 1_500_000;
 			request.evidence.maximumMicrosExact = maximumMicrosExact;
 			const deps = dependencies(ledger);
 			const verifyLiability = vi.fn(deps.verifyLiability);
@@ -1668,57 +1520,6 @@ describe("provider-neutral IaC target budget admission", () => {
 			expect(verifyLiability).not.toHaveBeenCalled();
 			expect(authorize).not.toHaveBeenCalled();
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("admits legacy fixed64 maximumMicros evidence after binary decoding", async () => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicrosExact = undefined;
-			request.evidence.maximumMicros = 1_500_000;
-			const legacyBytes = toBinary(
-				IacTargetLiabilityEvidenceSchema,
-				request.evidence,
-			);
-			expect(legacyBytes.includes(0x41)).toBe(true);
-			expect(legacyBytes.includes(0x40)).toBe(false);
-			const legacyEvidence = fromBinary(
-				IacTargetLiabilityEvidenceSchema,
-				legacyBytes,
-			);
-			expect(legacyEvidence.maximumMicros).toBe(1_500_000);
-			expect(legacyEvidence.maximumMicrosExact).toBeUndefined();
-			await expect(
-				admitIacTarget(
-					{ requestId: "legacy-fixed64", ...request, evidence: legacyEvidence },
-					dependencies(ledger),
-				),
-			).resolves.toMatchObject({
-				status: "admitted",
-				quote: { liabilityBoundMicros: 1_500_000 },
-			});
-		} finally {
-			ledger.close();
-		}
-	});
-
-	it("rejects disagreeing maximumMicros and maximumMicrosExact", async () => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicros = 1;
-			await expect(
-				admitIacTarget(
-					{ requestId: "exact-precedence", ...request },
-					dependencies(ledger),
-				),
-			).resolves.toMatchObject({
-				status: "denied",
-				code: "LIABILITY_EVIDENCE_INVALID",
-			});
 		} finally {
 			ledger.close();
 		}
@@ -1742,43 +1543,6 @@ describe("provider-neutral IaC target budget admission", () => {
 		expect(decoded.maximumMicrosExact).toBe(evidence.maximumMicrosExact);
 		expect(decoded.entitlementClaims).toHaveLength(1);
 		expect(decoded.entitlementClaims[0]?.kind).toBe("allowance");
-	});
-
-	it.each([
-		["missing", undefined],
-		["NaN", Number.NaN],
-		["positive infinity", Number.POSITIVE_INFINITY],
-		["negative infinity", Number.NEGATIVE_INFINITY],
-		["fractional", 1_500_000.5],
-		["negative fractional", -0.5],
-		["negative", -1],
-		["non-safe integer", Number.MAX_SAFE_INTEGER + 1],
-		["huge finite", Number.MAX_VALUE],
-	] as const)("denies malformed legacy maximumMicros (%s) without throwing", async (label, maximumMicros) => {
-		const ledger = authority();
-		try {
-			const request = fixture();
-			request.evidence.maximumMicrosExact = undefined;
-			request.evidence.maximumMicros = maximumMicros;
-			const deps = dependencies(ledger);
-			const verifyLiability = vi.fn(deps.verifyLiability);
-			const authorize = vi.fn(deps.authorize);
-			await expect(
-				admitIacTarget(
-					{ requestId: `malformed-legacy-${label}`, ...request },
-					{ ...deps, verifyLiability, authorize },
-				),
-			).resolves.toMatchObject({
-				status: "denied",
-				code: "LIABILITY_EVIDENCE_INVALID",
-				budget: { evaluation: "unavailable", reservation: "not-created" },
-			});
-			expect(verifyLiability).not.toHaveBeenCalled();
-			expect(authorize).not.toHaveBeenCalled();
-			expect(ledger.read(NOW).reservedMicros).toBe(0);
-		} finally {
-			ledger.close();
-		}
 	});
 
 	it.each([
@@ -2320,6 +2084,30 @@ describe("provider-neutral IaC target budget admission", () => {
 			};
 			expect(
 				await admitIacTarget({ requestId: "approval", ...fixture() }, deps),
+			).toMatchObject({ status: "denied", code: "POLICY_NOT_ALLOWED" });
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it.each([
+		["empty", ""],
+		["foreign", "a".repeat(64)],
+	])("refuses a policy proof with a %s quote digest without a hold", async (_kind, quoteDigest) => {
+		const ledger = authority();
+		try {
+			const deps = dependencies(ledger);
+			const allow = deps.authorize;
+			deps.authorize = async (input) => {
+				const result = await allow(input);
+				return { ...result, proof: { ...result.proof, quoteDigest } };
+			};
+			expect(
+				await admitIacTarget(
+					{ requestId: `proof-digest-${_kind}`, ...fixture() },
+					deps,
+				),
 			).toMatchObject({ status: "denied", code: "POLICY_NOT_ALLOWED" });
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {

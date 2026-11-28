@@ -1,3 +1,4 @@
+import { approveLocalHosting } from "../../test/helpers/local-hosting.js";
 /**
  * Provider verification for Broker Yard-first placement surface.
  * Offline: real resolveBindleDeployment + fold path, no live cloud keys.
@@ -65,6 +66,7 @@ describe("BrokerYardPlacement provider verification", () => {
 		});
 		const result = await resolveBindleDeployment(deployment, {
 			brokerId: "broker:pact",
+			authorizeLocalHosting: approveLocalHosting,
 			catalog,
 			seedLocalYard: false,
 			priorEvents: [
