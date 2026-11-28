@@ -1,8 +1,10 @@
+import { randomBytes, randomUUID } from "node:crypto";
+
 import { parseBetterAuthConfig } from "@hobo/auth-adapter-contract";
-import { createMemorySecretsPort } from "@hobo/identity";
+import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
-import type { BetterAuthBundlePlanError } from "../src/errors.js";
+import { BetterAuthBundlePlanError } from "../src/errors.js";
 import {
 	campSecretNameFromBetterAuthRef,
 	wireBetterAuthSigningSecret,
@@ -43,6 +45,7 @@ describe("wireBetterAuthSigningSecret", () => {
 		expect(wire.secretRef).toBe(PORTS.signingSecretRef);
 		expect(wire.secretScheme).toBe("hobo-secret");
 		expect(wire.secretsPortId).toBe(port.id);
+		expect(wire.resolvedAtIso).toBe("2026-11-25T00:00:00.000Z");
 		expect(JSON.stringify(wire)).not.toContain(SYNTHETIC_SIGNING);
 	});
 
@@ -97,4 +100,138 @@ describe("wireBetterAuthSigningSecret", () => {
 			}),
 		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
 	});
+
+	it("refuses an empty secrets port id before accessing custody", async () => {
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		await expect(
+			wireBetterAuthSigningSecret(bundlePlan, unreadSecretsPort(""), {
+				campAuthority: "camp-prod",
+			}),
+		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
+	});
+
+	it("refuses a non-canonical wire timestamp before accessing custody", async () => {
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		await expect(
+			wireBetterAuthSigningSecret(
+				bundlePlan,
+				unreadSecretsPort("secrets:memory"),
+				{
+					campAuthority: "camp-prod",
+					now: "2026-11-25T00:00:00Z",
+				},
+			),
+		).rejects.toMatchObject({ code: "BETTER_AUTH_BUNDLE_PORT_INVALID" });
+	});
+
+	it("refuses when the locator would carry the signing material", async () => {
+		const material = randomBytes(32).toString("hex");
+		const secretRef = `hobo-secret://camp-prod/auth/${material}`;
+		const input = { ...CONFIG_INPUT, secretRef };
+		const ref = parseBetterAuthConfig(input).secretRef;
+		const bundlePlan = planBetterAuthBundle(input, {
+			...PORTS,
+			signingSecretRef: ref,
+		});
+		const port = createMemorySecretsPort();
+		await port.put(campSecretNameFromBetterAuthRef(ref, "camp-prod"), material);
+		let rejected: unknown;
+		try {
+			await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+				now: "2026-11-25T00:00:00.000Z",
+			});
+		} catch (error) {
+			rejected = error;
+		}
+		expect(rejected).toBeInstanceOf(BetterAuthBundlePlanError);
+		if (!(rejected instanceof BetterAuthBundlePlanError)) {
+			throw new Error("expected BetterAuthBundlePlanError");
+		}
+		expect(rejected.code).toBe("BETTER_AUTH_SIGNING_SECRET_EXPOSED");
+		expect(rejected.message.includes(material)).toBe(false);
+		expect(rejected.remediation.includes(material)).toBe(false);
+	});
+
+	it("refuses when the secrets port id would carry the signing material", async () => {
+		const material = randomBytes(32).toString("hex");
+		const port = createMemorySecretsPort({ id: `secrets:${material}` });
+		const name = campSecretNameFromBetterAuthRef(
+			PORTS.signingSecretRef,
+			"camp-prod",
+		);
+		await port.put(name, material);
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		let rejected: unknown;
+		try {
+			await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+				now: "2026-11-25T00:00:00.000Z",
+			});
+		} catch (error) {
+			rejected = error;
+		}
+		expect(rejected).toBeInstanceOf(BetterAuthBundlePlanError);
+		if (!(rejected instanceof BetterAuthBundlePlanError)) {
+			throw new Error("expected BetterAuthBundlePlanError");
+		}
+		expect(rejected.code).toBe("BETTER_AUTH_SIGNING_SECRET_EXPOSED");
+		expect(rejected.message.includes(material)).toBe(false);
+		expect(rejected.remediation.includes(material)).toBe(false);
+	});
+
+	it("refuses when signing material is only a cross-field splice in the wire JSON", async () => {
+		const portId = randomUUID();
+		const now = "2026-11-25T00:00:00.000Z";
+		const material = `signing-key","secretScheme":"hobo-secret","secretsPortId":"${portId}`;
+		const wire = {
+			secretRef: PORTS.signingSecretRef,
+			secretScheme: "hobo-secret",
+			secretsPortId: portId,
+			resolvedAtIso: now,
+		};
+		expect(portId.length).toBeGreaterThan(0);
+		expect(wire.secretRef.includes(material)).toBe(false);
+		expect(wire.secretScheme.includes(material)).toBe(false);
+		expect(wire.secretsPortId.includes(material)).toBe(false);
+		expect(wire.resolvedAtIso.includes(material)).toBe(false);
+		expect(JSON.stringify(wire).includes(material)).toBe(true);
+
+		const port = createMemorySecretsPort({ id: portId });
+		await port.put(
+			campSecretNameFromBetterAuthRef(PORTS.signingSecretRef, "camp-prod"),
+			material,
+		);
+		const bundlePlan = planBetterAuthBundle(CONFIG_INPUT, PORTS);
+		let rejected: unknown;
+		try {
+			await wireBetterAuthSigningSecret(bundlePlan, port, {
+				campAuthority: "camp-prod",
+				now,
+			});
+		} catch (error) {
+			rejected = error;
+		}
+		expect(rejected).toBeInstanceOf(BetterAuthBundlePlanError);
+		if (!(rejected instanceof BetterAuthBundlePlanError)) {
+			throw new Error("expected BetterAuthBundlePlanError");
+		}
+		expect(rejected.code).toBe("BETTER_AUTH_SIGNING_SECRET_EXPOSED");
+		expect(rejected.message.includes(material)).toBe(false);
+		expect(rejected.remediation.includes(material)).toBe(false);
+	});
 });
+
+function unreadSecretsPort(id: string): SecretsPort {
+	const deny = (): never => {
+		throw new Error("custody was accessed");
+	};
+	return {
+		id,
+		kind: "memory-fixture",
+		put: deny,
+		access: deny,
+		accessVersion: deny,
+		listVersions: deny,
+	};
+}
