@@ -58,17 +58,21 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	});
 
 	it("requires a private owner session before invoking the store chooser", () => {
-		expect(SKILL).toMatch(/Before opening any owner form/iu);
+		expect(SKILL).toMatch(/Before any MCP call, verify/iu);
 		expect(SKILL).toMatch(
-			/store selection, capture, and\s+the lifecycle itself/u,
+			/Do not call any tool that can render an owner form\s+before that check/iu,
 		);
 		expect(SKILL).toMatch(
-			/do not open the form;\s+report\s+the missing secure hand-off/u,
+			/`choose_secret_store` must be the first MCP call in every\s+store workflow/iu,
+		);
+		expect(SKILL).toMatch(
+			/report the missing\s+secure hand-off and do not collect store identifiers in chat/iu,
 		);
 		expect(SKILL).toMatch(
 			/agent-visible tool calls,\s+results, traces, and diagnostics/u,
 		);
-		expect(SKILL).toMatch(/--owner-form-privacy-verified/u);
+		expect(SKILL).toMatch(/accepts no operator flags that weaken that audit/iu);
+		expect(SKILL).not.toMatch(/--owner-form-(?:unavailable|privacy-verified)/u);
 		expect(SKILL).toMatch(/a displayed form alone does not establish privacy/u);
 		const choice = HAND_OFF.slice(
 			HAND_OFF.indexOf("2. On `HOBO_*_STORE_CHOICE`"),
@@ -90,7 +94,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 		expect(lifecycle).toMatch(/channel is absent or unverified/u);
 		expect(lifecycle).toMatch(
-			/Stop\s+at an owner step and report the missing secure hand-off/u,
+			/stop\s+at an owner step and report the\s+missing secure hand-off/iu,
 		);
 	});
 

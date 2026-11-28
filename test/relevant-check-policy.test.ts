@@ -940,6 +940,112 @@ test("any skill-tree edit selects the byte-identical mirror gate", () => {
 	);
 });
 
+test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
+	for (const file of [
+		"plugins/hobo/plugin.json",
+		"plugins/hobo/mcp.json",
+		"plugins/hobo/skills/hobo-setup/SKILL.md",
+		"plugins/hobo/skills/hobo-setup/references/agent-tooling.md",
+		"tools/agent-plugins/schemas/1.0.0/plugin.schema.json",
+		"tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
+		"scripts/check-agent-plugin.ts",
+		"scripts/lib/nbgv-release-version.mts",
+		"packages/agent-skills/src/index.ts",
+		"packages/hobo-ci/src/hand-off-audit.ts",
+		"packages/hobo/src/bin/hobo-mcp.ts",
+		"tools/agent-plugins/schemas/1.0.0/mcp.schema.json",
+		"docs/agent-tooling.md",
+		"version.json",
+		".agents/skills/hobo-setup/SKILL.md",
+		".agents/skills/hobo-setup/references/agent-tooling.md",
+		".agents/skills/hobo-deploy/SKILL.md",
+	]) {
+		assert.ok(
+			plan([file]).checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run agent-plugin:check",
+			),
+			file,
+		);
+	}
+});
+
+test("main CI skips the relevant-mode plugin check covered by the attestation step", () => {
+	const { checks } = plan(["plugins/hobo/plugin.json"], {
+		pluginCheckCoveredExternally: true,
+	});
+	assert.ok(
+		!checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") === "run agent-plugin:check",
+		),
+	);
+});
+
+test("unrelated docs, config, or skill edits do not select the Agent Plugins gate", () => {
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/version.json",
+		".agents/skills/install-anti-slop/SKILL.md",
+		".agents/skills/hobo-setupx/SKILL.md",
+	]) {
+		assert.ok(
+			!plan([file]).checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run agent-plugin:check",
+			),
+			file,
+		);
+	}
+});
+
+test("bundle-input changes select the plugin bundle build and smoke test", () => {
+	for (const file of [
+		"plugins/hobo/src/bitwarden-sdk-napi.mts",
+		"scripts/build-agent-plugin.mts",
+	]) {
+		const { checks } = plan([file], { staged: true });
+		const buildLane = checks.find(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ").includes("turbo") &&
+				check.args.join(" ").includes("./packages/hobo"),
+		);
+		const smokeLane = checks.find((check) =>
+			check.args.join(" ").endsWith("test/agent-plugin-bundle.test.ts"),
+		);
+		assert.ok(buildLane, `${file}: build lane`);
+		assert.equal(buildLane?.serial, true, `${file}: build serial`);
+		assert.ok(smokeLane, `${file}: smoke lane`);
+		assert.equal(smokeLane?.serial, true, `${file}: smoke serial`);
+	}
+});
+
+test("plugin bundle test still runs when packages/hobo co-changes", () => {
+	const { checks } = plan(
+		["packages/hobo/src/foo.ts", "plugins/hobo/src/bitwarden-sdk-napi.mts"],
+		{ staged: true },
+	);
+	assert.ok(
+		checks.some((check) =>
+			check.args.join(" ").endsWith("test/agent-plugin-bundle.test.ts"),
+		),
+	);
+});
+
+test("the plugin bundle test file rides the built-in narrow workspace path", () => {
+	const { checks } = plan(["packages/hobo/test/agent-plugin-bundle.test.ts"], {
+		staged: true,
+	});
+	const bundleLanes = checks.filter((check) =>
+		check.args.join(" ").includes("agent-plugin-bundle"),
+	);
+	assert.equal(bundleLanes.length, 1);
+});
+
 const isAntiSlopDriftTest = (check: {
 	command: string;
 	args: readonly string[];

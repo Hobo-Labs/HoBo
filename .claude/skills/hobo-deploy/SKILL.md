@@ -1,6 +1,11 @@
 ---
 name: hobo-deploy
 description: Use HoBo's owner hand-off and secret-store session when deploying a HoBo service, including the hosted CI relay managed by HoBo CD.
+license: MIT
+compatibility: Agent Skills-compatible hosts (Claude Code, Cursor, Codex, and other skill hosts); the MCP server needs Node.js 22+ and a built plugin bundle (pnpm run agent-plugin:build in the HoBo checkout).
+metadata:
+  source: https://github.com/Hobo-Labs/HoBo
+  plugin: hobo
 ---
 
 # Deploying with HoBo
@@ -24,12 +29,28 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before opening any owner form, verify without using owner data that the
-connected hand-off keeps selections in a temporary owner session and excludes
+Before any MCP call, verify from host capability alone that the host exposes
+HoBo MCP and can render a private owner ceremony (secure elicitation or
+equivalent) for this step. Do not call any tool that can render an owner form
+before that check. `choose_secret_store` must be the first MCP call in every
+store workflow; do not treat a later status as retroactive proof. Call it before
+capture, lifecycle, or any form-rendering tool, and proceed only when the
+result documents a private owner ceremony the host can render and store choice
+is supported. Treat
+`status: secure-form-unavailable`, `reason: owner-setup-unavailable`, unknown
+status, tool errors, and a missing tool as stop conditions — report the missing
+secure hand-off and do not collect store identifiers in chat. After the owner
+ceremony, verify the selection itself before any lifecycle or capture step:
+proceed only when a privacy-verified HoBo result for the same `cwd` explicitly
+confirms that the owner's selected store is active in the temporary owner
+session. An absent, ambiguous, stale, unknown, or otherwise unverifiable
+selection is a stop condition. Never infer a selection from a completed form,
+a successful tool call, an available token, or later lifecycle output. For
+lifecycle and capture steps, verify without owner data that the connected
+implementation keeps selections in the temporary owner session and excludes
 private coordinates, identifiers, and references from agent-visible tool calls,
-results, traces, and diagnostics. This applies to store selection, capture, and
-the lifecycle itself. If that cannot be established, do not open the form;
-report the missing secure hand-off.
+results, traces, and diagnostics. If that cannot be established, report the
+missing secure hand-off.
 
 For the hosted relay, HoBo CD delivers the selected Git commit to Vercel;
 the Vercel project does not need a connected Git repository. Production of the
@@ -79,16 +100,15 @@ the host renders, a value the run waits for to HoBo's secret capture. If an ask
 does not complete (interrupted, the session restarted, the form closed),
 issue it again as the first thing you do, before any other reply. Ending a
 turn with a choice or credential still unasked is a failure when that form is
-available; `pnpm run eval:hand-off-transcript <transcript>` checks it. If the
+available; `pnpm run eval:hand-off-transcript <transcript>` (repo-only: it
+runs from the HoBo checkout) checks it. If the
 form is unavailable or fails the privacy check below, report that capability
 gap; do not repeat an impossible ask or collect its fields in conversation.
-Say "This host cannot provide a secure HoBo owner hand-off."
-When host capability discovery confirms no private owner form, pass
-`--owner-form-unavailable` to the transcript audit. The flag is the caller's
-assertion, so verify it independently; never use it merely because the owner
-did not answer or declined a form.
-Pass `--owner-form-privacy-verified` only after verifying the private owner
-channel as described above; a displayed form alone does not establish privacy.
+Say "This host cannot provide a secure HoBo owner hand-off." when host
+capability discovery confirms no private owner form.
+`pnpm run eval:hand-off-transcript <transcript>` enforces structured asks with
+default strict options; it accepts no operator flags that weaken that audit.
+Verify the private owner channel as described above; a displayed form alone does not establish privacy.
 
 1. Run `hobo <ci|cd> up --hand-off` through the **HoBo MCP server** (its
    `ci` or `cd` tool with `args: ["up", "--hand-off"]`) only when its
@@ -96,12 +116,9 @@ channel as described above; a displayed form alone does not establish privacy.
    directory as `cwd` to both the lifecycle tool and `choose_secret_store`;
    use the same `cwd` on every retry so the owner session stays scoped to that
    project. Run it again the same way after each owner step. If that
-   channel is absent or unverified, run
-   `hobo <ci|cd> up --hand-off` in the background (never `--json` or
-   `-q`: they hide the lines). Capture output in a private temporary session
-   file outside the repository and read only sanitized progress and refusal
-   codes; do not return private coordinates or references to the agent. Stop
-   at an owner step and report the missing secure hand-off if necessary.
+   channel is absent or unverified, stop at an owner step and report the
+   missing secure hand-off. Do not run the lifecycle through a fallback
+   channel or read its captured stdout/stderr.
 2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): use the
    HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
    `family` ci or cd, the same `cwd`, no store settings in its arguments)
@@ -202,7 +219,7 @@ no `.env` or local secret files, no GitHub Actions secrets or variables
 (`gh secret set`, `gh variable set`), no `vercel env add`, and no credential
 store of their own. Every credential is an `owner://<NAME>` entry in the
 owner's store session; `env://<NAME>` locators are refused. This is the
-[repository rule](../../../AGENTS.md#repository-rules-for-every-agent), with no
+repository rule (AGENTS.md, "Repository rules for every agent"), with no
 exceptions.
 
 ## Reporting

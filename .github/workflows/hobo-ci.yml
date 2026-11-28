@@ -431,6 +431,37 @@ jobs:
         if: always() && steps.source.outputs.source == 'build'
         run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true
 
+  agent-plugin-provenance:
+    name: Agent plugin provenance
+    needs: route
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch')
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Install dependencies
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build agent plugin
+        run: pnpm run agent-plugin:build
+      - name: Publish bundle provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: plugins/hobo/bin/hobo-mcp.mjs
+
   pr_gate_plan:
     name: PR impact plan
     # The plan is what everything else waits on, so it is its own job: the merge
@@ -697,6 +728,10 @@ jobs:
       - name: Code format gate
         if: github.event_name == 'pull_request'
         run: pnpm run lint:code
+      - name: Validate agent plugin without publishing
+        env:
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm run agent-plugin:build && pnpm run agent-plugin:check
       - name: Relevant checks only
         if: github.event_name == 'pull_request'
         env:
@@ -727,6 +762,7 @@ jobs:
           if [ "$SCOPE" = "affected" ]; then
             pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
+            pnpm run agent-plugin:build
             pnpm run check:all
           fi
       # The prune decides whether the save runs at all. Skipped here, the save's
@@ -1662,11 +1698,12 @@ jobs:
     # merge-queue-green, finding 154): GitHub fast-forwards main to the commit the
     # merge_group run tested, so this job would repeat that run. Schedule and
     # workflow_dispatch always run it. runnerRouting.mainGate.reuseMergeQueue false turns the skip off.
-    needs: [route, ci-runner-image]
+    needs: [route, ci-runner-image, agent-plugin-provenance]
     if: >-
-      !cancelled() && needs.route.outputs.merge-queue-green != 'true' && (
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'schedule' ||
+      !cancelled() && needs.agent-plugin-provenance.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      needs.route.outputs.merge-queue-green != 'true' && (
+      github.event_name == 'push' || github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
@@ -1674,6 +1711,7 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
+      attestations: read
     outputs:
       main_base: ${{ steps.main-base.outputs.base }}
       main_tests: ${{ steps.main-base.outputs.tests }}
@@ -1707,6 +1745,7 @@ jobs:
         external
         features
         packages
+        plugins
         release
         scripts
         site
@@ -1848,6 +1887,10 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
+      - name: Verify agent plugin attestation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm run agent-plugin:build && pnpm run agent-plugin:check -- --verify-attestation
       - name: S0 gate set
         timeout-minutes: 20
         env:

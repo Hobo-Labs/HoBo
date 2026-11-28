@@ -5,6 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"actions:lint": "node --import tsx scripts/lint-actions.ts",
+		"agent-plugin:build": "pnpm exec turbo run build --filter=@hobo/hobo... && HOBO_AGENT_PLUGIN_LOCAL_BUILD=1 node --import tsx scripts/build-agent-plugin.mts",
+		"agent-plugin:check": "pnpm exec turbo run build --filter=@hobo/agent-skills && HOBO_AGENT_PLUGIN_LOCAL_CHECK=1 node --import tsx scripts/check-agent-plugin.ts",
 		"agent:check": "node --experimental-strip-types scripts/dx-preflight.mts agent:check",
 		"architecture:guard": "node scripts/check-architecture-guardrails.mjs",
 		"architecture:guard:all": "node scripts/check-architecture-guardrails.mjs --all",
@@ -162,6 +164,7 @@
 		"@bufbuild/protobuf": "2.12.1",
 		"@changesets/cli": "^2.31.0",
 		"@cucumber/cucumber": "^13.0.0",
+		"@hobo/agent-skills": "workspace:*",
 		"@hobo/cloud": "workspace:*",
 		"@oxlint/plugins": "1.79.0",
 		"@stryker-mutator/core": "^10.0.0",

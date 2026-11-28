@@ -8,6 +8,19 @@
   "envMode": "strict",
   "globalPassThroughEnv": [
     "CI",
+    "GITHUB_ACTIONS",
+    "GITHUB_EVENT_NAME",
+    "GITHUB_HEAD_SHA",
+    "GITHUB_SHA",
+    "GITHUB_REPOSITORY",
+    "GITHUB_SERVER_URL",
+    "TF_BUILD",
+    "BUILD_ID",
+    "TEAMCITY_VERSION",
+    "GITLAB_CI",
+    "CIRCLECI",
+    "BUILDKITE",
+    "CODEBUILD_BUILD_ID",
     "ASTRO_TELEMETRY_DISABLED",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
@@ -56,7 +69,12 @@
     "@hobo/ci-guard#build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "outputs": [] },
-    "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"],
+      "env": ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"],
+      "outputs": []
+    },
     "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "passThroughEnv": ["RAYON_NUM_THREADS", "UV_THREADPOOL_SIZE"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build", "@hobo/provider-agentv#build", "@hobo/provider-ax#build", "@hobo/provider-browser-wasm#build", "@hobo/provider-config#build", "@hobo/provider-convex#build", "@hobo/provider-flux#build", "@hobo/provider-turso#build", "@hobo/provider-vercel-blob#build", "@hobo/provider-webernetes#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
@@ -76,6 +94,7 @@
     "//#typecheck:root": {
       "dependsOn": [
         "@hobo/adapter-infisical#build",
+        "@hobo/agent-skills#build",
         "@hobo/bindings#build",
         "@hobo/bindles#build",
         "@hobo/ci#build",

@@ -1001,9 +1001,8 @@ export function localContext(state: {
 		if (path === "github.event.pull_request.number") return "";
 		if (path.startsWith("vars.") || path.startsWith("secrets.")) return "";
 		// A local run is what produces an attestation; it never has one.
-		// The remote route is checked separately by the required gate; locally,
-		// evaluate covered jobs as if that prerequisite succeeded.
 		if (path === "needs.route.result") return "success";
+		if (path === "needs.agent-plugin-provenance.result") return "success";
 		if (path === "needs.route.outputs.attested") return "false";
 		if (path === "needs.route.outputs.attested-jobs") return "[]";
 		if (path === "needs.route.outputs.pr-fabric-green") return "false";
@@ -1349,6 +1348,15 @@ export async function runAttestedJobs(input: {
 									CI: "true",
 									GITHUB_ACTIONS: "true",
 									GITHUB_EVENT_NAME: event,
+									GITHUB_JOB: job.id,
+									GITHUB_REF:
+										event === "pull_request"
+											? "refs/pull/1/merge"
+											: `refs/heads/gh-readonly-queue/${target.baseBranch}/pr-1-${target.base}`,
+									GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+									GITHUB_RUN_ATTEMPT: "1",
+									GITHUB_RUN_ID: String(startedAt.getTime()),
+									GITHUB_SERVER_URL: "https://github.com",
 									GITHUB_SHA: target.mergeCommit,
 									GITHUB_WORKSPACE: root,
 									RUNNER_TEMP: scratch,

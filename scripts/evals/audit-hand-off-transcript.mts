@@ -3,32 +3,27 @@ import { readFile } from "node:fs/promises";
 
 import {
 	auditHandOff,
+	DEFAULT_HAND_OFF_AUDIT_OPTIONS,
 	parseClaudeTranscript,
 } from "../../packages/hobo-ci/src/hand-off-audit.ts";
 
-const args = process.argv.slice(2);
-const ownerFormUnavailable = args.includes("--owner-form-unavailable");
-const ownerFormPrivacyVerified = args.includes("--owner-form-privacy-verified");
-const files = args.filter(
-	(arg) =>
-		arg !== "--owner-form-unavailable" &&
-		arg !== "--owner-form-privacy-verified",
-);
-if (files.length === 0) {
+const argv = process.argv.slice(2);
+if (argv.some((arg) => arg.startsWith("-"))) {
 	console.error(
-		"usage: audit-hand-off-transcript [--owner-form-unavailable] [--owner-form-privacy-verified] <transcript.jsonl>...",
+		"usage: audit-hand-off-transcript <transcript.jsonl>... (no operator flags)",
 	);
 	process.exit(2);
 }
+const files = argv;
+if (files.length === 0) {
+	console.error("usage: audit-hand-off-transcript <transcript.jsonl>...");
+	process.exit(2);
+}
 let failed = false;
-const options = {
-	ownerFormAvailable: !ownerFormUnavailable,
-	ownerFormPrivacyVerified,
-};
 for (const file of files) {
 	const findings = auditHandOff(
 		parseClaudeTranscript(await readFile(file, "utf8")),
-		options,
+		DEFAULT_HAND_OFF_AUDIT_OPTIONS,
 	);
 	if (findings.length === 0) {
 		console.log(`ok    ${file}`);

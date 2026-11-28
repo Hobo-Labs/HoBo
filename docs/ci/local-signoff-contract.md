@@ -160,6 +160,13 @@ if their local run executed the classifiers. The checks assume the local and
 CI toolchains and installed dependencies are trusted. A missing container
 engine still omits the coupled PR impact group.
 
+Local pull-request and merge-group runs supply simulated GitHub job, event-ref,
+repository, run, attempt, commit, and server identity so agent-plugin builds
+exercise the same identity checks as Actions. These values are local simulation,
+not artifact provenance or publishing authority; no credential or new bypass is
+introduced. Non-publishing bundle markers must still match the simulated event,
+run, attempt, commit, and bundle digest.
+
 The `hobo-ci` and `release-hobo` route jobs load their route action and
 attestation verifier from a separate checkout of the event's base commit. The
 verifier still inspects the tested checkout's tree. A missing base verifier

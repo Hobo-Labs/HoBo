@@ -7,17 +7,20 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	AGENT_SKILLS_MANIFEST_SCHEMA,
+	checkHoboRepoSkillsConformance,
 	checkSkillsConformance,
+	discoverHoboOwnedSkillNames,
 	loadSkillsManifest,
 	parseSkillFrontmatter,
 	SkillParseError,
 } from "../src/index.js";
 
 // The real mirrored tree this package distributes.
-const REPO_SKILLS_ROOT = path.resolve(
+const REPO_ROOT = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
-	"../../../.agents/skills",
+	"../../..",
 );
+const REPO_SKILLS_ROOT = path.join(REPO_ROOT, ".agents/skills");
 
 const scratches: string[] = [];
 afterEach(async () => {
@@ -49,6 +52,13 @@ describe("parseSkillFrontmatter", () => {
 		expect(parsed).toEqual({ name: "sdlc", description: "run the loop" });
 	});
 
+	it("decodes quoted name and description scalars", () => {
+		const parsed = parseSkillFrontmatter(
+			"---\nname: 'sdlc'\ndescription: \"run the loop\"\n---\n# body\n",
+		);
+		expect(parsed).toEqual({ name: "sdlc", description: "run the loop" });
+	});
+
 	it("throws typed errors on missing block, name, or description", () => {
 		expect(() => parseSkillFrontmatter("# no frontmatter")).toThrow(
 			SkillParseError,
@@ -59,6 +69,57 @@ describe("parseSkillFrontmatter", () => {
 		expect(() => parseSkillFrontmatter("---\nname: x\n---\n")).toThrow(
 			/description/u,
 		);
+	});
+
+	it("rejects malformed double-quoted scalars", () => {
+		for (const description of ['"bad\\q"', '"unterminated']) {
+			expect(() =>
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toThrow(SkillParseError);
+		}
+	});
+
+	it("reads prose that merely ends with a quote character as a plain string", () => {
+		for (const description of ['run the "loop"', "owners'"]) {
+			expect(
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toEqual({ name: "sdlc", description });
+		}
+	});
+
+	it("decodes doubled quotes in single-quoted scalars", () => {
+		expect(
+			parseSkillFrontmatter(
+				"---\nname: sdlc\ndescription: 'owner''s store'\n---\n",
+			),
+		).toEqual({ name: "sdlc", description: "owner's store" });
+	});
+
+	it("rejects malformed single-quoted top-level scalars", () => {
+		for (const description of [
+			"'unterminated",
+			"'closed' trailing",
+			"'owner's store'",
+			"'closed''",
+		]) {
+			expect(() =>
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
+		}
+	});
+
+	it("rejects unterminated single-quoted metadata scalars", () => {
+		expect(() =>
+			parseSkillFrontmatter(
+				"---\nname: sdlc\ndescription: d\nmetadata:\n  plugin: 'hobo\n---\n",
+			),
+		).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
 	});
 });
 
@@ -82,8 +143,151 @@ describe("loadSkillsManifest", () => {
 });
 
 describe("checkSkillsConformance", () => {
-	it("passes the repo's real tree with zero issues", async () => {
-		expect(await checkSkillsConformance(REPO_SKILLS_ROOT)).toEqual([]);
+	it("rejects trailing and unescaped content in single-quoted scalars", async () => {
+		const root = await scratchTree({
+			trailing: "---\nname: trailing\ndescription: 'closed' trailing\n---\n",
+			unescaped: "---\nname: unescaped\ndescription: 'owner's store'\n---\n",
+			valid: "---\nname: valid\ndescription: 'owner''s store'\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(issues.map((issue) => issue.skill).sort()).toEqual([
+			"trailing",
+			"unescaped",
+		]);
+		expect(issues.every((issue) => issue.code === "unparseable")).toBe(true);
+	});
+
+	it("passes the repo's real tree with zero issues, strict set included", async () => {
+		expect(
+			await checkSkillsConformance(REPO_SKILLS_ROOT, {
+				strictSkillNames: await discoverHoboOwnedSkillNames(
+					REPO_SKILLS_ROOT,
+					REPO_ROOT,
+				),
+			}),
+		).toEqual([]);
+	});
+
+	it("rejects skills-lock entries for the built-in portable plugin set", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify(
+				{
+					version: 1,
+					skills: {
+						"hobo-deploy": { source: "Hobo-Labs/HoBo" },
+						"hobo-setup": { source: "vendor/external" },
+					},
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		const root = await scratchTree({
+			"hobo-deploy": "---\nname: hobo-deploy\ndescription: d\n---\n",
+			"hobo-setup": "---\nname: hobo-setup\ndescription: d\n---\n",
+		});
+		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
+		expect(
+			issues
+				.filter((issue) => issue.code === "lock-exempts-repo-skill")
+				.map((issue) => issue.skill)
+				.sort(),
+		).toEqual(["hobo-deploy", "hobo-setup"]);
+	});
+
+	it("normalizes GitHub source spellings before identifying HoBo", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		const root = await scratchTree({
+			"repo-skill": "---\nname: repo-skill\ndescription: d\n---\n",
+		});
+		for (const source of [
+			"Hobo-Labs/HoBo",
+			"hobo-labs/hobo.git",
+			"github:Hobo-Labs/HoBo",
+			"https://github.com/Hobo-Labs/HoBo",
+			"http://github.com/Hobo-Labs/HoBo/",
+			"git+https://github.com/Hobo-Labs/HoBo.git?ref=main#skill",
+			"ssh://git@github.com/Hobo-Labs/HoBo.git",
+			"git+ssh://git@github.com/Hobo-Labs/HoBo.git#main",
+			"git@github.com:Hobo-Labs/HoBo.git",
+			" git@github.com:Hobo-Labs/HoBo/ ",
+			"https://github.com/Hobo-Labs/HoBo?tab=readme",
+		]) {
+			await writeFile(
+				path.join(scratchRepo, "skills-lock.json"),
+				`${JSON.stringify({ version: 1, skills: { "repo-skill": { source } } })}\n`,
+			);
+			const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
+			expect(
+				issues.some((issue) => issue.code === "lock-exempts-repo-skill"),
+				source,
+			).toBe(true);
+			expect(
+				issues.some((issue) => issue.code === "lock-shadows-in-tree-skill"),
+				source,
+			).toBe(false);
+		}
+	});
+
+	it("rejects unapproved in-tree skills regardless of their source", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		const root = await scratchTree({
+			"repo-skill":
+				"---\nname: repo-skill\ndescription: d\nupstream-field: rejected\n---\n",
+		});
+		for (const source of [
+			"vendor/external",
+			"https://github.com.evil.test/Hobo-Labs/HoBo",
+			"git@github.com:Hobo-Labs/HoBo/extra",
+			"https://github.com/Hobo-Labs",
+			"https://github.com/Hobo-Labs/HoBo/extra",
+			"https://github.com/Hobo-Labs/Ho%6f",
+			"ssh://evil@github.com/Hobo-Labs/HoBo",
+			"https://git@github.com/Hobo-Labs/HoBo",
+		]) {
+			await writeFile(
+				path.join(scratchRepo, "skills-lock.json"),
+				`${JSON.stringify({ version: 1, skills: { "repo-skill": { source } } })}\n`,
+			);
+			const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
+			expect(
+				issues.some((issue) => issue.code === "lock-shadows-in-tree-skill"),
+				source,
+			).toBe(true);
+			expect(
+				issues.some((issue) => issue.code === "disallowed-frontmatter-field"),
+				source,
+			).toBe(true);
+		}
+	});
+
+	it("fails closed for missing and malformed lock sources", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		const root = await scratchTree({
+			"repo-skill": "---\nname: repo-skill\ndescription: d\n---\n",
+		});
+		for (const lockedSkill of [
+			{},
+			{ source: null },
+			{ source: 42 },
+			{ source: "" },
+			{ source: "github.com/Hobo-Labs/HoBo" },
+		]) {
+			await writeFile(
+				path.join(scratchRepo, "skills-lock.json"),
+				`${JSON.stringify({ version: 1, skills: { "repo-skill": lockedSkill } })}\n`,
+			);
+			const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
+			expect(
+				issues.some((issue) => issue.code === "lock-shadows-in-tree-skill"),
+			).toBe(true);
+		}
 	});
 
 	it("reports missing SKILL.md, duplicates, and unparseable frontmatter", async () => {
@@ -93,12 +297,227 @@ describe("checkSkillsConformance", () => {
 			broken: "no frontmatter here",
 			empty: null,
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: [],
+		});
 		const codes = issues.map((issue) => issue.code).sort();
 		expect(codes).toEqual([
 			"duplicate-name",
 			"missing-skill-md",
 			"unparseable",
 		]);
+	});
+
+	it("enforces the HoBo-owned frontmatter rules on strict skills only", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify({ version: 1, skills: { caveman: { source: "JuliusBrussee/caveman" } } }, null, 2)}\n`,
+		);
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nlicense: MIT\nmetadata:\n  plugin: hobo\n---\n",
+			caveman:
+				"---\nname: caveman\ndescription: d\nupstream-field: kept\n---\n",
+		});
+		const strict = await discoverHoboOwnedSkillNames(root, scratchRepo);
+		expect(strict).toEqual(["hobo-setup"]);
+		expect(
+			await checkSkillsConformance(root, {
+				strictSkillNames: strict,
+			}),
+		).toEqual([]);
+	});
+
+	it("discovers non-vendored skills for strict checks even when frontmatter leaks fields", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify({ version: 1, skills: {} }, null, 2)}\n`,
+		);
+		const root = await scratchTree({
+			leaky: "---\nname: leaky\ndescription: d\nlegacy-field: kept\n---\n",
+		});
+		expect(await discoverHoboOwnedSkillNames(root, scratchRepo)).toEqual([
+			"leaky",
+		]);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["leaky"],
+		});
+		expect(
+			issues.some((issue) => issue.code === "disallowed-frontmatter-field"),
+		).toBe(true);
+	});
+
+	it("rejects duplicate top-level frontmatter keys", () => {
+		expect(() =>
+			parseSkillFrontmatter(`---
+name: hobo-setup
+name: evil
+description: d
+---
+`),
+		).toThrow(/duplicate frontmatter field/u);
+	});
+
+	it("rejects unrecognized non-comment top-level YAML in strict skills", async () => {
+		const secrets = [
+			"gho_fixturetokenabcdefghijklmnopqrst",
+			"sk-proj-abcdefghijklmnopqrst",
+		];
+		const root = await scratchTree({
+			"hobo-setup": `---\nname: hobo-setup\ndescription: d\n"legacy": ${secrets[0]}\n---\n`,
+			"hobo-deploy": `---\nname: hobo-deploy\ndescription: d\nmetadata:\n  plugin: hobo\nlegacy : ${secrets[1]}\n---\n`,
+			outsider: '---\nname: outsider\ndescription: d\n"legacy": x\n---\n',
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["hobo-setup", "hobo-deploy"],
+		});
+		expect(issues).toHaveLength(2);
+		expect(issues.map((issue) => issue.skill).sort()).toEqual([
+			"hobo-deploy",
+			"hobo-setup",
+		]);
+		expect(issues.every((issue) => issue.code === "unparseable")).toBe(true);
+		expect(
+			issues.every(
+				(issue) => issue.message === "unrecognized top-level YAML line",
+			),
+		).toBe(true);
+		for (const secret of secrets) {
+			expect(issues.map((issue) => issue.message).join("\n")).not.toContain(
+				secret,
+			);
+		}
+	});
+
+	it("never echoes credential-shaped rejected values in issue messages", async () => {
+		const secrets = [
+			"sk-abcdefghijklmnopqrst",
+			"gho_fixturetokenabcdefghijklmnopqrst",
+		];
+		const root = await scratchTree({
+			"hobo-setup": `---\nname: ${secrets[0]}\ndescription: d\n---\n`,
+			"hobo-deploy": `---\nname: hobo-deploy\ndescription: d\n${secrets[0]}: x\n---\n`,
+			draft: `---\nname: draft\ndescription: d\nlicense:\n  ${secrets[0]}: x\n---\n`,
+			repo: `---\nname: ${secrets[1]}\ndescription: d\n---\n`,
+			sdlc: `---\nname: ${secrets[1]}\ndescription: d\n---\n`,
+			outsider: `---\nname: ${secrets[0]}\n---\n`,
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["hobo-setup", "hobo-deploy", "draft", "repo", "sdlc"],
+		});
+		const codes = new Set(issues.map((issue) => issue.code));
+		for (const code of [
+			"name-folder-mismatch",
+			"disallowed-frontmatter-field",
+			"nested-frontmatter-field",
+			"duplicate-name",
+			"unparseable",
+		]) {
+			expect(codes.has(code)).toBe(true);
+		}
+		const messages = issues.map((issue) => issue.message).join("\n");
+		for (const secret of secrets) {
+			expect(messages).not.toContain(secret);
+		}
+	});
+
+	it("applies strict rules when a HoBo-owned name is declared from another folder", async () => {
+		const root = await scratchTree({
+			helper: "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["helper"],
+		});
+		expect(
+			issues.some(
+				(issue) =>
+					issue.skill === "helper" &&
+					issue.code === "disallowed-frontmatter-field",
+			),
+		).toBe(true);
+	});
+
+	it("reports every strict violation a HoBo-owned skill can make", async () => {
+		const root = await scratchTree({
+			"hobo-setup": "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  nested:\n    deep: value\n---\n",
+			draft: "---\nname: not-draft\ndescription: d\n---\n",
+			repo: "---\nname: repo\ndescription: d\nmetadata: scalar\n---\n",
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["hobo-setup", "hobo-deploy", "draft", "repo"],
+		});
+		const bySkill = new Map(issues.map((issue) => [issue.skill, issue.code]));
+		expect(bySkill.get("hobo-setup")).toBe("disallowed-frontmatter-field");
+		expect(bySkill.get("hobo-deploy")).toBe("non-string-metadata");
+		expect(bySkill.get("draft")).toBe("name-folder-mismatch");
+		expect(bySkill.get("repo")).toBe("non-string-metadata");
+	});
+
+	it("validates decoded metadata scalar types and quoted strings", async () => {
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nmetadata:\n  version: 1\n  enabled: true\n---\n",
+			"hobo-deploy":
+				'---\nname: hobo-deploy\ndescription: d\nmetadata:\n  empty: ""\n---\n',
+			draft:
+				"---\nname: draft\ndescription: d\nmetadata:\n  version: \"1\"\n  enabled: 'true'\n---\n",
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["hobo-setup", "hobo-deploy", "draft"],
+		});
+		const invalid = issues.filter((issue) => issue.skill !== "draft");
+		expect(invalid).toHaveLength(3);
+		expect(invalid.every((issue) => issue.code === "non-string-metadata")).toBe(
+			true,
+		);
+		expect(issues.some((issue) => issue.skill === "draft")).toBe(false);
+	});
+
+	it("rejects block and flow collections in metadata", async () => {
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nmetadata:\n  - value\n---\n",
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  key: [value]\n---\n",
+		});
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["hobo-setup", "hobo-deploy"],
+		});
+		expect(issues).toHaveLength(2);
+		expect(issues.every((issue) => issue.code === "non-string-metadata")).toBe(
+			true,
+		);
+	});
+
+	it("applies the HoBo-owned allowlist by default and only narrows it on request", async () => {
+		const root = await scratchTree({
+			draft: "---\nname: draft\ndescription: d\nlegacy: kept\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.code).toBe("disallowed-frontmatter-field");
+		expect(
+			await checkSkillsConformance(root, { strictSkillNames: [] }),
+		).toEqual([]);
+	});
+
+	it("derives HoBo-owned strict skills from the repo tree", async () => {
+		const owned = await discoverHoboOwnedSkillNames(
+			REPO_SKILLS_ROOT,
+			REPO_ROOT,
+		);
+		for (const vendored of ["caveman", "impeccable", "spriterrific-api"]) {
+			expect(owned.includes(vendored)).toBe(false);
+		}
+		expect(owned).toContain("hobo-setup");
+		expect(owned).toContain("hobo-deploy");
+		expect(owned).toContain("design-md");
+		expect(owned).toContain("unity-cli");
 	});
 });

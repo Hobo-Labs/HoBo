@@ -209,6 +209,14 @@
 					"local": "run"
 				},
 				{
+					"name": "Validate agent plugin without publishing",
+					"run": "pnpm run agent-plugin:build && pnpm run agent-plugin:check",
+					"env": {
+						"GITHUB_HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+					},
+					"local": "run"
+				},
+				{
 					"name": "Relevant checks only",
 					"if": "github.event_name == 'pull_request'",
 					"run": "pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests",
@@ -220,7 +228,7 @@
 				{
 					"name": "S0 gate set",
 					"if": "github.event_name == 'merge_group'",
-					"run": "set -euo pipefail\nnode --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts\nif [ -n \"$TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$BASE\" --tree=\"$TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; SCOPE=\"repo-wide\"; fi\nfi\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run check:all\nfi\n",
+					"run": "set -euo pipefail\nnode --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts\nif [ -n \"$TREE\" ]; then\n  proven=\"$(node --experimental-strip-types --no-warnings scripts/ci/proven-tree.mts \\\n    --proven=\"$BASE\" --tree=\"$TREE\" --base=\"$MERGE_GROUP_BASE\")\" || proven=\"\"\n  if [ \"$proven\" != \"$BASE\" ]; then BASE=\"$MERGE_GROUP_BASE\"; SCOPE=\"repo-wide\"; fi\nfi\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run agent-plugin:build\n  pnpm run check:all\nfi\n",
 					"env": {
 						"HOBO_RELEVANT_CHECK_CONCURRENCY": "1",
 						"SCOPE": "${{ needs.pr_gate_plan.outputs.merge_scope }}",

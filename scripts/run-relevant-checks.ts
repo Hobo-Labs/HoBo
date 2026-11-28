@@ -20,6 +20,12 @@ const explain = args.has("--explain");
 const includeBuild = args.has("--build");
 const finalValidation = args.has("--final");
 const externalWorkspaceTests = args.has("--external-workspace-tests");
+const mainCiPluginAttestationCovered =
+	process.env.GITHUB_ACTIONS === "true" &&
+	process.env.GITHUB_REF === "refs/heads/main" &&
+	["push", "schedule", "workflow_dispatch"].includes(
+		process.env.GITHUB_EVENT_NAME?.trim() ?? "",
+	);
 if (externalWorkspaceTests && (staged || all || finalValidation || !baseArg)) {
 	console.error(
 		"--external-workspace-tests requires an explicit base and a separate required workspace test job",
@@ -327,6 +333,7 @@ const { checks, scopes } = selectRelevantChecks({
 	includeBuild,
 	includeBroadSweeps: all || finalValidation,
 	workspaceTestsCoveredExternally: externalWorkspaceTests,
+	pluginCheckCoveredExternally: mainCiPluginAttestationCovered,
 	rootPackageJsonScriptsOnlyChanged: rootPackageJsonScriptsOnlyChanged(),
 });
 

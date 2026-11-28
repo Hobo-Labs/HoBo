@@ -124,6 +124,40 @@ describe("the description of the covered jobs", () => {
 		]);
 	});
 
+	it("keeps PR plugin validation credential-free and non-publishing", () => {
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
+		assert.deepEqual(
+			gate.steps
+				.filter((step) => step.env?.GH_TOKEN !== undefined)
+				.map((step) => step.name),
+			[],
+		);
+		const plugin = gate.steps.find(
+			(step) => step.name === "Validate agent plugin without publishing",
+		);
+		assert.equal(plugin?.local, "run");
+		assert.deepEqual(plugin?.env, {
+			GITHUB_HEAD_SHA: "${{ github.event.pull_request.head.sha }}",
+		});
+		const document = workflowDocument(readFileSync(gate.workflow, "utf8"));
+		const jobs = asObject(document.jobs);
+		const job = asObject(jobs?.[gate.id]);
+		assert.deepEqual(asObject(job?.permissions), { contents: "read" });
+		assert.doesNotMatch(asText(job?.if) ?? "", /agent-plugin-provenance/u);
+		assert.doesNotMatch(
+			gate.steps.map((step) => step.run ?? "").join("\n"),
+			/GH_TOKEN=.*GITHUB_ENV/u,
+		);
+		const provenance = asObject(jobs?.["agent-plugin-provenance"]);
+		assert.match(asText(provenance?.if) ?? "", /refs\/heads\/main/u);
+		assert.deepEqual(asObject(provenance?.permissions), {
+			contents: "read",
+			"id-token": "write",
+			attestations: "write",
+		});
+	});
+
 	it("builds current sources in every scripts test shard, locally as in CI", () => {
 		const scripts = plan.find((job) => job.id === "scripts-tests");
 		assert.ok(scripts);

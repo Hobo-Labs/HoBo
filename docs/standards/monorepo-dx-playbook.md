@@ -94,6 +94,12 @@ Four things make the cache both **correct** and **fast**:
 | `globalDependencies` lists **shared config**, not the lockfile | a preset change correctly invalidates dependent caches | monorepo lists `packages/config/**` |
 | `envMode: "strict"` + `env`/`globalPassThroughEnv` allowlists | reproducible, no accidental env leakage into the hash | HoBo |
 
+Run-scoped attestation identifiers (`GITHUB_RUN_ATTEMPT` and `GITHUB_RUN_ID`)
+belong on the `test` task's `env`, not `passThroughEnv` or the global list, so
+each run attempt participates in the task hash. Otherwise a cached test result
+can replay a previous attempt's attestation check without executing for the
+current run. Unrelated required checks keep reusable cache entries.
+
 Do not list `turbo.json` itself in `globalDependencies`: Turbo already hashes each resolved task definition into that task's hash, while global environment settings are covered by the global hash. Self-listing only makes an unrelated task edit invalidate the whole repository.
 
 Do not list `pnpm-lock.yaml` either. Turbo hashes each package's resolved external dependencies from the lockfile into that package's tasks, and the root package's into the global hash. Listing the file makes any dependency change anywhere invalidate every task.

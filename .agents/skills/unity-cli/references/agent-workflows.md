@@ -5,30 +5,56 @@ Patterns for using Unity CLI + Pipeline as an **observe → act → verify** loo
 ## Environment bootstrap (once per machine / job)
 
 ```bash
+set -euo pipefail
 export PATH="$HOME/.unity/bin:$PATH"
 export UNITY_NON_INTERACTIVE=1
 export UNITY_NO_BANNER=1
 export UNITY_FORMAT=json
 
-unity --version || {
-  curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh \
-    | UNITY_CLI_CHANNEL=beta bash
+unity_version="$(unity --version)" || {
+  echo "unity CLI missing: stop for human provisioning; agents never install it"
+  exit 1
 }
+if [ "$unity_version" != "1.0.0-beta.2" ]; then
+  echo "unexpected unity CLI version: stop for human provisioning"
+  exit 1
+fi
 
 unity doctor
-unity auth status
+unity auth status --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{let j;try{j=JSON.parse(s)}catch{process.exit(1)};if(j?.authenticated!==true&&j?.loggedIn!==true&&j?.status!=="authenticated"){process.stderr.write("unity auth: not authenticated\n");process.exit(1)}})'
 # Interactive machines: unity auth login
-# CI: inject supported service credentials via env (never commit secrets)
 ```
+
+Credentialed CI jobs may run only on protected, trusted refs and environments,
+never on forked or otherwise untrusted pull requests whose tests and build
+methods execute repository-controlled code. The shell guard below is
+defense-in-depth, not authorization: grant credentials only from a protected
+platform environment with approvals and branch protection, and allowlist the
+trusted events, repository, and ref there. Prefer short-lived, least-privilege
+federated credentials where supported, and never commit credentials.
+
+Before running a credentialed Unity job, CI must also verify artifact
+attestation/provenance for the checked commit and bound workflow identity
+(repository, workflow, ref, and OIDC issuer) using `gh attestation verify` or an
+equivalent platform control. A version string, digest note, or local file
+presence is not attestation. If verification is unavailable, incomplete, or
+fails, stop before any credentialed step; environment, ref, and branch-protection
+flags alone never substitute for it.
+
+A missing or unexpected CLI is a stop condition, never an install or help-retry
+step. Credentialed or reused CI runners must stop before this bootstrap unless
+trusted infrastructure has pinned the image by digest and verified its
+provenance; recording a digest or reading `unity --version` is not attestation.
+Agents never download or run an installer.
 
 ## Workflow A — First-time project enablement
 
 Goal: this repo can be driven from the terminal.
 
 1. Read `ProjectSettings/ProjectVersion.txt`
-2. `unity editors -i` — install matching Editor if missing (`unity install <ver> -m …`)
+2. `unity editors -i` — verify the matching Editor is installed; stop for human provisioning if missing
 3. `unity open .` (or user already has Editor open)
-4. `unity pipeline install --project-path .`
+4. `unity pipeline install --project-path . --package-version 0.3.1-exp.1`
 5. Commit `Packages/manifest.json` + `packages-lock.json`
 6. Wait for compile; `unity pipeline list` until reachable
 7. `unity command` — snapshot available tools
@@ -47,7 +73,7 @@ Example: "player falls through floor"
 4. Hypothesize → smallest mutation (enable collider, fix component field)
 5. `unity command editor_play` → observe
 6. `unity command get_console_logs` / capture game view
-7. `unity command editor_stop`
+7. `unity command editor_stop`, then re-check `editor_status` before assuming it stopped
 8. Persist fix in project files/assets; don't leave only eval side effects
 
 ## Workflow C — Implement feature with verification
@@ -66,6 +92,18 @@ Example: "player falls through floor"
 Prefer **spawned** Editor jobs for isolation:
 
 ```bash
+set -euo pipefail
+case "${GITHUB_ACTIONS-}:${GITHUB_EVENT_NAME-}:${GITHUB_REPOSITORY-}:${GITHUB_REF-}" in
+  true:push:Hobo-Labs/HoBo:refs/heads/main|true:schedule:Hobo-Labs/HoBo:refs/heads/main|true:workflow_dispatch:Hobo-Labs/HoBo:refs/heads/main) ;;
+  *)
+    echo "credentialed build/test requires GitHub Actions on the HoBo main ref from push, schedule, or workflow_dispatch"
+    exit 1
+    ;;
+esac
+if [ "${GITHUB_REF_PROTECTED-}" != "true" ]; then
+  echo "credentialed build/test requires a protected ref"
+  exit 1
+fi
 unity test "$PROJECT_PATH" --mode EditMode --output test-results.xml
 unity build "$PROJECT_PATH" --target WebGL \
   --execute-method CiBuilder.BuildWebGL \
@@ -78,12 +116,13 @@ Use Pipeline against a long-lived Editor only when the farm intentionally keeps 
 
 ```bash
 unity mcp configure --list
-unity mcp configure cursor --local --yes
-# or
 unity mcp --project-path /path/to/project   # stdio server
 ```
 
-MCP exposes the same local automation surface. Still apply confirm/dry-run discipline for mutations.
+MCP client configuration is an interactive, human-reviewed setup step; agents
+must not run `configure --yes` or accept generated config on the owner's behalf.
+MCP exposes the same local automation surface. Still apply confirm/dry-run
+discipline for mutations.
 
 ## Workflow F — Disk-level asset surgery (art/audio swaps, bulk retargets)
 
@@ -242,17 +281,17 @@ Refactoring this way immediately surfaced a *further* latent bug (a floor overha
 
 ### Anti-patterns (composition)
 
-- Guessing crate height (`y + 0.5`) or wagon size from the name  
-- Continuous fence then a stair mesh through it  
-- Nested cliff cubes for “grounding” without a continuous silhouette  
-- Declaring layout done after a wide Game capture only  
-- Re-typing a zone's edge coordinate for its mass, its paving and its railing  
+- Guessing crate height (`y + 0.5`) or wagon size from the name
+- Continuous fence then a stair mesh through it
+- Nested cliff cubes for “grounding” without a continuous silhouette
+- Declaring layout done after a wide Game capture only
+- Re-typing a zone's edge coordinate for its mass, its paving and its railing
 - A stair whose run is on the wrong **axis**: it can reach the correct height and still arrive
   alongside the platform facing open air (measure the top step's rect against the target's rect,
-  not just its Y)  
-- Coplanar tops between a slab and the volume under it — z-fighting; sink one by ~5 cm  
+  not just its Y)
+- Coplanar tops between a slab and the volume under it — z-fighting; sink one by ~5 cm
 - Modelling a wellhead / ring / archway as a **solid** primitive: there is no bore, so anything
-  "inside" it is invisible and intersecting. Ring it out of parts instead  
+  "inside" it is invisible and intersecting. Ring it out of parts instead
 
 ## Workflow H — Shader / render look-dev (custom shaders, post FX, lighting)
 
@@ -421,7 +460,7 @@ it. Layer checks:
 | Bulk art/audio swap or retarget | Disk-level YAML/GUID edit + refresh (Workflow F) |
 | Clean test report on agent | `unity test` |
 | Player binary | `unity build` + project `executeMethod` |
-| Install tooling | `install` / `install-modules` |
+| Verify installed tooling | `editors -i` / `install-modules -l` |
 | Auth broken | `auth status`, `doctor` |
 
 ## Evidence standards for agents
@@ -454,7 +493,7 @@ Review **incidental diffs** before committing — they are evidence, not noise. 
 | Command missing | Package version drift; run bare `unity command`; upgrade pipeline |
 | Timeout | Raise `--timeout`; poll async `*_status`; avoid huge eval |
 | Wrong project | Pass `--project-path`; verify with `status` |
-| Module install fails | Editor must be Hub/CLI managed; try `--accept-eula`, `--cm` |
+| Module install fails | Stop for human provisioning; agents and CI must not accept EULAs or install modules |
 | Build fails | Need real `--execute-method`; read log under `Logs/` |
 | Pipeline blocked / hangs on UI | Open Editor with `-automated`; dismiss or avoid modal dialogs |
 | Layout “looks fine” then user zooms and finds clips | Run composition audit; recapture close Scene of the junction |

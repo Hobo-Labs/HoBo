@@ -1,29 +1,23 @@
 # Unity CLI Reference (Manage + Automation)
 
-Authoritative for a given install: `unity --help` and `unity <command> --help`.  
+Authoritative for a given install: `unity --help` and `unity <command> --help`.
 Official docs: https://docs.unity.com/en-us/unity-cli/unity-cli-reference
 
 CLI status: **experimental**.
 
-## Install the CLI
+## Verify the preinstalled CLI
 
-```bash
-# macOS / Linux
-curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
-
-# Windows PowerShell
-$env:UNITY_CLI_CHANNEL='beta'; irm https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 | iex
-```
+Agents never install or upgrade the CLI. CI images carry a preinstalled,
+version-pinned `unity` whose image digest and binary hash are recorded by human
+provisioning. A missing CLI or an unexpected version is a stop condition.
 
 - Binary (typical): `~/.unity/bin/unity`
 - Env snippet: `~/.unity/env` (adds bin to `PATH`)
-- Update: `unity upgrade`
-- Uninstall CLI: `unity self-uninstall`
 
 Verify:
 
 ```bash
-unity --version
+unity --version   # field-tested: 1.0.0-beta.2 — anything else is drift
 unity doctor --format json
 ```
 
@@ -49,9 +43,9 @@ unity doctor --format json
 | Pipe / redirect | `tsv` |
 | Explicit | `--format json` etc. |
 
-- **stdout**: results  
-- **stderr**: errors / diagnostics (JSON errors may be `{"error":"..."}` on stderr)  
-- **Do not parse** animated progress bars  
+- **stdout**: results
+- **stderr**: errors / diagnostics (JSON errors may be `{"error":"..."}` on stderr)
+- **Do not parse** animated progress bars
 
 ### Exit codes
 
@@ -88,7 +82,7 @@ unity releases
 unity editor                               # manage a single install
 ```
 
-**install** highlights:
+**install** highlights (human provisioning only; agents and CI must not run install, uninstall, or EULA-accepting commands):
 
 | Option | Notes |
 |--------|-------|
@@ -107,9 +101,7 @@ Examples:
 
 ```bash
 unity install 6000.5.4f1
-unity install lts -m ios android webgl --cm --accept-eula --yes
 unity install-modules -e 6000.5.4f1 -l
-unity install-modules -e 6000.5.4f1 -m android --no-cm
 ```
 
 **editors** highlights:

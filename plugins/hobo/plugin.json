@@ -1,0 +1,22 @@
+{
+	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+	"name": "hobo",
+	"version": "0.0.0-alpha.544",
+	"description": "HoBo's own MCP server plus the portable hobo-setup and hobo-deploy skills: owner secret-store sessions, CI/CD identity ceremonies, and private owner hand-offs.",
+	"author": {
+		"name": "Hobo Labs",
+		"url": "https://github.com/Hobo-Labs"
+	},
+	"homepage": "https://github.com/Hobo-Labs/HoBo",
+	"repository": "https://github.com/Hobo-Labs/HoBo",
+	"license": "MIT",
+	"keywords": [
+		"hobo",
+		"mcp",
+		"model-context-protocol",
+		"secret-store",
+		"owner-handoff",
+		"ci",
+		"cd"
+	]
+}
