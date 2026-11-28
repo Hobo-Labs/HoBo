@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
 import { sessionReplay } from "../../../bindles/src/session-replay.js";
+import { CATALOG_ROWS } from "../../../bindles/src/types.js";
 import {
 	awsKmsCryptographyMappers,
 	withAwsKmsCryptography,
@@ -35,6 +36,7 @@ import {
 } from "../src/aws-secret-mapper.js";
 import {
 	type AlchemyBindleMapping,
+	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
 import { alchemySourceFor } from "../src/source-fence.js";
@@ -140,6 +142,81 @@ function fixture() {
 }
 
 describe("AWS Alchemy HTTP application mapping", () => {
+	it("maps an HTTP-served UI to a WebFunction and rejects unsupported UI operations", async () => {
+		const definition = bindle("shop", (b) => ({
+			panel: b
+				.ui(() => () => new Response("ui works"))
+				.with(sessionReplay({ enabled: false })),
+		}));
+		const source = defineAwsHttpSource({
+			bindle: definition,
+			applicationName: "panel",
+			environment: {},
+			resolveStores: () => ({}),
+			verifyBinding: () => true,
+		});
+		const mappers = awsHttpBindleMappers({
+			source,
+			main: fileURLToPath(import.meta.url),
+			authType: "IamAuth",
+			maxEnvironments: 2,
+			rateLimit: 100,
+			sourceFence: {
+				sourceDigest: `sha256:${"a".repeat(64)}`,
+				environmentDigest: `sha256:${"b".repeat(64)}`,
+				proofRef: "host:test",
+				verify: () => true,
+			},
+			verifySource: () => true,
+		});
+		const support = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappers).find(
+			(entry) => entry.kind === "ui",
+		);
+		expect(support).toMatchObject({
+			status: "partial",
+			supportedOperations: [],
+			unsupportedOperations: ["render", "drive"],
+			resourceTypes: ["AWS.Lambda.WebFunction"],
+		});
+		// SAFETY: the fixture supplies all Alchemy services required by this mapper.
+		const mapped = await Effect.runPromise(
+			mapBindleToAlchemy(definition, mappers, {
+				assessRequirements: () => ({ status: "supported" as const }),
+			}).pipe(
+				Effect.provideService(StackContext, {
+					name: "Shop",
+					stage: "test",
+					resources: {},
+					bindings: {},
+					actions: {},
+				}),
+				Effect.provideService(Stage, "test"),
+				Effect.provideService(AlchemyContext, {
+					dotAlchemy: "/tmp",
+					dev: false,
+					adopt: false,
+				}),
+			) as Effect.Effect<AlchemyBindleMapping>,
+		);
+		expect(mapped.primary.panel?.Type).toBe("AWS.Lambda.WebFunction");
+		expect(
+			await (await source.fetch(new Request("https://app.test/"))).text(),
+		).toBe("ui works");
+		for (const operation of ["render", "drive"] as const) {
+			const unsupported = bindle("shop", (b) => ({
+				panel: b
+					.ui(() => () => new Response())
+					.allow(operation)
+					.with(sessionReplay({ enabled: false })),
+			}));
+			expect(() =>
+				mapBindleToAlchemy(unsupported, mappers, {
+					assessRequirements: () => ({ status: "supported" as const }),
+				}),
+			).toThrow(`does not support operation ${operation}`);
+		}
+	});
+
 	it("connects a mapped queue table to its consuming WebFunction", async () => {
 		const definition = bindle("jobs-app", (b) => {
 			const jobs = b.queue().allow("enqueue", "dequeue");

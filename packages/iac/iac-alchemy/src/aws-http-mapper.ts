@@ -138,7 +138,10 @@ export function awsHttpBindleMappers<Requirements>(
 	const root = graph.bindle.resources[graph.applicationName];
 	if (
 		!root ||
-		(root.kind !== "web" && root.kind !== "api" && root.kind !== "service")
+		(root.kind !== "web" &&
+			root.kind !== "api" &&
+			root.kind !== "service" &&
+			root.kind !== "ui")
 	)
 		throw new AlchemyIacError(
 			"ENTRYPOINT_UNSUPPORTED",
@@ -212,6 +215,11 @@ export function awsHttpBindleMappers<Requirements>(
 		annotations: ["hobo:session-replay"],
 		bindsEntrypoint: true,
 		limitations: [
+			...(root.kind === "ui"
+				? [
+						"HTTP serving only; HoBo UI render and drive operations are not implemented.",
+					]
+				: []),
 			"Node.js HTTP with selected bounded DynamoDB, S3, Secrets Manager, queue, SNS notification and KMS cryptography bindings; the host authenticates source, stores, IAM and pricing.",
 		],
 		validate,

@@ -190,7 +190,11 @@ export function captureAwsHttpGraph<Requirements>(
 	if (
 		!declaration ||
 		declaration.name !== applicationName ||
-		!apply(arrayIncludes, ["web", "api", "service"], [declaration.kind]) ||
+		!apply(
+			arrayIncludes,
+			["web", "api", "service", "ui"],
+			[declaration.kind],
+		) ||
 		typeof entrypoint !== "function" ||
 		isProxy(entrypoint)
 	)

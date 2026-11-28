@@ -1843,7 +1843,39 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			} finally {
 				await server.close();
 			}
+			const uiDefinition = bindle("shop", (b) => {
+				const sessions = b.kv().allow("get");
+				const objects = b.bucket().allow("read");
+				return {
+					sessions,
+					objects,
+					panel: b
+						.ui(handler)
+						.with(sessionReplay({ enabled: false }))
+						.dependsOn(sessions, objects),
+				};
+			});
+			const uiSelected = withAwsS3(
+				withAwsDynamoKv(uiDefinition, { sessions: true }),
+				{ objects: true },
+			);
+			const ui = defineAwsHttpSource({
+				bindle: uiSelected,
+				applicationName: "panel",
+				environment: {
+					HOBO_RESOURCE_0: bucket.bucketName,
+					HOBO_RESOURCE_1: table.tableArn,
+				},
+				resolveStores: () => ({ sessions: kv, objects: objectStore }),
+				verifyBinding: () => authorized,
+			});
+			const uiResponse = await ui.fetch(new Request("https://app.test/"));
+			expect(uiResponse.status).toBe(200);
+			expect(await uiResponse.json()).toEqual({ value: [1, 2], body: [4, 5] });
 			authorized = false;
+			expect((await ui.fetch(new Request("https://app.test/"))).status).toBe(
+				503,
+			);
 			expect(
 				(await source.fetch(new Request("https://app.test/"))).status,
 			).toBe(503);
