@@ -1627,103 +1627,103 @@ describe("@hobo/cd/domain Kargo-parity and pull-based CD release model", () => {
 			}
 			return [
 				Story.then(stage, new StagePromotionStarted(startedFields)),
-			Story.then(
-				input.run,
-				new DeliveryRunStarted({
+				Story.then(
+					input.run,
+					new DeliveryRunStarted({
+						stageId: stage.id,
+						campId,
+						freightDigest: input.digest,
+						previousRevision: input.prevRev,
+						flowKind: "gitops-pull",
+						flowTarget,
+						requiresApproval: false,
+						implicitHealthVerification: true,
+						triggerPullSync: false,
+						requestedAtMs: clockMs,
+					}),
+				),
+				Story.call(CdDeliveryFlow.publishRevision, {
+					deliveryRunId: input.run.id,
 					stageId: stage.id,
 					campId,
 					freightDigest: input.digest,
-					previousRevision: input.prevRev,
 					flowKind: "gitops-pull",
 					flowTarget,
-					requiresApproval: false,
-					implicitHealthVerification: true,
-					triggerPullSync: false,
-					requestedAtMs: clockMs,
+					previousRevision: input.prevRev,
 				}),
-			),
-			Story.call(CdDeliveryFlow.publishRevision, {
-				deliveryRunId: input.run.id,
-				stageId: stage.id,
-				campId,
-				freightDigest: input.digest,
-				flowKind: "gitops-pull",
-				flowTarget,
-				previousRevision: input.prevRev,
-			}),
-			Story.succeed(CdDeliveryFlow.publishRevision, {
-				outcome: {
-					_tag: "Committed",
-					revision: input.rev,
-					targetRef,
-				},
-			}),
-			Story.then(
-				input.run,
-				new DeliveryRevisionCommitted({ revision: input.rev, targetRef }),
-			),
-			Story.call(CdDeliveryFlow.observeConvergence, {
-				deliveryRunId: input.run.id,
-				stageId: stage.id,
-				campId,
-				flowKind: "gitops-pull",
-				flowTarget,
-				targetRevision: input.rev,
-				triggerSync: false,
-			}),
-			Story.succeed(CdDeliveryFlow.observeConvergence, {
-				observation: {
-					_tag: "Converged",
-					appliedRevision: input.rev,
-					summary,
-				},
-			}),
-			Story.then(
-				input.run,
-				new DeliveryConvergenceObserved({
-					appliedRevision: input.rev,
-					outOfSyncCount: NonNegativeCount.make(0),
-					summary,
+				Story.succeed(CdDeliveryFlow.publishRevision, {
+					outcome: {
+						_tag: "Committed",
+						revision: input.rev,
+						targetRef,
+					},
 				}),
-				new DeliveryRunVerified({
-					passed: true,
-					implicit: true,
-					summary,
-					verifiedAtMs: clockMs,
-				}),
-				new DeliveryRunCompleted({
+				Story.then(
+					input.run,
+					new DeliveryRevisionCommitted({ revision: input.rev, targetRef }),
+				),
+				Story.call(CdDeliveryFlow.observeConvergence, {
+					deliveryRunId: input.run.id,
 					stageId: stage.id,
-					freightDigest: input.digest,
-					appliedRevision: input.rev,
-					qualifiedAtMs: clockMs,
-					summary,
+					campId,
+					flowKind: "gitops-pull",
+					flowTarget,
+					targetRevision: input.rev,
+					triggerSync: false,
 				}),
-			),
-			Story.then(
-				CdFreight.ref(input.digest),
-				new FreightQualifiedInStage({
-					stageId: stage.id,
-					deliveryRunId: input.run.id,
-					qualifiedAtMs: clockMs,
-					summary,
+				Story.succeed(CdDeliveryFlow.observeConvergence, {
+					observation: {
+						_tag: "Converged",
+						appliedRevision: input.rev,
+						summary,
+					},
 				}),
-			),
-			Story.then(
-				stage,
-				new StageEnteredVerifying({
-					deliveryRunId: input.run.id,
-					freightDigest: input.digest,
-				}),
-				new StagePromotionCompleted({
-					deliveryRunId: input.run.id,
-					freightDigest: input.digest,
-					appliedRevision: input.rev,
-					qualifiedAtMs: clockMs,
-					summary,
-				}),
-				...(input.holdEvent !== undefined ? [input.holdEvent] : []),
-			),
-		];
+				Story.then(
+					input.run,
+					new DeliveryConvergenceObserved({
+						appliedRevision: input.rev,
+						outOfSyncCount: NonNegativeCount.make(0),
+						summary,
+					}),
+					new DeliveryRunVerified({
+						passed: true,
+						implicit: true,
+						summary,
+						verifiedAtMs: clockMs,
+					}),
+					new DeliveryRunCompleted({
+						stageId: stage.id,
+						freightDigest: input.digest,
+						appliedRevision: input.rev,
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					CdFreight.ref(input.digest),
+					new FreightQualifiedInStage({
+						stageId: stage.id,
+						deliveryRunId: input.run.id,
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					stage,
+					new StageEnteredVerifying({
+						deliveryRunId: input.run.id,
+						freightDigest: input.digest,
+					}),
+					new StagePromotionCompleted({
+						deliveryRunId: input.run.id,
+						freightDigest: input.digest,
+						appliedRevision: input.rev,
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+					...(input.holdEvent !== undefined ? [input.holdEvent] : []),
+				),
+			];
 		};
 
 		return Effect.runPromise(

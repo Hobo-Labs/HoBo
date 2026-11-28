@@ -736,7 +736,10 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 				for (const prevSlot of state.slots) {
 					if (!prevSlot.autoPromotionHeld) continue;
 					const nextConfig = nextConfigs.get(prevSlot.slotId);
-					if (nextConfig === undefined || nextConfig.autoPromotion === "manual") {
+					if (
+						nextConfig === undefined ||
+						nextConfig.autoPromotion === "manual"
+					) {
 						events.push(
 							new StageAutoPromotionHoldCleared({
 								originSlot: prevSlot.slotId,
