@@ -1,16 +1,43 @@
-// GitHub REST adapter: Git Data API for one atomic multi-file commit.
-//   head   GET   /repos/{o}/{r}/git/ref/heads/{branch}
-//   read   GET   /repos/{o}/{r}/contents/{path}?ref={sha}
-//   commit GET   /repos/{o}/{r}/git/commits/{parent}       (base tree)
-//          POST  /repos/{o}/{r}/git/trees                  (inline contents)
-//          POST  /repos/{o}/{r}/git/commits
-//          PATCH /repos/{o}/{r}/git/refs/heads/{branch}    (force: false)
-
 import type { HttpTransport, JsonObject } from "@hobo/core";
 import type { GitRepositoryRecord } from "../_generated/gitops_pb.js";
 import { GitopsError } from "../errors.js";
 import { encodePath, hostFailure, ok, parseJson, pick, send } from "../http.js";
-import type { GitHostClient } from "./types.js";
+import { isJsonNumber } from "../json.js";
+import type {
+	GitHostClient,
+	PullRequestInfo,
+	PullRequestState,
+} from "./types.js";
+
+function githubPrState(body: JsonObject): PullRequestState {
+	if (body.merged === true || pick(body, "merged_at") !== undefined) {
+		return "merged";
+	}
+	return pick(body, "state") === "closed" ? "closed" : "open";
+}
+
+function githubPrInfo(body: JsonObject, what: string): PullRequestInfo {
+	const rawNumber = body.number;
+	const id = isJsonNumber(rawNumber) ? String(rawNumber) : pick(body, "number");
+	const url = pick(body, "html_url") ?? pick(body, "url");
+	const headBranch = pick(body, "head.ref") ?? "";
+	const baseBranch = pick(body, "base.ref") ?? "";
+	if (id === undefined || url === undefined) {
+		throw new GitopsError(
+			"gitops-host-response-invalid",
+			`${what}: missing pull request number or html_url`,
+		);
+	}
+	const mergeCommitSha = pick(body, "merge_commit_sha");
+	return {
+		id,
+		url,
+		state: githubPrState(body),
+		headBranch,
+		baseBranch,
+		...(mergeCommitSha !== undefined ? { mergeCommitSha } : undefined),
+	};
+}
 
 export function createGitHubClient(
 	repo: GitRepositoryRecord,
@@ -25,7 +52,7 @@ export function createGitHubClient(
 		"content-type": "application/json",
 	});
 	const json = async (
-		method: "GET" | "POST" | "PATCH",
+		method: "GET" | "POST" | "PATCH" | "PUT",
 		path: string,
 		what: string,
 		body?: JsonObject,
@@ -49,10 +76,10 @@ export function createGitHubClient(
 		return found;
 	};
 	return {
-		async head() {
+		async head(branch = repo.branch) {
 			const ref = await json(
 				"GET",
-				`/git/ref/heads/${encodePath(repo.branch)}`,
+				`/git/ref/heads/${encodePath(branch)}`,
 				"read branch",
 			);
 			return sha(ref, "object.sha", "read branch");
@@ -78,7 +105,7 @@ export function createGitHubClient(
 				blobId: pick(body, "sha") ?? "",
 			};
 		},
-		async commit({ parent, message, changes }) {
+		async commit({ parent, message, changes, branch = repo.branch }) {
 			const parentCommit = await json(
 				"GET",
 				`/git/commits/${parent}`,
@@ -102,7 +129,7 @@ export function createGitHubClient(
 			const commitSha = sha(commit, "sha", "create commit");
 			await json(
 				"PATCH",
-				`/git/refs/heads/${encodePath(repo.branch)}`,
+				`/git/refs/heads/${encodePath(branch)}`,
 				"advance branch",
 				{
 					sha: commitSha,
@@ -110,6 +137,52 @@ export function createGitHubClient(
 				},
 			);
 			return commitSha;
+		},
+		async createBranch({ name, fromSha }) {
+			await json("POST", "/git/refs", "create branch", {
+				ref: `refs/heads/${name}`,
+				sha: fromSha,
+			});
+		},
+		async openPullRequest({
+			headBranch,
+			baseBranch = repo.branch,
+			title,
+			body,
+		}) {
+			const created = await json("POST", "/pulls", "open pull request", {
+				title,
+				head: headBranch,
+				base: baseBranch,
+				body,
+			});
+			return githubPrInfo(created, "open pull request");
+		},
+		async getPullRequest(prId) {
+			const fetched = await json(
+				"GET",
+				`/pulls/${encodeURIComponent(prId)}`,
+				"get pull request",
+			);
+			return githubPrInfo(fetched, "get pull request");
+		},
+		async mergePullRequest({ prId, method = "merge", commitTitle }) {
+			const merged = await json(
+				"PUT",
+				`/pulls/${encodeURIComponent(prId)}/merge`,
+				"merge pull request",
+				{
+					merge_method: method,
+					...(commitTitle !== undefined
+						? { commit_title: commitTitle }
+						: undefined),
+				},
+			);
+			const mergeCommitSha = pick(merged, "sha");
+			return {
+				merged: merged.merged === true || mergeCommitSha !== undefined,
+				...(mergeCommitSha !== undefined ? { mergeCommitSha } : undefined),
+			};
 		},
 	};
 }

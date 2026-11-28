@@ -94,7 +94,21 @@ one that is not.
 
 ## Architecture placement
 
-A policy library, not a domain service. It handles no command and emits no
-events, runs no actor, and keeps no event store, projection, materialized
-view, snapshot or read store: a host asks it, logs the decision, and moves the
-fleet through the register in `@hobo/fleet`.
+A policy library paired with a pure `@alchemy.run/domain` specification (`@hobo/backend-routing/domain`):
+
+- **Command/event & materialized view/projection:** `BackendRouting` models
+  one-active fleet routing transitions through `FleetAssignment` commands and
+  events (`InitializeFleetAssignment`, `ProposeBudgetSwitch`,
+  `CompleteSealedSwitch`, `AbortSealedSwitch`, `PromoteFailoverStandby`) and
+  projects state into `FleetAssignmentView`, using discriminated tagged unions
+  for `TypedFleetAllowance` (`HardStop`, `Metered`, `UnknownOverage`),
+  `FleetRouteDecision` (`Keep`, `Hold`, `Switch`, `Failover`), and
+  `FleetAssignmentState` (`Unassigned`, `Active`, `SwitchSealed`), plus branded
+  `RoutingHysteresisMarks` (`0 < switchBackBelow < switchAt <= 1`).
+- **Actor, event store, snapshot, and read store:** The package keeps no
+  embedded actor, event store, snapshot, or read store of its own; hosts either
+  call `decideFleet` / `routeFleetByBudget` synchronously with the assignment
+  register in `@hobo/fleet` or host `BackendRouting` on a `Domain.Platform`
+  Layer (`Domain.InMemory`, `@hobo/storage-sqlite`, or distributed cluster).
+
+

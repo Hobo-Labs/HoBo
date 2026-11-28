@@ -71,7 +71,7 @@ Feature: Hosted provider parity with RelayRunner
       | ubuntu-24.04              | github     |
       | my-own-runner             | none       |
 
-  @parity @P04 @t1 @pending
+  @parity @P04 @t1
   Scenario: P04 Every routable provider has dated list prices per size
     Then every hosted provider in the runner order has a financial model
     And each price names its source page and the day it was read

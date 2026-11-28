@@ -11,7 +11,7 @@ Feature: Insight parity with RelayRunner
     Then it lists each matching job with its runner and the decision's reason
     And nothing older than 90 days
 
-  @parity @I02 @t2 @pending
+  @parity @I02 @t2
   Scenario: I02 History shows runs and jobs with step timings, time-outs and superseded runs
     Given run and job webhooks for a run that timed out and one that was superseded
     When the run history is read from the journal

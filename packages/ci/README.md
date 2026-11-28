@@ -17,12 +17,18 @@ from changing that metadata.
 | [`@hobo/ci-cf`](../ci-cf/README.md) | Implemented native Cloudflare CI adapter |
 | [`@hobo/ci-ado`](../ci-ado/README.md) | Local command checks and self-hosted Azure Pipelines configuration |
 
-`@hobo/ci/app` exports the SDK Bindles for the CI relay and its cache,
-configuration and runner peers. The relay declares a project, an object-store
-member, its API, queues and repair schedule in dependency order. A host places
-each peer in its provider's Yard and connects it through a Junction; the Bindles
-do not choose a provider or authorize a deployment. The repair schedule's
-declared cadence publishes to the relay's repair queue, not a separate endpoint.
+`@hobo/ci/app` exports the provider-neutral SDK Bindles for the CI relay and its
+cache, configuration and runner peers. GitHub App and GitHub Actions runner
+declarations (`ciGithubAppBindle`, Actions relay routing, and `runs-on` parsing)
+live in `@hobo/ci-gh-actions`; `@hobo/ci/domain`, `@hobo/ci/cluster`,
+`@hobo/ci/host`, `@hobo/ci/app`, and non-GitHub CI adapters (`@hobo/ci-ado`,
+`@hobo/ci-cf`, `@hobo/ci-dagger`) remain provider-neutral (`RunnerLabel` and
+`"hosted"` tier) and are verified by `test/github-boundary.test.ts`. The relay
+declares a project, an object-store member, its API, queues and repair schedule
+in dependency order. A host places each peer in its provider's Yard and connects
+it through a Junction; the Bindles do not choose a provider or authorize a
+deployment. The repair schedule's declared cadence publishes to the relay's
+repair queue, not a separate endpoint.
 
 The legacy allocation and sandbox quote implementations live behind
 `@hobo/pricing/legacy`. The original `src/accounting.ts` and
@@ -918,3 +924,27 @@ yet, and no relay writes the provider-health file today. The wiring, in
   over the relay's finished job facts for the owner since the window start;
 - build `LedgerSpendReader` from the ledger's settled leases and the same
   finished job facts.
+
+## Alchemy Domain: `CiFleet` (`@hobo/ci/domain`)
+
+`@hobo/ci/domain` models multi-tier CI runner balancing as an `@alchemy.run/domain` bounded context with branded Effect schemas (`StationId`, `RunnerPoolId`, `JobDispatchId`, `SlotId`, `NonNegativeMicros`, `PositiveConcurrency`, `PositiveMinutes`, `PositiveSeconds`, `PositiveAttempts`) and discriminated tagged-union states:
+
+- **Aggregates**: `StationFleet` balances traffic across `local`, `hostinger`, `agent37`, `boat`, and `github` runner tiers by role, lowest utilization ratio, lowest cost per minute, and deterministic tier priority while enforcing station and payer budget ceilings (`BudgetCeilingExceeded`, `BudgetCeilingBelowExposure`); `JobDispatch` enforces immutable start-binding (`StartBindingConflict`) and queue expiry through typed command/event transitions.
+- **Saga & External System**: `DispatchJob` executes multi-tier failover across tiers through the `RunnerBackend` `Domain.ExternalSystem` with compensation-safe slot release (`ReleaseBalancedSlot`) on provisioning or bind failures.
+- **Views & API**: `StationCapacityView`, discriminated `RoutingAuditView` (`Unobserved | Queued | Bound | Completed | Failed | Expired`), and `CiFleetApi` expose materialized views and projections, snapshots, and read store queries alongside in-process and HTTP command dispatch.
+- **Superseded persistence removed**: `PostgresStrictFleetStore` and its Testcontainers harness were removed from `fleet-v2` in favor of the `CiFleet` domain model.
+
+## Portable & Rivet Hosting (`@hobo/ci/host`)
+
+`@hobo/ci/host` composes `CiFleet` onto portable runtime platforms outside `src/domain/`:
+
+- **Rivet Durable Objects**: `createCiFleetRivetLayer` hosts every `CiFleet` aggregate, view, policy, and saga instance on `@alchemy.run/domain/Rivet` (`DomainRivet.layerDurableObjects`) with per-actor SQLite event store and alarm scheduling.
+- **RivetKit Lease Actor**: `createCiStationLeaseRegistry` defines the `stationLease` RivetKit actor backed by embedded SQLite, live `leaseUpdated` event broadcasts, and scheduled lease expiry verified via `rivetkit/test` (`setupTest`).
+- **Portable Hosts**: `createCiFleetInMemoryLayer` (`Domain.InMemory`) and `createCiFleetSqliteLayer` (`@hobo/storage-sqlite` `createSqliteDomainPlatform`) run identical command/event, snapshot, and materialized view behavior locally and over HTTP (`Domain.protocolHttp`).
+
+## Effect Cluster Fleet Coordination (`@hobo/ci/cluster`)
+
+`@hobo/ci/cluster` coordinates multi-tier runner fleets using `effect/cluster`:
+
+- **`StationFleetCoordinator` Entity**: serializes allocation per station shard (`concurrency: 1`) with `ClusterSchema.Persisted` RPCs (`ConfigureBudget`, `RegisterPool`, `DispatchJob` keyed by `jobId`, `CompleteJob`, `ReapExpiredLeases`) and `StationSnapshot`.
+- **`createFleetLeaseReaperSingleton` (`Singleton.make`)** and **`createFleetHealthSweepCron` (`ClusterCron.make`)**: run single-active lease reaping and non-overlapping scheduled fleet sweeps.

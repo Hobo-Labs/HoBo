@@ -86,7 +86,11 @@ const GroupsPageSchema = z.looseObject({
 });
 const RepositorySchema = z.looseObject({
 	private: z.boolean(),
-	owner: z.looseObject({ login: z.string(), type: z.string() }),
+	owner: z.looseObject({
+		id: z.number().int().positive().optional(),
+		login: z.string(),
+		type: z.string(),
+	}),
 });
 const UserSchema = z.looseObject({
 	id: z.number().int().positive(),
@@ -434,9 +438,25 @@ export async function releaseRunner(
 
 export async function runnerAdopter(
 	github: RunnerAdoptionGithub,
+	repository?: string,
 ): Promise<RunnerAdopter> {
+	const userResponse = await github.request("GET", "/user", undefined);
+	if (
+		userResponse.status === 403 &&
+		repository &&
+		REPOSITORY.test(repository)
+	) {
+		const repo = await readJson(
+			await github.request("GET", `/repos/${repository}`, undefined),
+			RepositorySchema,
+			`read ${repository} owner`,
+		);
+		if (repo.owner.id !== undefined) {
+			return { id: String(repo.owner.id), login: repo.owner.login };
+		}
+	}
 	const user = await readJson(
-		await github.request("GET", "/user", undefined),
+		userResponse,
 		UserSchema,
 		"read the signed-in user",
 	);

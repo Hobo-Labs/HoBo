@@ -1,0 +1,685 @@
+import * as DomainRivet from "@alchemy.run/domain/Rivet";
+import type { PoolHost } from "@alchemy.run/rivet/Host";
+import type { JsonValue } from "@hobo/core";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { actor, setup } from "rivetkit";
+import { db } from "rivetkit/db";
+import {
+	CampTargetId,
+	type CampTargetId as CampTargetIdType,
+	type CdCampRealizer,
+	CdDeliveryFlow,
+	CdPromotionId,
+	type CdPromotionId as CdPromotionIdType,
+	CdRelease,
+	CdReleaseHandlers,
+	type CdVerificationGate,
+	FreightDigest,
+	type FreightDigest as FreightDigestType,
+	type NonEmptyReason,
+	UnsupportedDeliveryFlow,
+} from "../domain/index.js";
+
+export type CdCampRealizerService = Layer.Success<
+	ReturnType<typeof CdCampRealizer.toLayer>
+>;
+
+export type CdVerificationGateService = Layer.Success<
+	ReturnType<typeof CdVerificationGate.toLayer>
+>;
+
+export type CdDeliveryFlowService = Layer.Success<
+	ReturnType<typeof CdDeliveryFlow.toLayer>
+>;
+
+export const DefaultFailClosedDeliveryFlowLayer: Layer.Layer<CdDeliveryFlowService> =
+	CdDeliveryFlow.toLayer(
+		Effect.succeed({
+			publishRevision: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			observePullRequest: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			observeConvergence: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+			rollbackRevision: ({ flowKind, flowTarget }) =>
+				Effect.fail(new UnsupportedDeliveryFlow({ flowKind, flowTarget })),
+		}),
+	);
+
+export interface CdReleaseRivetHostOptions<
+	PoolReq,
+	RealizerErr,
+	RealizerReq,
+	GateErr,
+	GateReq,
+	FlowErr = never,
+	FlowReq = never,
+> {
+	readonly name?: string;
+	readonly main: string;
+	readonly handler?: string;
+	readonly pool: Layer.Layer<PoolHost, never, PoolReq>;
+	readonly realizer: Layer.Layer<
+		CdCampRealizerService,
+		RealizerErr,
+		RealizerReq
+	>;
+	readonly verificationGate: Layer.Layer<
+		CdVerificationGateService,
+		GateErr,
+		GateReq
+	>;
+	readonly deliveryFlow?: Layer.Layer<CdDeliveryFlowService, FlowErr, FlowReq>;
+}
+
+export function createCdReleaseRivetLayer<
+	PoolReq,
+	RealizerErr,
+	RealizerReq,
+	GateErr,
+	GateReq,
+	FlowErr = never,
+	FlowReq = never,
+>(
+	options: CdReleaseRivetHostOptions<
+		PoolReq,
+		RealizerErr,
+		RealizerReq,
+		GateErr,
+		GateReq,
+		FlowErr,
+		FlowReq
+	>,
+) {
+	const rivetPlatform = DomainRivet.layerDurableObjects<PoolReq>({
+		name: options.name ?? "CdRelease",
+		main: options.main,
+		handler: options.handler ?? "default",
+		pool: options.pool,
+	});
+	const flowLayer = options.deliveryFlow ?? DefaultFailClosedDeliveryFlowLayer;
+	return CdRelease.layer(CdReleaseHandlers).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				rivetPlatform,
+				options.realizer,
+				options.verificationGate,
+				flowLayer,
+			),
+		),
+	);
+}
+
+const GateStatusSchema = Schema.Literals([
+	"pending",
+	"passed",
+	"failed",
+	"expired",
+]);
+export type CdPromotionGateStatus = typeof GateStatusSchema.Type;
+
+const GateRowSchema = Schema.Struct({
+	promotion_id: Schema.NonEmptyString,
+	camp_id: Schema.NonEmptyString,
+	freight_digest: Schema.NonEmptyString,
+	status: GateStatusSchema,
+	summary: Schema.NullOr(Schema.String),
+	created_at_ms: Schema.Int,
+	deadline_at_ms: Schema.Int,
+});
+
+const decodeGateRows = Schema.decodeUnknownSync(Schema.Array(GateRowSchema));
+
+export interface CdPromotionGateRecord {
+	readonly promotionId: string;
+	readonly campId: string;
+	readonly freightDigest: string;
+	readonly status: CdPromotionGateStatus;
+	readonly summary: string | null;
+	readonly createdAtMs: number;
+	readonly deadlineAtMs: number;
+}
+
+export interface CdPromotionGateEvent {
+	readonly action: "opened" | "resolved" | "expired";
+	readonly gate: CdPromotionGateRecord;
+}
+
+export interface OpenCdPromotionGateInput {
+	readonly promotionId: CdPromotionIdType;
+	readonly campId: CampTargetIdType;
+	readonly freightDigest: FreightDigestType;
+	readonly deadlineMs: number;
+}
+
+const OpenCdPromotionGateInputSchema = Schema.Struct({
+	promotionId: CdPromotionId,
+	campId: CampTargetId,
+	freightDigest: FreightDigest,
+	deadlineMs: Schema.Int,
+});
+
+const decodeOpenCdPromotionGateInput = Schema.decodeUnknownSync(
+	OpenCdPromotionGateInputSchema,
+);
+
+export interface ResolveCdPromotionGateInput {
+	readonly promotionId: CdPromotionId;
+	readonly passed: boolean;
+	readonly summary: NonEmptyReason;
+}
+
+function toGateRecord(row: typeof GateRowSchema.Type): CdPromotionGateRecord {
+	return {
+		promotionId: row.promotion_id,
+		campId: row.camp_id,
+		freightDigest: row.freight_digest,
+		status: row.status,
+		summary: row.summary,
+		createdAtMs: row.created_at_ms,
+		deadlineAtMs: row.deadline_at_ms,
+	};
+}
+
+export interface CdPromotionGateRegistryOptions {
+	readonly endpoint?: string;
+	readonly token?: string;
+	readonly httpHost?: string;
+	readonly httpPort?: number;
+	readonly startEngine?: boolean;
+	readonly noWelcome?: boolean;
+	readonly shutdown?: {
+		readonly gracePeriodMs?: number;
+		readonly disableSignalHandlers?: boolean;
+	};
+}
+
+export function createCdPromotionGateRegistry(
+	options: CdPromotionGateRegistryOptions = {},
+) {
+	const promotionGate = actor({
+		db: db({
+			onMigrate: async (client) => {
+				await client.execute(`
+					CREATE TABLE IF NOT EXISTS cd_promotion_gates (
+						promotion_id TEXT PRIMARY KEY,
+						camp_id TEXT NOT NULL,
+						freight_digest TEXT NOT NULL,
+						status TEXT NOT NULL,
+						summary TEXT,
+						created_at_ms INTEGER NOT NULL,
+						deadline_at_ms INTEGER NOT NULL
+					)
+				`);
+			},
+		}),
+		actions: {
+			openGate: async (c, raw: JsonValue): Promise<CdPromotionGateRecord> => {
+				const input = decodeOpenCdPromotionGateInput(raw);
+				const existingRows = decodeGateRows(
+					await c.db.execute(
+						"SELECT promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms FROM cd_promotion_gates WHERE promotion_id = ?",
+						input.promotionId,
+					),
+				);
+				const existing = existingRows[0];
+				if (existing !== undefined) {
+					return toGateRecord(existing);
+				}
+
+				const nowMs = Date.now();
+				const deadlineMs = Math.max(10, Math.trunc(input.deadlineMs));
+				const deadlineAtMs = nowMs + deadlineMs;
+				await c.db.execute(
+					`INSERT INTO cd_promotion_gates
+						(promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms)
+					VALUES (?, ?, ?, 'pending', NULL, ?, ?)`,
+					input.promotionId,
+					input.campId,
+					input.freightDigest,
+					nowMs,
+					deadlineAtMs,
+				);
+				const gate: CdPromotionGateRecord = {
+					promotionId: input.promotionId,
+					campId: input.campId,
+					freightDigest: input.freightDigest,
+					status: "pending",
+					summary: null,
+					createdAtMs: nowMs,
+					deadlineAtMs,
+				};
+				await c.schedule.after(deadlineMs, "expireGate", input.promotionId);
+				c.broadcast("gateUpdated", { action: "opened", gate });
+				return gate;
+			},
+			resolveGate: async (
+				c,
+				input: ResolveCdPromotionGateInput,
+			): Promise<CdPromotionGateRecord | null> => {
+				const rows = decodeGateRows(
+					await c.db.execute(
+						"SELECT promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms FROM cd_promotion_gates WHERE promotion_id = ?",
+						input.promotionId,
+					),
+				);
+				const existing = rows[0];
+				if (existing === undefined) return null;
+				if (existing.status !== "pending") return toGateRecord(existing);
+
+				const nextStatus: CdPromotionGateStatus = input.passed
+					? "passed"
+					: "failed";
+				await c.db.execute(
+					"UPDATE cd_promotion_gates SET status = ?, summary = ? WHERE promotion_id = ? AND status = 'pending'",
+					nextStatus,
+					input.summary,
+					input.promotionId,
+				);
+				const updated: CdPromotionGateRecord = {
+					...toGateRecord(existing),
+					status: nextStatus,
+					summary: input.summary,
+				};
+				c.broadcast("gateUpdated", { action: "resolved", gate: updated });
+				return updated;
+			},
+			expireGate: async (
+				c,
+				promotionId: string,
+			): Promise<{
+				readonly expired: boolean;
+				readonly promotionId: string;
+			}> => {
+				const rows = decodeGateRows(
+					await c.db.execute(
+						"SELECT promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms FROM cd_promotion_gates WHERE promotion_id = ?",
+						promotionId,
+					),
+				);
+				const existing = rows[0];
+				if (existing === undefined || existing.status !== "pending") {
+					return { expired: false, promotionId };
+				}
+				if (Date.now() < existing.deadline_at_ms) {
+					return { expired: false, promotionId };
+				}
+				await c.db.execute(
+					"UPDATE cd_promotion_gates SET status = 'expired', summary = 'verification-deadline-elapsed' WHERE promotion_id = ? AND status = 'pending'",
+					promotionId,
+				);
+				const expiredGate: CdPromotionGateRecord = {
+					...toGateRecord(existing),
+					status: "expired",
+					summary: "verification-deadline-elapsed",
+				};
+				c.broadcast("gateUpdated", { action: "expired", gate: expiredGate });
+				return { expired: true, promotionId };
+			},
+			listGates: async (c): Promise<readonly CdPromotionGateRecord[]> => {
+				const rows = decodeGateRows(
+					await c.db.execute(
+						"SELECT promotion_id, camp_id, freight_digest, status, summary, created_at_ms, deadline_at_ms FROM cd_promotion_gates ORDER BY created_at_ms ASC, promotion_id ASC",
+					),
+				);
+				return rows.map(toGateRecord);
+			},
+		},
+	});
+
+	return setup({
+		use: {
+			promotionGate,
+		},
+		...(options.endpoint !== undefined
+			? { endpoint: options.endpoint }
+			: undefined),
+		...(options.token !== undefined ? { token: options.token } : undefined),
+		...(options.httpHost !== undefined
+			? { httpHost: options.httpHost }
+			: undefined),
+		...(options.httpPort !== undefined
+			? { httpPort: options.httpPort }
+			: undefined),
+		...(options.startEngine !== undefined
+			? { startEngine: options.startEngine }
+			: undefined),
+		...(options.noWelcome !== undefined
+			? { noWelcome: options.noWelcome }
+			: undefined),
+		...(options.shutdown !== undefined
+			? { shutdown: options.shutdown }
+			: undefined),
+	});
+}
+
+const PullWatchKindSchema = Schema.Literals(["pull-request", "convergence"]);
+export type CdPullWatchKind = typeof PullWatchKindSchema.Type;
+
+const PullWatchStatusSchema = Schema.Literals([
+	"watching",
+	"pr-merged",
+	"pr-closed",
+	"converged",
+	"degraded",
+	"timed-out",
+]);
+export type CdPullWatchStatus = typeof PullWatchStatusSchema.Type;
+
+const PullWatchResolutionStatusSchema = Schema.Literals([
+	"pr-merged",
+	"pr-closed",
+	"converged",
+	"degraded",
+]);
+export type CdPullWatchResolutionStatus =
+	typeof PullWatchResolutionStatusSchema.Type;
+
+const PullWatchRowSchema = Schema.Struct({
+	delivery_run_id: Schema.NonEmptyString,
+	stage_id: Schema.NonEmptyString,
+	flow_target: Schema.NonEmptyString,
+	watch_kind: PullWatchKindSchema,
+	target_ref: Schema.NonEmptyString,
+	status: PullWatchStatusSchema,
+	revision: Schema.NullOr(Schema.String),
+	summary: Schema.NullOr(Schema.String),
+	created_at_ms: Schema.Int,
+	deadline_at_ms: Schema.Int,
+});
+
+const decodePullWatchRows = Schema.decodeUnknownSync(
+	Schema.Array(PullWatchRowSchema),
+);
+
+const RegisterPullWatchInputSchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	stageId: Schema.NonEmptyString,
+	flowTarget: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
+	targetRef: Schema.NonEmptyString,
+	deadlineMs: Schema.Int.check(Schema.isGreaterThan(0)),
+});
+
+const decodeRegisterPullWatchInput = Schema.decodeUnknownSync(
+	RegisterPullWatchInputSchema,
+);
+
+const ResolvePullWatchInputSchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
+	status: PullWatchResolutionStatusSchema,
+	revision: Schema.NullOr(Schema.NonEmptyString),
+	summary: Schema.NonEmptyString,
+});
+
+const decodeResolvePullWatchInput = Schema.decodeUnknownSync(
+	ResolvePullWatchInputSchema,
+);
+
+const ExpirePullWatchKeySchema = Schema.Struct({
+	deliveryRunId: Schema.NonEmptyString,
+	watchKind: PullWatchKindSchema,
+});
+const decodeExpirePullWatchKey = Schema.decodeUnknownSync(
+	ExpirePullWatchKeySchema,
+);
+
+export interface CdPullWatchRecord {
+	readonly deliveryRunId: string;
+	readonly stageId: string;
+	readonly flowTarget: string;
+	readonly watchKind: CdPullWatchKind;
+	readonly targetRef: string;
+	readonly status: CdPullWatchStatus;
+	readonly revision: string | null;
+	readonly summary: string | null;
+	readonly createdAtMs: number;
+	readonly deadlineAtMs: number;
+}
+
+export interface CdPullWatchEvent {
+	readonly action: "registered" | "resolved" | "expired";
+	readonly watch: CdPullWatchRecord;
+}
+
+export interface RegisterCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly stageId: string;
+	readonly flowTarget: string;
+	readonly watchKind: CdPullWatchKind;
+	readonly targetRef: string;
+	readonly deadlineMs: number;
+}
+
+export interface ResolveCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly watchKind: CdPullWatchKind;
+	readonly status: CdPullWatchResolutionStatus;
+	readonly revision: string | null;
+	readonly summary: string;
+}
+
+export interface ExpireCdPullWatchInput {
+	readonly deliveryRunId: string;
+	readonly watchKind: CdPullWatchKind;
+}
+
+function isResolutionCompatibleWithKind(
+	watchKind: CdPullWatchKind,
+	status: CdPullWatchResolutionStatus,
+): boolean {
+	if (watchKind === "pull-request") {
+		return status === "pr-merged" || status === "pr-closed";
+	}
+	return status === "converged" || status === "degraded";
+}
+
+function toPullWatchRecord(
+	row: typeof PullWatchRowSchema.Type,
+): CdPullWatchRecord {
+	return {
+		deliveryRunId: row.delivery_run_id,
+		stageId: row.stage_id,
+		flowTarget: row.flow_target,
+		watchKind: row.watch_kind,
+		targetRef: row.target_ref,
+		status: row.status,
+		revision: row.revision,
+		summary: row.summary,
+		createdAtMs: row.created_at_ms,
+		deadlineAtMs: row.deadline_at_ms,
+	};
+}
+
+export function createCdPullWatchRegistry(
+	options: CdPromotionGateRegistryOptions = {},
+) {
+	const pullWatch = actor({
+		db: db({
+			onMigrate: async (client) => {
+				await client.execute(`
+					CREATE TABLE IF NOT EXISTS cd_pull_watches (
+						delivery_run_id TEXT NOT NULL,
+						stage_id TEXT NOT NULL,
+						flow_target TEXT NOT NULL,
+						watch_kind TEXT NOT NULL,
+						target_ref TEXT NOT NULL,
+						status TEXT NOT NULL,
+						revision TEXT,
+						summary TEXT,
+						created_at_ms INTEGER NOT NULL,
+						deadline_at_ms INTEGER NOT NULL,
+						PRIMARY KEY (delivery_run_id, watch_kind)
+					)
+				`);
+			},
+		}),
+		actions: {
+			registerWatch: async (
+				c,
+				rawInput: RegisterCdPullWatchInput | JsonValue,
+			): Promise<CdPullWatchRecord> => {
+				const input = decodeRegisterPullWatchInput(rawInput);
+				const existingRows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
+						input.deliveryRunId,
+						input.watchKind,
+					),
+				);
+				const existing = existingRows[0];
+				if (existing !== undefined) {
+					return toPullWatchRecord(existing);
+				}
+
+				const nowMs = Date.now();
+				const deadlineMs = Math.max(10, Math.trunc(input.deadlineMs));
+				const deadlineAtMs = nowMs + deadlineMs;
+				await c.db.execute(
+					`INSERT INTO cd_pull_watches
+						(delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms)
+					VALUES (?, ?, ?, ?, ?, 'watching', NULL, NULL, ?, ?)`,
+					input.deliveryRunId,
+					input.stageId,
+					input.flowTarget,
+					input.watchKind,
+					input.targetRef,
+					nowMs,
+					deadlineAtMs,
+				);
+				const watch: CdPullWatchRecord = {
+					deliveryRunId: input.deliveryRunId,
+					stageId: input.stageId,
+					flowTarget: input.flowTarget,
+					watchKind: input.watchKind,
+					targetRef: input.targetRef,
+					status: "watching",
+					revision: null,
+					summary: null,
+					createdAtMs: nowMs,
+					deadlineAtMs,
+				};
+				await c.schedule.after(deadlineMs, "expireWatch", {
+					deliveryRunId: input.deliveryRunId,
+					watchKind: input.watchKind,
+				});
+				c.broadcast("pullWatchUpdated", { action: "registered", watch });
+				return watch;
+			},
+			recordObservation: async (
+				c,
+				rawInput: ResolveCdPullWatchInput | JsonValue,
+			): Promise<CdPullWatchRecord | null> => {
+				const input = decodeResolvePullWatchInput(rawInput);
+				if (!isResolutionCompatibleWithKind(input.watchKind, input.status)) {
+					throw new Error(
+						`resolution status ${input.status} is incompatible with watch kind ${input.watchKind}`,
+					);
+				}
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
+						input.deliveryRunId,
+						input.watchKind,
+					),
+				);
+				const existing = rows[0];
+				if (existing === undefined) return null;
+				if (existing.status !== "watching") return toPullWatchRecord(existing);
+
+				await c.db.execute(
+					"UPDATE cd_pull_watches SET status = ?, revision = ?, summary = ? WHERE delivery_run_id = ? AND watch_kind = ? AND status = 'watching'",
+					input.status,
+					input.revision,
+					input.summary,
+					input.deliveryRunId,
+					input.watchKind,
+				);
+				const updated: CdPullWatchRecord = {
+					...toPullWatchRecord(existing),
+					status: input.status,
+					revision: input.revision,
+					summary: input.summary,
+				};
+				c.broadcast("pullWatchUpdated", { action: "resolved", watch: updated });
+				return updated;
+			},
+			expireWatch: async (
+				c,
+				rawKey: ExpireCdPullWatchInput | JsonValue,
+			): Promise<{
+				readonly expired: boolean;
+				readonly deliveryRunId: string;
+				readonly watchKind: CdPullWatchKind;
+			}> => {
+				const { deliveryRunId, watchKind } = decodeExpirePullWatchKey(rawKey);
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches WHERE delivery_run_id = ? AND watch_kind = ?",
+						deliveryRunId,
+						watchKind,
+					),
+				);
+				const existing = rows[0];
+				if (
+					existing === undefined ||
+					existing.status !== "watching" ||
+					Date.now() < existing.deadline_at_ms
+				) {
+					return { expired: false, deliveryRunId, watchKind };
+				}
+				await c.db.execute(
+					"UPDATE cd_pull_watches SET status = 'timed-out', summary = 'pull-watch-deadline-elapsed' WHERE delivery_run_id = ? AND watch_kind = ? AND status = 'watching'",
+					deliveryRunId,
+					watchKind,
+				);
+				const expiredWatch: CdPullWatchRecord = {
+					...toPullWatchRecord(existing),
+					status: "timed-out",
+					summary: "pull-watch-deadline-elapsed",
+				};
+				c.broadcast("pullWatchUpdated", {
+					action: "expired",
+					watch: expiredWatch,
+				});
+				return { expired: true, deliveryRunId, watchKind };
+			},
+			listWatches: async (c): Promise<readonly CdPullWatchRecord[]> => {
+				const rows = decodePullWatchRows(
+					await c.db.execute(
+						"SELECT delivery_run_id, stage_id, flow_target, watch_kind, target_ref, status, revision, summary, created_at_ms, deadline_at_ms FROM cd_pull_watches ORDER BY created_at_ms ASC, delivery_run_id ASC, watch_kind ASC",
+					),
+				);
+				return rows.map(toPullWatchRecord);
+			},
+		},
+	});
+
+	return setup({
+		use: {
+			pullWatch,
+		},
+		...(options.endpoint !== undefined
+			? { endpoint: options.endpoint }
+			: undefined),
+		...(options.token !== undefined ? { token: options.token } : undefined),
+		...(options.httpHost !== undefined
+			? { httpHost: options.httpHost }
+			: undefined),
+		...(options.httpPort !== undefined
+			? { httpPort: options.httpPort }
+			: undefined),
+		...(options.startEngine !== undefined
+			? { startEngine: options.startEngine }
+			: undefined),
+		...(options.noWelcome !== undefined
+			? { noWelcome: options.noWelcome }
+			: undefined),
+		...(options.shutdown !== undefined
+			? { shutdown: options.shutdown }
+			: undefined),
+	});
+}

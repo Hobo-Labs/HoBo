@@ -28,6 +28,7 @@ import {
 	fakeOwnerCredentials,
 	fakeReadApiFetch,
 } from "../../../packages/hobo/test/support/ci-read-api-fake.js";
+import { handleExtendedRunCommand } from "./parity-extended.steps.js";
 
 const DAY = 86_400_000;
 const NOW = 1_763_337_600_000;
@@ -232,6 +233,7 @@ async function runHobo(command: string): Promise<void> {
 }
 
 When("{string} runs", async (command: string) => {
+	if (await handleExtendedRunCommand(command)) return;
 	await runHobo(command);
 });
 

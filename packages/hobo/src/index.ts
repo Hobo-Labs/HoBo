@@ -34,6 +34,25 @@ export {
 	registerInstallable,
 } from "./add-command.js";
 export {
+	buildAlchemyAuthDoctorSection,
+	DEFAULT_HOBO_AUTH_OWNER_CREDENTIAL_LOCATOR,
+	DEFAULT_HOBO_AUTH_SESSION_COOKIE_LOCATOR,
+	DEFAULT_HOBO_AUTH_SIGNING_KEY_LOCATOR,
+	type HoboAlchemyAuthDoctorSection,
+	HoboAlchemyAuthError,
+	type HoboAlchemyResumeOptions,
+	type HoboAlchemyResumeResult,
+	type HoboAlchemyRevokeOptions,
+	type HoboAlchemyRevokeResult,
+	type HoboAlchemySessionCustody,
+	type HoboAlchemySetupOptions,
+	type HoboAlchemySetupResult,
+	type HoboOwnerSecretResolver,
+	resumeHoboAlchemySession,
+	revokeHoboAlchemySession,
+	runHoboAlchemySetup,
+} from "./alchemy-auth-bootstrap.js";
+export {
 	type AttestCommandDeps,
 	createAttestCommand,
 } from "./attest-command.js";
@@ -268,11 +287,15 @@ export {
 } from "./generate-command.js";
 export {
 	HOBO_PROFILE_SCHEMA,
+	type HoboAlchemyAuthProfile,
+	type HoboAlchemyStorageKind,
+	type HoboAlchemyVaultProvider,
 	type HoboProfile,
 	type HoboProfileDefaultStation,
 	loadHoboProfile,
 	saveHoboProfile,
 	setDefaultStation,
+	upsertAlchemyAuthProfile,
 	upsertLoginProfile,
 } from "./hobo-profile.js";
 export {

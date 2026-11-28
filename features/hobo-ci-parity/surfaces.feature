@@ -17,29 +17,29 @@ Feature: Surface parity with RelayRunner
     Then both runs give the same answer
     And the answer is a sentence for people and data for --json
 
-  @parity @S03 @t1 @pending
+  @parity @S03 @t1
   Scenario: S03 init plans and applies workflow changes, never commits, and only sets runs-on
     Given a repository with one workflow
     When "hobo ci init --apply all" runs
     Then each moved job's runs-on is a HoBo label and no job is added
     And it makes no commit
 
-  @parity @S04 @t2 @pending
+  @parity @S04 @t2
   Scenario: S04 The MCP server has tools for the order, a route explanation, activity, signals, job times and failures
     When the relay's MCP tools are listed
     Then they include get_runner_order, explain_route, list_route_decisions, get_signals, get_job_times and get_run_failures
 
-  @parity @S05 @t1 @pending
+  @parity @S05 @t1
   Scenario: S05 Three agent skills and a one-prompt setup guide
     Then the repository ships three hobo ci skills
     And one setup guide an agent can follow from a single prompt
 
-  @parity @S06 @t2 @pending
+  @parity @S06 @t2
   Scenario: S06 A read API with an OpenAPI description
     When each read API path is called with a read token
     Then every response matches the OpenAPI description
 
-  @parity @S07 @t1 @pending
+  @parity @S07 @t1
   Scenario: S07 One generated page lists every error code
     Then every HOBO_CI error code appears once on the generated error page
 
@@ -48,7 +48,7 @@ Feature: Surface parity with RelayRunner
     Given HoBo has no human roles
     Then access is GitHub membership plus scoped tokens
 
-  @parity @S09 @t1 @pending
+  @parity @S09 @t1
   Scenario: S09 A clean way to remove it
     Given a repository set up by "hobo ci init --apply all"
     When each moved job's label is restored from its "# was" comment

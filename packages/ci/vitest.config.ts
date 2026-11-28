@@ -4,5 +4,10 @@ export default defineConfig({
 		environment: "node",
 		globalSetup: ["test/support/postgres-global-setup.ts"],
 		include: ["test/**/*.test.ts", "contracts/**/*.test.ts"],
+		server: {
+			deps: {
+				inline: [/@alchemy\.run\//, /\/alchemy\//],
+			},
+		},
 	},
 });

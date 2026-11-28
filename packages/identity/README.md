@@ -313,10 +313,21 @@ stateDiagram-v2
 TLC explores one connection and one subject; six same-label steps are hidden.
 The model does not prove provider revocation or credential-vault behavior.
 
+## AuthOnboarding Alchemy Domain & Portable Host (`@hobo/identity/domain`, `@hobo/identity/host`)
+
+`@hobo/identity/domain` models HoBo auth onboarding, owner-vault signing-key verification (`OwnerVaultPort`), Better Auth issuer bootstrap (`BetterAuthIssuerPort`), and reusable cross-restart / cross-box sessions as an `@alchemy.run/domain` `Model` (`AuthOnboarding`) and authenticated `Api` (`AuthOnboardingApi`):
+
+- Aggregates: `AuthWorkspace` (`Uninitialized` → `VaultConfigured` → `ProvisioningIssuer` → `Ready` | `Suspended`) and `AuthSession` (`Empty` → `Active` → `Revoked`, enforcing deterministic clock expiry, signing-key fingerprint matching, and workspace-authorized cross-box reuse).
+- Saga & Policies: `BootstrapAuthWorkspace` verifies `owner://` signing-key locators and Better Auth migrations, failing closed with vault-cache invalidation compensation on failure; `StartBootstrapPolicy` and `SessionRevocationPolicy` react to issuer configuration, signing-key rotation, and session revocation.
+- Security boundaries: `CurrentAuthActor` (`Domain.RequestContext`), `AuthSessionMiddleware` (`RpcMiddleware.Service`), `WorkspaceOnboardingView`, and `ActiveSessionView` enforce owner isolation without storing raw secrets in domain state or events.
+
+`@hobo/identity/host` runs the exact same model on `Domain.InMemory` (`createAuthOnboardingInMemoryLayer`), `@hobo/storage-sqlite` (`createAuthOnboardingSqliteLayer`), or `@alchemy.run/domain/Rivet` (`createAuthOnboardingRivetLayer`), plus a RivetKit SQLite cross-box session coordinator actor (`createAuthSessionCoordinatorRegistry`, comparing signing-key fingerprints in constant time and returning `session: null` on rejected resumes) and TTL-bounded, domain-separated HMAC request-context middleware (`createSignedAuthSessionMiddlewareLayer`, refusing `System` actor elevation over HTTP).
+
 ## Verification
 
 ```sh
 pnpm --filter @hobo/identity build
+pnpm --filter @hobo/identity typecheck
 pnpm --filter @hobo/identity test
 pnpm --filter @hobo/identity test:contract:consumer
 ```

@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"types": [
+			"node"
+		]
+	},
+	"include": [
+		"src/domain/**/*.ts",
+		"src/host/**/*.ts",
+		"test/auth-onboarding-domain.test.ts",
+		"test/auth-onboarding-host.test.ts",
+		"test/support/rivet-test-engine.ts"
+	]
+}

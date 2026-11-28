@@ -287,7 +287,12 @@ export function createAwsS3Store(options: {
 						yield* Stream.runDrain(Stream.take(response.Body, 1)).pipe(
 							Effect.ignore,
 						);
-					return yield* Effect.fail(new Error("unsupported object metadata"));
+					return yield* Effect.fail(
+						new AwsS3Error(
+							"AWS_S3_OBJECT_INVALID",
+							"unsupported object metadata",
+						),
+					);
 				}
 				const buffer = new Uint8Array(size);
 				const state = yield* Stream.runFoldEffect(
@@ -298,14 +303,21 @@ export function createAwsS3Store(options: {
 							++previous.chunks > maxChunks ||
 							previous.offset + chunk.byteLength > size
 						)
-							return Effect.fail(new Error("object exceeds bound"));
+							return Effect.fail(
+								new AwsS3Error("AWS_S3_OBJECT_INVALID", "object exceeds bound"),
+							);
 						buffer.set(chunk, previous.offset);
 						previous.offset += chunk.byteLength;
 						return Effect.succeed(previous);
 					},
 				);
 				if (state.offset !== size || digest(buffer) !== hash)
-					return yield* Effect.fail(new Error("object integrity mismatch"));
+					return yield* Effect.fail(
+						new AwsS3Error(
+							"AWS_S3_OBJECT_INVALID",
+							"object integrity mismatch",
+						),
+					);
 				return { name: key, contentType, digest: hash, size, body: buffer };
 			});
 			const result = (await boundary.run("read", key, effect)).value;

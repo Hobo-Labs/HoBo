@@ -5,6 +5,7 @@ import {
 	type RelayJobStep,
 } from "@hobo/ci";
 import { describe, expect, it } from "vitest";
+import { GH_DEFAULT_LINT_TOOLS, GH_LINT_TOOLS } from "../src/domain/ids.js";
 import type { GithubTransport } from "../src/github.js";
 import {
 	createRelayAnswerer,
@@ -25,8 +26,10 @@ import {
 	type LintToolResult,
 	lintAnnotations,
 	lintFindings,
+	lintPathsOf,
 	lintToolResult,
 	lintToolsOf,
+	matchesLintPaths,
 	parseRelayChecksConfig,
 	type RelayArchiveAccess,
 	type RelayCheckCompleted,
@@ -259,6 +262,92 @@ describe("lint results", () => {
 		expect(
 			lintFindings("ruff", "app/x.py:1:8: F401 [*] `os` imported but unused"),
 		).toHaveLength(1);
+		expect(
+			lintFindings(
+				"oxfmt",
+				"Checking formatting...\n\npackages/a.ts (2ms)\npackages/b.tsx (1ms)\n",
+			),
+		).toEqual([
+			{
+				tool: "oxfmt",
+				file: "packages/a.ts",
+				line: 1,
+				column: 1,
+				message: "formatting differs",
+			},
+			{
+				tool: "oxfmt",
+				file: "packages/b.tsx",
+				line: 1,
+				column: 1,
+				message: "formatting differs",
+			},
+		]);
+		expect(
+			lintFindings(
+				"zizmor",
+				JSON.stringify([
+					{
+						ident: "unpinned-uses",
+						desc: "unpinned GitHub Actions refs",
+						locations: [
+							{
+								symbolic: {
+									key: {
+										Local: { verbatim_path: ".github/workflows/ci.yml" },
+									},
+								},
+								concrete: {
+									location: { start_point: { row: 11, column: 4 } },
+								},
+							},
+						],
+					},
+				]),
+			),
+		).toEqual([
+			{
+				tool: "zizmor",
+				file: ".github/workflows/ci.yml",
+				line: 12,
+				column: 5,
+				message: "unpinned GitHub Actions refs",
+			},
+		]);
+		expect(
+			lintFindings(
+				"zizmor",
+				JSON.stringify({
+					version: "2.1.0",
+					runs: [
+						{
+							results: [
+								{
+									ruleId: "zizmor/unpinned-uses",
+									message: { text: "unpinned uses: checkout step" },
+									locations: [
+										{
+											physicalLocation: {
+												artifactLocation: { uri: ".github/workflows/ci.yml" },
+												region: { startLine: 3, startColumn: 9 },
+											},
+										},
+									],
+								},
+							],
+						},
+					],
+				}),
+			),
+		).toEqual([
+			{
+				tool: "zizmor",
+				file: ".github/workflows/ci.yml",
+				line: 3,
+				column: 9,
+				message: "unpinned uses: checkout step",
+			},
+		]);
 	});
 
 	it("says why a tool failed when it printed no finding", () => {
@@ -289,12 +378,80 @@ describe("lint results", () => {
 	});
 
 	it("reads the tools a step names and refuses an unknown one", () => {
-		expect(lintToolsOf(undefined)).toEqual({ ok: true, tools: LINT_TOOLS });
-		expect(lintToolsOf("ruff, actionlint ruff")).toEqual({
+		expect(lintToolsOf(undefined)).toEqual({
 			ok: true,
-			tools: ["actionlint", "ruff"],
+			tools: [...GH_DEFAULT_LINT_TOOLS],
+		});
+		expect(LINT_TOOLS).toEqual([...GH_LINT_TOOLS]);
+		expect(lintToolsOf("ruff, zizmor, oxfmt, actionlint ruff")).toEqual({
+			ok: true,
+			tools: ["actionlint", "oxfmt", "ruff", "zizmor"],
 		});
 		expect(lintToolsOf("eslint")).toMatchObject({ ok: false });
+	});
+
+	it("parses paths globs and filters lint findings by positive and negative patterns", () => {
+		expect(lintPathsOf(undefined)).toEqual({ ok: true, paths: [] });
+		expect(lintPathsOf("packages/**, !packages/legacy/**")).toEqual({
+			ok: true,
+			paths: ["packages/**", "!packages/legacy/**"],
+		});
+		expect(lintPathsOf("../secrets/**")).toMatchObject({ ok: false });
+		expect(
+			matchesLintPaths("packages/app/src/index.ts", [
+				"packages/**",
+				"!packages/legacy/**",
+			]),
+		).toBe(true);
+		expect(
+			matchesLintPaths("packages/legacy/old.ts", [
+				"packages/**",
+				"!packages/legacy/**",
+			]),
+		).toBe(false);
+		expect(
+			lintToolResult(
+				"zizmor",
+				{
+					exitCode: 1,
+					output:
+						".github/workflows/ci.yml:12:5: warning: unpinned-uses\npackages/legacy/ci.yml:4:1: warning: ignored\n",
+					timedOut: false,
+				},
+				60_000,
+				[".github/workflows/**"],
+			),
+		).toEqual({
+			tool: "zizmor",
+			passed: false,
+			summary: "1 finding",
+			findings: [
+				{
+					tool: "zizmor",
+					file: ".github/workflows/ci.yml",
+					line: 12,
+					column: 5,
+					message: "warning: unpinned-uses",
+				},
+			],
+		});
+		expect(
+			lintToolResult(
+				"oxfmt",
+				{
+					exitCode: 1,
+					output: "packages/legacy/a.ts:1:1: formatting differs\n",
+					timedOut: false,
+				},
+				60_000,
+				["packages/**", "!packages/legacy/**"],
+			),
+		).toMatchObject({
+			tool: "oxfmt",
+			passed: true,
+			summary: "passed",
+			findings: [],
+		});
 	});
 
 	it("keeps one result per tool and at most 50 annotations", () => {

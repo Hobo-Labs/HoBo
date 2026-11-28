@@ -242,14 +242,271 @@ export function gitSessionContext(cwd: string): SessionContext {
 	};
 }
 
+const BROAD_TEST_SCRIPTS = new Set([
+	"test",
+	"test:all",
+	"test:unit",
+	"test:unit:quiet",
+	"check:all",
+	"verify:full",
+	"verify:extended",
+	"validate:final",
+]);
+
+const PACKAGE_RUNNERS = new Set(["pnpm", "npm", "yarn", "mise"]);
+const SCOPE_FLAGS = new Set([
+	"--filter",
+	"-f",
+	"--prefix",
+	"-c",
+	"--dir",
+	"--workspace",
+]);
+const WRAPPER_FLAGS_WITH_VALUE = new Set(["-c", "-n", "-u", "--signal", "-s"]);
+const VITEST_FLAGS_WITH_VALUE = new Set([
+	"-c",
+	"--config",
+	"-r",
+	"--root",
+	"--reporter",
+	"--pool",
+	"--maxworkers",
+	"--testtimeout",
+	"--hooktimeout",
+	"--shard",
+	"--environment",
+	"--outputfile",
+]);
+
+function hasScopeFlag(tokens: readonly string[]): boolean {
+	return tokens.some((token) => {
+		const lower = token.toLowerCase();
+		if (SCOPE_FLAGS.has(lower)) return true;
+		return (
+			lower.startsWith("--filter=") ||
+			lower.startsWith("-f=") ||
+			lower.startsWith("--prefix=") ||
+			lower.startsWith("--dir=") ||
+			lower.startsWith("--workspace=")
+		);
+	});
+}
+
+function skipCommandWrappers(tokens: readonly string[]) {
+	let index = 0;
+	let allowBroad = false;
+	while (index < tokens.length) {
+		const token = tokens[index] ?? "";
+		if (token === "HOBO_ALLOW_BROAD_TESTS=1") {
+			allowBroad = true;
+			index += 1;
+			continue;
+		}
+		if (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(token)) {
+			index += 1;
+			continue;
+		}
+		const name = token.split("/").at(-1)?.toLowerCase() ?? "";
+		if (
+			COMMAND_PREFIXES.has(name) ||
+			name === "taskset" ||
+			name === "nice" ||
+			name === "time"
+		) {
+			index += 1;
+			while (index < tokens.length) {
+				const arg = tokens[index] ?? "";
+				if (name === "timeout" && /^\d+[smhd]?$/u.test(arg)) {
+					index += 1;
+					continue;
+				}
+				if (!arg.startsWith("-")) break;
+				index += 1;
+				if (WRAPPER_FLAGS_WITH_VALUE.has(arg.toLowerCase())) {
+					index += 1;
+				}
+			}
+			continue;
+		}
+		break;
+	}
+	return { rest: tokens.slice(index), allowBroad };
+}
+
+function matchBroadTurbo(tokens: readonly string[]): string | undefined {
+	let index = 0;
+	if (tokens[index]?.toLowerCase() === "run") index += 1;
+	const hasNarrowFlag = tokens.some((token) => {
+		const lower = token.toLowerCase();
+		return (
+			lower === "--filter" ||
+			lower === "-f" ||
+			lower === "--affected" ||
+			lower.startsWith("--filter=") ||
+			lower.startsWith("-f=")
+		);
+	});
+	if (hasNarrowFlag) return undefined;
+	const tasks: string[] = [];
+	while (index < tokens.length) {
+		const token = tokens[index] ?? "";
+		if (token.startsWith("-")) {
+			index += 1;
+			continue;
+		}
+		tasks.push(token.toLowerCase());
+		index += 1;
+	}
+	if (tasks.length === 0) return undefined;
+	if (tasks.includes("build") && tasks.includes("test")) {
+		return "turbo run build test";
+	}
+	const broad = tasks.find((task) => BROAD_TEST_SCRIPTS.has(task));
+	return broad === undefined ? undefined : `turbo ${broad}`;
+}
+
+function matchBroadVitest(tokens: readonly string[]): string | undefined {
+	let index = 0;
+	if (tokens[index]?.toLowerCase() === "run") index += 1;
+	while (index < tokens.length) {
+		const token = tokens[index] ?? "";
+		const lower = token.toLowerCase();
+		if (
+			lower === "-t" ||
+			lower === "--testnamepattern" ||
+			lower === "--project" ||
+			lower === "--related" ||
+			lower.startsWith("--testnamepattern=") ||
+			lower.startsWith("--project=") ||
+			lower.startsWith("--related=")
+		) {
+			return undefined;
+		}
+		if (token.startsWith("-")) {
+			index += 1;
+			if (!token.includes("=") && VITEST_FLAGS_WITH_VALUE.has(lower)) {
+				index += 1;
+			}
+			continue;
+		}
+		return undefined;
+	}
+	return "vitest run";
+}
+
+function matchBroadStatement(statement: string): string | undefined {
+	const rawTokens = words(statement);
+	const { rest, allowBroad } = skipCommandWrappers(rawTokens);
+	if (allowBroad || rest.length === 0) return undefined;
+
+	const first = rest[0]?.split("/").at(-1)?.toLowerCase() ?? "";
+	const args = rest.slice(1);
+
+	if (first === "turbo") return matchBroadTurbo(args);
+	if (first === "vitest") return matchBroadVitest(args);
+	if (first === "npx" || first === "pnpx") {
+		let subIndex = 0;
+		while (subIndex < args.length) {
+			const candidate = args[subIndex] ?? "";
+			if (candidate === "--") {
+				subIndex += 1;
+				break;
+			}
+			if (candidate.startsWith("-")) {
+				subIndex += 1;
+				if (
+					(candidate.startsWith("-p") || candidate.startsWith("--package")) &&
+					!candidate.includes("=") &&
+					!candidate.startsWith("--package=")
+				) {
+					subIndex += 1;
+				}
+				continue;
+			}
+			break;
+		}
+		const sub = args[subIndex]?.split("/").at(-1)?.toLowerCase() ?? "";
+		if (sub === "turbo") return matchBroadTurbo(args.slice(subIndex + 1));
+		if (sub === "vitest") return matchBroadVitest(args.slice(subIndex + 1));
+		return undefined;
+	}
+	if (!PACKAGE_RUNNERS.has(first)) return undefined;
+	if (hasScopeFlag(args)) return undefined;
+
+	let index = 0;
+	while (index < args.length) {
+		const token = args[index] ?? "";
+		if (token === "--") break;
+		if (token.startsWith("-")) {
+			index += 1;
+			continue;
+		}
+		const lower = token.toLowerCase();
+		if (lower === "turbo") {
+			return matchBroadTurbo(args.slice(index + 1));
+		}
+		if (lower === "exec" || lower === "dlx") {
+			let execIndex = index + 1;
+			while (execIndex < args.length) {
+				const candidate = args[execIndex] ?? "";
+				if (candidate === "--") {
+					execIndex += 1;
+					break;
+				}
+				if (candidate.startsWith("-")) {
+					execIndex += 1;
+					continue;
+				}
+				break;
+			}
+			const execCmd = args[execIndex]?.split("/").at(-1)?.toLowerCase() ?? "";
+			if (execCmd === "turbo")
+				return matchBroadTurbo(args.slice(execIndex + 1));
+			if (execCmd === "vitest")
+				return matchBroadVitest(args.slice(execIndex + 1));
+			return undefined;
+		}
+		if (lower === "run") {
+			index += 1;
+			continue;
+		}
+		if (BROAD_TEST_SCRIPTS.has(lower)) {
+			return `${first} ${lower}`;
+		}
+		return undefined;
+	}
+	return undefined;
+}
+
+export function broadTestSweepIn(
+	command: string,
+	env: Readonly<Record<string, string | undefined>> = process.env,
+): string | undefined {
+	if (env.HOBO_ALLOW_BROAD_TESTS === "1") return undefined;
+	for (const statement of command.split(/;|&&|\|\||\n/u)) {
+		const matched = matchBroadStatement(statement);
+		if (matched !== undefined) return matched;
+	}
+	return undefined;
+}
+
+export function broadTestSweepRefusal(matched: string): string {
+	return `Refusing broad test sweep (${matched}): run only tests related to your changes instead of full unrelated suites. Use pnpm --filter <pkg> exec vitest run <file>, pnpm --filter <pkg> test, pnpm exec turbo run test --filter=./packages/<pkg>, pnpm run test:changed, pnpm run test:affected, node --import tsx --test scripts/test/<file>.test.ts, or pnpm run agent:check -- --staged. If the user explicitly requested a full-repo sweep, prefix the command with HOBO_ALLOW_BROAD_TESTS=1.`;
+}
+
 export function sessionPolicyRefusal(
 	tool: string,
 	requestedHead: string | undefined,
 	commands: readonly string[],
 	context: () => SessionContext,
+	env: Readonly<Record<string, string | undefined>> = process.env,
 ): string | undefined {
 	if (commands.some(stopsOwnerSubmissionHolder))
 		return OWNER_SUBMISSION_REFUSAL;
+	for (const command of commands) {
+		const broad = broadTestSweepIn(command, env);
+		if (broad !== undefined) return broadTestSweepRefusal(broad);
+	}
 	let session: SessionContext | undefined;
 	const lazy = () => {
 		session ??= context();

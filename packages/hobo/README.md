@@ -976,3 +976,13 @@ the serve supplies the `@hobo/ci-dashboard` route. See
 [relay wiring](../ci-gh-actions/README.md#wiring-turning-the-built-pieces-on).
 `test/ci-serve.test.ts` drives the serve and its poller with each flag on
 and off. Built, not proven: no serve has claimed a check job from GitHub yet.
+
+## Alchemy Auth & Better Auth Onboarding (`hobo login --setup | --resume | --revoke`)
+
+`src/alchemy-auth-bootstrap.ts` wires `@hobo/iac-alchemy/environments` (`HoboAuth` `AuthProvider`, `createHoboSecretProviders` with `Secrets.ProcessEnv({ disabled: true })`, `readHoboBetterAuthConfig`), `@hobo/iac-alchemy/better-auth` (Node `node:sqlite` Kysely dialect, migrations, 5-op `SecondaryStorage`), and `@hobo/identity/domain` + `@hobo/identity/host` (`AuthOnboarding` Alchemy Domain on SQLite) into `hobo login` and `hobo doctor`:
+
+- **Initial setup (`hobo login --setup`):** resolves `owner://HOBO_AUTH_SECRET` from the owner's secret store via Alchemy Secrets (never from `.env` or ambient `process.env`), runs Better Auth migrations, drives `AuthOnboarding` (`BeginOnboarding` → `ConfigureBetterAuthIssuer` → `BootstrapAuthWorkspace` saga → `Ready` → `EstablishAuthSession`), and writes only non-secret metadata (`alchemyAuth`: workspace ID, `owner://` signing-key locator, `sha256:` key fingerprint and session handle digest, box ID, expiry) to `$HOBO_HOME/profile.json`.
+- **Same-box restart & cross-box reuse (`hobo login --resume`):** re-resolves `owner://HOBO_AUTH_SECRET` from the owner's secret store, verifies the Better Auth session cookie and confirms its handle digest and principal match the active `AuthOnboarding` session before authorizing a new machine (`--authorize-box`) and committing `ResumeAuthSession`.
+- **Cross-box revocation & rotation (`hobo login --revoke`):** forwards `--stage`, fails closed if the Better Auth cookie is absent or `/sign-out` returns non-2xx, and revokes the session in `AuthOnboarding` only after issuer sign-out succeeds so all boxes fail closed; rotating `owner://HOBO_AUTH_SECRET` invalidates existing sessions immediately.
+- **Diagnostics (`hobo doctor`):** reports `data.alchemyAuth` readiness (`configured`, `authProvider`, `signingKeyLocator`, `boxId`, `allowCrossBoxReuse`, `sessionExpired`) without exposing secret values.
+

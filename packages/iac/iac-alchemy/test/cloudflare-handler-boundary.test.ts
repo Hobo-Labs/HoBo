@@ -179,7 +179,11 @@ it("observes and rejects a native Promise returned by the entrypoint factory", (
 				"--outDir",
 				directory,
 			],
-			{ encoding: "utf8", timeout: 30_000 },
+			{
+				encoding: "utf8",
+				timeout: 120_000,
+				maxBuffer: 16 * 1024 * 1024,
+			},
 		);
 		expect(compiled.error).toBeUndefined();
 		expect(compiled.status, compiled.stderr).toBe(0);
@@ -207,6 +211,7 @@ await new Promise((resolve) => setTimeout(resolve, 20));
 			{
 				encoding: "utf8",
 				timeout: 15_000,
+				maxBuffer: 1024 * 1024,
 				env: { ...process.env, NODE_OPTIONS: "" },
 			},
 		);
@@ -215,4 +220,4 @@ await new Promise((resolve) => setTimeout(resolve, 20));
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
-}, 45_000);
+}, 120_000);

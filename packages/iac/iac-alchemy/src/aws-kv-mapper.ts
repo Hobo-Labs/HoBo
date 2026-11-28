@@ -36,7 +36,7 @@ export function awsDynamoKvBindleMappers<Entrypoint, Requirements>() {
 			base.kv.validate?.(input);
 			const annotations = input.declaration.annotations;
 			const annotation = annotations[0];
-			const fields =
+			const fields: Partial<Record<string, PropertyDescriptor>> =
 				annotation === undefined
 					? {}
 					: Object.getOwnPropertyDescriptors(annotation.config);

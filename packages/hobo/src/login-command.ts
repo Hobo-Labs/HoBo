@@ -43,7 +43,19 @@ function isPrincipalKind(
 }
 
 import { SettingParseError } from "@hobo/hobo-ci";
-import { upsertLoginProfile } from "./hobo-profile.js";
+import {
+	HoboAlchemyAuthError,
+	type HoboAlchemySessionCustody,
+	type HoboOwnerSecretResolver,
+	resumeHoboAlchemySession,
+	revokeHoboAlchemySession,
+	runHoboAlchemySetup,
+} from "./alchemy-auth-bootstrap.js";
+import {
+	type HoboAlchemyStorageKind,
+	type HoboAlchemyVaultProvider,
+	upsertLoginProfile,
+} from "./hobo-profile.js";
 import {
 	DeviceGrantError,
 	type DeviceGrantResult,
@@ -64,6 +76,11 @@ export type RelayLoginCommandDeps =
 	  }>
 	| "owner-channel";
 
+export interface HoboAlchemyAuthCommandDeps {
+	readonly resolveOwnerSecret: HoboOwnerSecretResolver;
+	readonly sessionCustody?: HoboAlchemySessionCustody;
+}
+
 export interface BrokerAwareLoginCommandDeps extends LoginCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	/**
@@ -77,6 +94,275 @@ export interface BrokerAwareLoginCommandDeps extends LoginCommandDeps {
 	/** Injected clock (epoch ms). */
 	readonly now?: () => number;
 	readonly relay?: RelayLoginCommandDeps;
+	readonly alchemyAuth?: HoboAlchemyAuthCommandDeps;
+}
+
+function flagString(
+	flags: Readonly<Record<string, JsonValue | undefined>>,
+	...names: readonly string[]
+): string | undefined {
+	for (const name of names) {
+		const candidate = flags[name];
+		if (isJsonString(candidate) && candidate.length > 0) {
+			return candidate;
+		}
+	}
+	return undefined;
+}
+
+function flagTrue(
+	flags: Readonly<Record<string, JsonValue | undefined>>,
+	...names: readonly string[]
+): boolean {
+	for (const name of names) {
+		const candidate = flags[name];
+		if (candidate === true || candidate === "true") {
+			return true;
+		}
+	}
+	return false;
+}
+
+function parseVaultProviderFlag(
+	value: string | undefined,
+): HoboAlchemyVaultProvider | undefined {
+	if (value === undefined) return undefined;
+	switch (value) {
+		case "owner-store":
+		case "infisical":
+		case "doppler":
+			return value;
+		default:
+			throw new HoboAlchemyAuthError(
+				"HOBO_AUTH_INVALID_FLAG",
+				`Invalid --vault-provider value "${value}" (expected owner-store, infisical, or doppler).`,
+				["Pass --vault-provider owner-store | infisical | doppler."],
+			);
+	}
+}
+
+function parseStorageKindFlag(
+	value: string | undefined,
+): HoboAlchemyStorageKind | undefined {
+	if (value === undefined) return undefined;
+	switch (value) {
+		case "sqlite-local":
+		case "sqlite-shared":
+		case "secondary-sqlite":
+		case "rivet-actor":
+			return value;
+		default:
+			throw new HoboAlchemyAuthError(
+				"HOBO_AUTH_INVALID_FLAG",
+				`Invalid --storage value "${value}" (expected sqlite-local, sqlite-shared, secondary-sqlite, or rivet-actor).`,
+				[
+					"Pass --storage sqlite-local | sqlite-shared | secondary-sqlite | rivet-actor.",
+				],
+			);
+	}
+}
+
+async function runAlchemyAuthLoginLane(
+	deps: BrokerAwareLoginCommandDeps,
+	flags: Readonly<Record<string, JsonValue | undefined>>,
+	hoboHome: string,
+	mode: "setup" | "resume" | "revoke",
+): Promise<CommandResult> {
+	if (deps.alchemyAuth === undefined) {
+		return {
+			ok: false,
+			status: "error",
+			code: "HOBO_AUTH_OWNER_STORE_REQUIRED",
+			message:
+				"Alchemy auth onboarding and session reuse require an active owner secret store session (owner://HOBO_AUTH_SECRET).",
+			remediation: [
+				"Connect the owner's secret store via HoBo MCP choose_secret_store before running hobo login --setup or --resume.",
+			],
+			data: { command: "login", authMethod: `alchemy-${mode}` },
+		};
+	}
+
+	const workspaceId = flagString(flags, "workspace", "workspaceId");
+	const sessionId = flagString(flags, "session", "sessionId");
+	const boxId = flagString(flags, "box", "boxId");
+	const profileName = flagString(flags, "alchemyProfile", "alchemy-profile");
+	const stage = flagString(flags, "stage");
+	const issuerOrigin = flagString(flags, "issuer", "issuerOrigin");
+	const basePath = flagString(flags, "basePath", "base-path");
+	const signingKeyLocator = flagString(
+		flags,
+		"signingKeyRef",
+		"signing-key-ref",
+		"signingSecretRef",
+		"signing-secret-ref",
+	);
+	const authDbPath = flagString(flags, "authDb", "auth-db");
+	const secondaryDbPath = flagString(flags, "secondaryDb", "secondary-db");
+	const domainDbPath = flagString(flags, "domainDb", "domain-db");
+	const ownerPrincipalId = flagString(flags, "principal", "ownerPrincipalId");
+
+	try {
+		const vaultProvider = parseVaultProviderFlag(
+			flagString(
+				flags,
+				"vaultProvider",
+				"vault-provider",
+				"secretProvider",
+				"secret-provider",
+			),
+		);
+		const storageKind = parseStorageKindFlag(
+			flagString(flags, "storage", "storageKind"),
+		);
+		if (mode === "setup") {
+			const ownerEmail = flagString(flags, "email") ?? "owner@hobo.localhost";
+			const ownerName = flagString(flags, "name");
+			const setup = await runHoboAlchemySetup({
+				hoboHome,
+				resolveOwnerSecret: deps.alchemyAuth.resolveOwnerSecret,
+				...(deps.alchemyAuth.sessionCustody !== undefined
+					? { sessionCustody: deps.alchemyAuth.sessionCustody }
+					: undefined),
+				ownerEmail,
+				...(ownerName !== undefined ? { ownerName } : undefined),
+				...(ownerPrincipalId !== undefined ? { ownerPrincipalId } : undefined),
+				...(workspaceId !== undefined ? { workspaceId } : undefined),
+				...(sessionId !== undefined ? { sessionId } : undefined),
+				...(profileName !== undefined ? { profileName } : undefined),
+				...(stage !== undefined ? { stage } : undefined),
+				...(vaultProvider !== undefined ? { vaultProvider } : undefined),
+				...(issuerOrigin !== undefined ? { issuerOrigin } : undefined),
+				...(basePath !== undefined ? { basePath } : undefined),
+				...(signingKeyLocator !== undefined
+					? { signingKeyLocator }
+					: undefined),
+				...(storageKind !== undefined ? { storageKind } : undefined),
+				...(boxId !== undefined ? { boxId } : undefined),
+				...(authDbPath !== undefined ? { authDbPath } : undefined),
+				...(secondaryDbPath !== undefined ? { secondaryDbPath } : undefined),
+				...(domainDbPath !== undefined ? { domainDbPath } : undefined),
+				...(deps.now !== undefined ? { now: deps.now } : undefined),
+			});
+			return {
+				ok: true,
+				status: "ok",
+				code: "HOBO_OK",
+				message: `Alchemy auth onboarding complete (${setup.profile.workspaceId}, box=${setup.profile.boxId}); session ready for restarts and cross-box reuse.`,
+				data: {
+					command: "login",
+					authMethod: "alchemy-setup",
+					authProvider: setup.authProvider,
+					workspaceId: setup.profile.workspaceId,
+					workspacePhase: setup.workspacePhase,
+					sessionId: setup.profile.sessionId,
+					boxId: setup.profile.boxId,
+					profilePath: setup.profilePath,
+					signingKeyLocator: setup.profile.signingKeyLocator,
+					signingKeyFingerprint: setup.profile.signingKeyFingerprint,
+					sessionHandleDigest: setup.sessionHandleDigest,
+					reusableAcrossBoxes: setup.reusableAcrossBoxes,
+				},
+			};
+		}
+
+		if (mode === "resume") {
+			const resumed = await resumeHoboAlchemySession({
+				hoboHome,
+				resolveOwnerSecret: deps.alchemyAuth.resolveOwnerSecret,
+				...(deps.alchemyAuth.sessionCustody !== undefined
+					? { sessionCustody: deps.alchemyAuth.sessionCustody }
+					: undefined),
+				...(boxId !== undefined ? { boxId } : undefined),
+				authorizeNewBox: flagTrue(flags, "authorizeBox", "authorize-box"),
+				...(workspaceId !== undefined ? { workspaceId } : undefined),
+				...(sessionId !== undefined ? { sessionId } : undefined),
+				...(ownerPrincipalId !== undefined ? { ownerPrincipalId } : undefined),
+				...(profileName !== undefined ? { profileName } : undefined),
+				...(stage !== undefined ? { stage } : undefined),
+				...(vaultProvider !== undefined ? { vaultProvider } : undefined),
+				...(issuerOrigin !== undefined ? { issuerOrigin } : undefined),
+				...(basePath !== undefined ? { basePath } : undefined),
+				...(signingKeyLocator !== undefined
+					? { signingKeyLocator }
+					: undefined),
+				...(storageKind !== undefined ? { storageKind } : undefined),
+				...(authDbPath !== undefined ? { authDbPath } : undefined),
+				...(secondaryDbPath !== undefined ? { secondaryDbPath } : undefined),
+				...(domainDbPath !== undefined ? { domainDbPath } : undefined),
+				...(deps.now !== undefined ? { now: deps.now } : undefined),
+			});
+			return {
+				ok: true,
+				status: "ok",
+				code: "HOBO_OK",
+				message: resumed.crossBox
+					? `Resumed Better Auth session ${resumed.sessionId} on new box ${resumed.boxId}.`
+					: `Resumed Better Auth session ${resumed.sessionId} on box ${resumed.boxId}.`,
+				data: {
+					command: "login",
+					authMethod: "alchemy-resume",
+					resumed: resumed.resumed,
+					crossBox: resumed.crossBox,
+					boxId: resumed.boxId,
+					sessionId: resumed.sessionId,
+					workspaceId: resumed.workspaceId,
+					principalId: resumed.principalId,
+					resumeCount: resumed.resumeCount,
+					observedBoxes: [...resumed.observedBoxes],
+					signingKeyFingerprint: resumed.signingKeyFingerprint,
+					profilePath: resumed.profilePath,
+				},
+			};
+		}
+
+		const reason = flagString(flags, "reason");
+		const revoked = await revokeHoboAlchemySession({
+			hoboHome,
+			resolveOwnerSecret: deps.alchemyAuth.resolveOwnerSecret,
+			...(deps.alchemyAuth.sessionCustody !== undefined
+				? { sessionCustody: deps.alchemyAuth.sessionCustody }
+				: undefined),
+			...(reason !== undefined ? { reason } : undefined),
+			...(stage !== undefined ? { stage } : undefined),
+			...(sessionId !== undefined ? { sessionId } : undefined),
+			...(workspaceId !== undefined ? { workspaceId } : undefined),
+			...(ownerPrincipalId !== undefined ? { ownerPrincipalId } : undefined),
+			...(issuerOrigin !== undefined ? { issuerOrigin } : undefined),
+			...(basePath !== undefined ? { basePath } : undefined),
+			...(signingKeyLocator !== undefined ? { signingKeyLocator } : undefined),
+			...(authDbPath !== undefined ? { authDbPath } : undefined),
+			...(secondaryDbPath !== undefined ? { secondaryDbPath } : undefined),
+			...(domainDbPath !== undefined ? { domainDbPath } : undefined),
+		});
+		return {
+			ok: true,
+			status: "ok",
+			code: "HOBO_OK",
+			message: `Revoked Better Auth session ${revoked.sessionId} across all boxes.`,
+			data: {
+				command: "login",
+				authMethod: "alchemy-revoke",
+				revoked: revoked.revoked,
+				sessionId: revoked.sessionId,
+				workspaceId: revoked.workspaceId,
+				reason: revoked.reason,
+			},
+		};
+	} catch (error) {
+		if (error instanceof HoboAlchemyAuthError) {
+			return {
+				ok: false,
+				status: "error",
+				code: error.code,
+				message: error.message,
+				...(error.remediation.length > 0
+					? { remediation: [...error.remediation] }
+					: undefined),
+				data: { command: "login", authMethod: `alchemy-${mode}` },
+			};
+		}
+		throw error;
+	}
 }
 
 async function runRelayLogin(
@@ -159,6 +445,34 @@ export function createBrokerAwareLoginCommand(
 			if (isJsonString(input.flags.relay))
 				return runRelayLogin(deps.relay, input.flags.relay, input.emitProgress);
 			const env = deps.env ?? process.env;
+			const hoboHomeFromFlags =
+				isJsonString(input.flags.home) && input.flags.home.length > 0
+					? input.flags.home
+					: defaultHoboHome(env);
+			if (flagTrue(input.flags, "setup")) {
+				return runAlchemyAuthLoginLane(
+					deps,
+					input.flags,
+					hoboHomeFromFlags,
+					"setup",
+				);
+			}
+			if (flagTrue(input.flags, "resume")) {
+				return runAlchemyAuthLoginLane(
+					deps,
+					input.flags,
+					hoboHomeFromFlags,
+					"resume",
+				);
+			}
+			if (flagTrue(input.flags, "revoke")) {
+				return runAlchemyAuthLoginLane(
+					deps,
+					input.flags,
+					hoboHomeFromFlags,
+					"revoke",
+				);
+			}
 			const oidc = resolveOidcIssuerConfig(env);
 
 			let result: CommandResult;

@@ -11,6 +11,7 @@ import {
 	goldenIdentityHandsOff,
 	identityContinuousTrail,
 } from "@hobo/trails";
+import { buildAlchemyAuthDoctorSection } from "./alchemy-auth-bootstrap.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { buildBindingDeliveryDoctorSection } from "./binding-delivery-doctor.js";
 import { deployEnvironment } from "./compose.js";
@@ -229,9 +230,13 @@ export function createDoctorCommand(
 			const bindingDelivery = buildBindingDeliveryDoctorSection(env);
 			remediation.push(...bindingDelivery.remediation);
 
-			// Messaging plane readiness (ADR-0138): Kafka + optional Dapr.
 			const messaging = buildMessagingDoctorSection(env);
 			remediation.push(...messaging.remediation);
+
+			const alchemyAuth = buildAlchemyAuthDoctorSection(hoboHome);
+			if (alchemyAuth.configured && alchemyAuth.sessionExpired === true) {
+				remediation.push(...alchemyAuth.remediation);
+			}
 
 			return {
 				ok: true,
@@ -249,6 +254,7 @@ export function createDoctorCommand(
 					trails: trailsReport,
 					bindingDelivery: bindingDelivery.report,
 					messaging: messaging.report,
+					alchemyAuth,
 					ownerStoreSession,
 				},
 			};

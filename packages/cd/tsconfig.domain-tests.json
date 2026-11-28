@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/cd-release-domain.test.ts",
+    "test/cd-kargo-pull-domain.test.ts",
+    "test/cd-release-host.test.ts",
+    "test/support/rivet-test-engine.ts"
+  ]
+}

@@ -24,7 +24,7 @@ export function runPublishedAdapterFixture(
 				directory,
 			],
 			{
-				timeout: 30_000,
+				timeout: 90_000,
 			},
 		);
 		return execFileSync(

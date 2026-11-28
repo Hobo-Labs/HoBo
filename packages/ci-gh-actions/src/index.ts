@@ -5,6 +5,7 @@ export type {
 } from "./_generated/routing_slip_pb.js";
 export { createActionsBackend } from "./actions-backend.js";
 export { createAdmissionOrder } from "./admission-order.js";
+export { ciGithubAppBindle } from "./app.js";
 export { relayInstallAssets } from "./assets.js";
 export {
 	type AutoRetryDeps,
@@ -885,12 +886,14 @@ export {
 	describeWorkflowWarning,
 	HOBO_RUNNER_LABELS,
 	planWorkflow,
+	restoreWorkflowPlan,
 	WORKFLOW_SKIP_REASONS,
 	WORKFLOW_WARNINGS,
 	type WorkflowApplyResult,
 	type WorkflowInitOptions,
 	type WorkflowJobPlan,
 	type WorkflowPlan,
+	type WorkflowRestoreResult,
 	type WorkflowSkipReason,
 	type WorkflowWarning,
 } from "./workflow-init.js";

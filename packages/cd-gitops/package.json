@@ -1,7 +1,7 @@
 {
 	"name": "@hobo/cd-gitops",
 	"version": "0.0.1",
-	"description": "HoBo CD GitOps publisher: renders a Set as an Argo CD Application or a Flux Kustomization, commits it through a Git host HTTP API (GitHub, GitLab, Gitea/Forgejo, Bitbucket), and converges only on the engine's observed status",
+	"description": "HoBo CD GitOps publisher and Kargo+Argo/Flux pull-based CD flow adapter: renders Sets and typed manifest updates, opens/tracks Git PRs across GitHub/GitLab/Gitea/Bitbucket, and converges only on observed engine status",
 	"license": "MIT",
 	"type": "module",
 	"publishConfig": {
@@ -26,6 +26,10 @@
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/cd": "workspace:*",
-		"@hobo/core": "workspace:*"
+		"@hobo/core": "workspace:*",
+		"effect": "4.1.4"
+	},
+	"devDependencies": {
+		"@alchemy.run/domain": "2.0.0-beta.87"
 	}
 }

@@ -35,15 +35,18 @@
     "./failover": { "types": "./dist/failover/index.d.ts", "default": "./dist/failover/index.js" },
     "./posture": { "types": "./dist/posture/index.d.ts", "default": "./dist/posture/index.js" },
     "./compose": { "types": "./dist/compose/index.d.ts", "default": "./dist/compose/index.js" },
-    "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" }
+    "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" },
+    "./domain": { "types": "./dist/domain/index.d.ts", "default": "./dist/domain/index.js" },
+    "./host": { "types": "./dist/host/index.d.ts", "default": "./dist/host/index.js" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.domain-tests.json",
     "lint": "biome check .",
     "test": "vitest run"
   },
   "dependencies": {
+    "@alchemy.run/domain": "2.0.0-beta.87",
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/cloud": "workspace:*",
     "@hobo/contracts": "workspace:*",
@@ -56,12 +59,29 @@
     "@hobo/provider-redaction": "workspace:*",
     "@hobo/registry": "workspace:*",
     "@hobo/stations": "workspace:*",
+    "@hobo/storage-sqlite": "workspace:*",
     "@hobo/trust": "workspace:*",
+    "effect": "4.1.4",
     "sigstore": "5.0.1"
   },
+  "peerDependencies": {
+    "@alchemy.run/rivet": "2.0.0-beta.87",
+    "rivetkit": "3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@alchemy.run/rivet": {
+      "optional": true
+    },
+    "rivetkit": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@alchemy.run/rivet": "2.0.0-beta.87",
+    "@effect/platform-node": "4.1.4",
     "@hobo/conformance": "workspace:*",
     "@hobo/runtime-local": "workspace:*",
-    "fast-check": "^4.3.0"
+    "fast-check": "^4.3.0",
+    "rivetkit": "3.0.0"
   }
 }

@@ -5,6 +5,7 @@ import {
 	githubRestFetch,
 	installationCredentials,
 } from "../../../packages/hobo/test/support/github-app-fake.js";
+import { handleExtendedRunForItCommand } from "./parity-extended.steps.js";
 
 const REPOSITORY = "octo/app";
 const RUN_ID = 4401;
@@ -127,6 +128,7 @@ Given("a failed job and the tail of its log", () => {
 });
 
 When("{string} runs for it", async (command: string) => {
+	if (await handleExtendedRunForItCommand(command)) return;
 	assert.equal(command, "hobo ci diagnose");
 	const github = githubRestFetch((request) => {
 		world.asked.push(request.path);

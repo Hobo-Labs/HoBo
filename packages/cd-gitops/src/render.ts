@@ -83,15 +83,26 @@ function campDirectory(config: PublisherConfig, campId: string): string {
 	return `${config.repository.pathPrefix}/${k8sName("camp", campId)}`;
 }
 
+export type RenderPublicationOptions = Readonly<{
+	syncWave?: number;
+}>;
+
 export function renderPublication(
 	config: PublisherConfig,
 	set: SetRecord,
 	resolved: ResolvedSet | null,
+	options?: RenderPublicationOptions,
 ): RenderedPublication {
 	if (set.campId === "" || set.setId === "") {
 		throw new GitopsError(
 			"gitops-config-invalid",
 			"a Set needs set_id and camp_id to publish",
+		);
+	}
+	if (options?.syncWave !== undefined && !Number.isInteger(options.syncWave)) {
+		throw new GitopsError(
+			"gitops-config-invalid",
+			"syncWave must be a finite integer",
 		);
 	}
 	const dir = campDirectory(config, set.campId);
@@ -114,12 +125,19 @@ export function renderPublication(
 		"app.kubernetes.io/managed-by": "hobo",
 		"hobo.dev/camp": k8sName("camp", set.campId).slice(0, 63),
 	};
-	const annotations = {
+	const baseAnnotations = {
 		"hobo.dev/camp-id": set.campId,
 		"hobo.dev/set-id": set.setId,
 		"hobo.dev/freight-id": set.freightId,
 		"hobo.dev/content-hash": set.contentHash,
 	};
+	const annotations =
+		config.engine === GitopsEngine.ARGO_CD && options?.syncWave !== undefined
+			? {
+					...baseAnnotations,
+					"argocd.argoproj.io/sync-wave": String(options.syncWave),
+				}
+			: baseAnnotations;
 	const configMap = {
 		apiVersion: "v1",
 		kind: "ConfigMap",

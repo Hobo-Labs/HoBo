@@ -8,6 +8,11 @@ import {
 	withoutPackageManager,
 } from "./lib/env.ts";
 import { type JsonValue, runtimeKind } from "./lib/inspectable.ts";
+import {
+	type ChangedFileRecord,
+	parseChangedFileRecords,
+	stagedChangedFileRecords,
+} from "./lib/staged-merge-files.mts";
 import { type Check, selectRelevantChecks } from "./relevant-check-policy.js";
 
 const args = new Set(process.argv.slice(2));
@@ -30,11 +35,6 @@ const parallelLimit = Math.max(
 	1,
 	Number.parseInt(process.env.HOBO_RELEVANT_CHECK_CONCURRENCY ?? "4", 10) || 4,
 );
-
-type ChangedFileRecord = {
-	path: string;
-	status: string;
-};
 
 /**
  * How a check is actually started: pnpm-shaped checks run through
@@ -218,17 +218,6 @@ function changedListing(commandArgs: string[]): string {
 	process.exit(2);
 }
 
-function parseChangedFileRecords(raw: string): ChangedFileRecord[] {
-	return raw
-		.split(/\r?\n/)
-		.filter(Boolean)
-		.map((line) => {
-			const [status, firstPath, secondPath] = line.split("\t");
-			return { status, path: secondPath ?? firstPath };
-		})
-		.filter((record): record is ChangedFileRecord => Boolean(record.path));
-}
-
 function changedFileRecords(): ChangedFileRecord[] {
 	if (all) {
 		return changedListing(["ls-files"])
@@ -237,15 +226,16 @@ function changedFileRecords(): ChangedFileRecord[] {
 			.map((file) => ({ status: "M", path: file }));
 	}
 	if (staged) {
-		return parseChangedFileRecords(
-			changedListing([
-				"diff",
-				"--cached",
-				"--name-status",
-				"--find-renames=100%",
-				"--diff-filter=ACMR",
-			]),
+		const mergeAware = stagedChangedFileRecords(process.cwd(), (gitArgs) =>
+			tryCapture("git", [...gitArgs]),
 		);
+		if (mergeAware === undefined) {
+			console.error(
+				"fail  agent:check — git could not list the staged files, so no check was selected.",
+			);
+			process.exit(2);
+		}
+		return mergeAware;
 	}
 	return parseChangedFileRecords(
 		changedListing([

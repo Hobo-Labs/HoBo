@@ -41,7 +41,7 @@ export function awsS3BindleMappers<Entrypoint, Requirements>(
 			base.bucket.validate?.(input);
 			const annotations = input.declaration.annotations;
 			const annotation = annotations[0];
-			const fields =
+			const fields: Partial<Record<string, PropertyDescriptor>> =
 				annotation === undefined
 					? {}
 					: Object.getOwnPropertyDescriptors(annotation.config);

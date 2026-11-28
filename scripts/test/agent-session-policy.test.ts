@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import { secretPolicyRefusal } from "../agent-secret-policy.mts";
 import {
+	broadTestSweepIn,
+	broadTestSweepRefusal,
 	gitLedger,
 	MAX_OPEN_PULL_REQUESTS_PER_SESSION,
 	OWNER_SUBMISSION_REFUSAL,
@@ -269,5 +271,99 @@ describe("the offline pull request ledger", () => {
 			ledger.open("claude/s-k2").map((entry) => entry.head),
 			["claude/s-k2-b"],
 		);
+	});
+});
+
+describe("refusing broad full-repo test sweeps by default", () => {
+	it("refuses unfiltered repo-wide test and verification commands", () => {
+		for (const command of [
+			"pnpm test",
+			"pnpm run test:unit",
+			"pnpm run test:all",
+			"pnpm run check:all",
+			"pnpm run verify:full",
+			"pnpm run verify:extended",
+			"pnpm run validate:final",
+			"npm test",
+			"mise run test:unit",
+			"pnpm turbo run test",
+			"pnpm exec turbo run test",
+			"npx -y turbo run test",
+			"pnpm exec -- turbo run test",
+			"turbo run build test",
+			"pnpm exec turbo run build test",
+			"turbo run test --concurrency=100%",
+			"pnpm exec vitest run",
+			"vitest run --reporter=dot",
+			"taskset -c 0 pnpm run test:all",
+			"timeout 300 pnpm run test:unit",
+			"git status && pnpm run test:all",
+		]) {
+			const matched = broadTestSweepIn(command, {});
+			assert.ok(matched !== undefined, command);
+			assert.equal(
+				bash(command, memoryContext()),
+				broadTestSweepRefusal(matched),
+				command,
+			);
+		}
+	});
+
+	it("allows impacted, package-scoped, file-scoped, and explicitly opted-in test commands", () => {
+		for (const command of [
+			"pnpm --filter @hobo/ci test",
+			"pnpm --filter @hobo/ci exec vitest run test/ci-fleet-domain.test.ts",
+			"pnpm --prefix packages/ci test",
+			"pnpm -C packages/ci test",
+			"pnpm exec turbo run test --filter=./packages/ci",
+			"pnpm exec turbo run test --affected",
+			"pnpm run test:changed",
+			"pnpm run test:affected",
+			"pnpm run test:file packages/ci/test/ci-fleet-domain.test.ts",
+			"pnpm run test:name 'fleet'",
+			"pnpm run agent:check -- --staged",
+			"pnpm exec vitest run test/relevant-check-policy.test.ts",
+			"vitest run -t 'broad'",
+			"node --import tsx --test scripts/test/agent-session-policy.test.ts",
+			"HOBO_ALLOW_BROAD_TESTS=1 pnpm run test:all",
+			"rg 'test:unit' AGENTS.md",
+			"git commit -m 'stop running pnpm test:all'",
+		]) {
+			assert.equal(broadTestSweepIn(command, {}), undefined, command);
+			assert.equal(bash(command, memoryContext()), undefined, command);
+		}
+		assert.equal(
+			broadTestSweepIn("pnpm run test:all", { HOBO_ALLOW_BROAD_TESTS: "1" }),
+			undefined,
+		);
+	});
+
+	it("refuses broad sweeps across claude, codex, cursor, and copilot hook formats", () => {
+		for (const format of ["claude", "codex", "cursor", "copilot"] as const) {
+			const result = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", hook, `--format=${format}`],
+				{
+					cwd: root,
+					encoding: "utf8",
+					input: JSON.stringify({
+						tool_name: "Bash",
+						tool_input: { command: "pnpm run test:all" },
+					}),
+				},
+			);
+			if (format === "copilot") {
+				assert.equal(result.status, 0);
+				assert.match(result.stdout, /"permissionDecision":"deny"/u);
+				assert.match(result.stdout, /HOBO_ALLOW_BROAD_TESTS=1/u);
+			} else if (format === "cursor") {
+				assert.equal(result.status, 2);
+				assert.match(result.stdout, /"permission":"deny"/u);
+				assert.match(result.stderr, /HOBO_ALLOW_BROAD_TESTS=1/u);
+			} else {
+				assert.equal(result.status, 2);
+				assert.match(result.stderr, /Refusing broad test sweep/u);
+			}
+		}
 	});
 });

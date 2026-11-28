@@ -28,8 +28,8 @@ Use this skill for repo lifecycle work. Keep the hot path fast: search before va
 ## Hard rules
 
 - Do not bypass hooks, checks, merge protections, or status checks.
-- Do not run install, update, prune, broad generation, or full repo validation as a diagnostic unless evidence shows it is required.
+- Do not run install, update, prune, broad generation, or full unrelated test suites (`pnpm test`, `pnpm run test:unit`, `pnpm run test:all`, `pnpm run check:all`, `pnpm run verify:full`, unfiltered `turbo run test`, or unfiltered root `vitest run`) unless explicitly requested with `HOBO_ALLOW_BROAD_TESTS=1`. Always run only tests related to your changes (`pnpm --filter <pkg> exec vitest run <file>`, `pnpm --filter <pkg> test`, `pnpm run test:changed`, `pnpm run test:affected`, or `pnpm run agent:check -- --staged`); the pre-tool hook enforces this across harnesses.
 - Do not use Google products for OKF ingestion or querying by default. Treat OKF as markdown plus frontmatter in git.
 - Prefer local hybrid retrieval first. Use cloud or BYOC retrieval only when explicitly requested or already configured.
-- Finish whole-branch PR work by rebasing on `origin/main`, running `pnpm run agent:check -- --base=origin/main`, opening or updating the PR, resolving conflicts/checks/comments, cleaning the workspace safely, and archiving the thread only when the client provides a thread-archive tool.
-- For iteration or a small post-rebase repair, use `pnpm run agent:check` for the latest commit or `pnpm run agent:check -- --staged` before committing. Do not pay for PR-base branch validation repeatedly.
+- Finish whole-branch PR work by merging `origin/main` in, running `pnpm run agent:check -- --base=origin/main`, opening or updating the PR, resolving conflicts/checks/comments, cleaning the workspace safely, and archiving the thread only when the client provides a thread-archive tool.
+- For iteration or a small post-merge repair, use `pnpm run agent:check` for the latest commit or `pnpm run agent:check -- --staged` before committing. Do not pay for PR-base branch validation repeatedly.

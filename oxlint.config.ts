@@ -48,4 +48,23 @@ export default defineConfig({
 		"anti-slop/no-widen-then-assert": "error",
 		"anti-slop/require-safety-comment-for-type-assertion": "error",
 	},
+	overrides: [
+		{
+			files: [
+				"packages/*/src/domain/**/*.ts",
+				"packages/*/src/host/**/*.ts",
+				"packages/ci/src/cluster/**/*.ts",
+				"packages/iac/iac-alchemy/src/**/*.ts",
+			],
+			jsPlugins: [
+				{
+					name: "anti-slop-effect",
+					specifier: "./tools/oxlint/anti-slop/effect/index.ts",
+				},
+			],
+			rules: {
+				"anti-slop-effect/no-service-constructor-imports": "error",
+			},
+		},
+	],
 });

@@ -64,10 +64,10 @@ they are scoped separately in that subsection.
 
 | State | Kargo primitive map (§) | Argo CD primitive map (§) | Cross-cutting scorecard (§) |
 | --- | --- | --- | --- |
-| pass | 9 | 1 | 4 |
-| partial | 5 | 6 | 6 |
+| pass | 11 | 2 | 4 |
+| partial | 4 | 5 | 6 |
 | built-not-proven | 0 | 4 | 0 |
-| not-built | 1 | 0 | 0 |
+| not-built | 0 | 0 | 0 |
 | met-differently | 2 | 2 | 0 |
 | intentional-gap | 3 | 0 | 2 |
 
@@ -79,23 +79,23 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | Kargo primitive | HoBo counterpart | State | Evidence / gap |
 | --- | --- | --- | --- |
 | **Warehouse** | Freight source (`@hobo/cd/sources`) | **pass** | Pull discovery, forward-only cursors, assembly; broader than Kargo (package registries, HTTP index, HoBo CI, Rails). `packages/cd/src/sources/README.md`. |
-| **Freight** | Freight ledger (`@hobo/cd/freight`) | **pass** | Content-addressed manifest; alias; yank/retire/approve. Not CRD-compatible with Kargo. |
-| **Stage** | Pipeline node (`@hobo/cd/pipelines`) | **pass** | Camps or Placement per node; graph validation in `apply`. |
-| **requestedFreight / origin slots** | Per-node `from_sources` (+ source subscriptions) | **partial** | Nodes admit Freight via `from_sources` (`cd.proto`). A Freight **source** already assembles multiple subscriptions (`INDEPENDENT` / `SAME_VERSION` in `sources/README.md`). Gap: Kargo-style **named origin slots** with independent auto-promotion candidates per slot. |
-| **Availability OneOf / All** | `ONE_OF` / `ALL` | **pass** | `packages/cd/test/pipelines/availability.test.ts` (`Kargo parity:`). |
-| **Soak** | `required_soak_ms` | **pass** | Measured from upstream `env.Promoted`. Same test file. |
-| **QUORUM (fleet)** | `QUORUM` + Placement | **pass** | Beyond Kargo; documented in pipelines README. |
-| **Verification** | `VerificationEngine` | **met-differently** | Deterministic stats + probes; no Argo Rollouts `AnalysisTemplate` / `AnalysisRun`. `packages/cd/src/verification/README.md`. |
-| **Implicit Argo CD health wait** | Publisher `observe()` + rollout converge | **partial** | GitOps publisher waits for sync/health; no Kargo `argocd-wait` step semantics or sync-window attribution (manual vs auto). |
-| **Manual Freight approval** | `freight.Approved` | **pass** | Policy-gated, expiring; audited in journal. |
-| **Auto-promotion Newest / MatchUpstream / MatchNode** | `AUTO_PROMOTION_*` on pipeline nodes | **pass** | Proto (`AUTO_PROMOTION_MATCH_NODE` et al.), controller, fan-out catch-up tests (`packages/cd/test/pipelines/`, `fanout/`). |
-| **Auto-promotion holds** | — | **not-built** | Kargo records `status.autoPromotionHolds` per freight request **after a successful manual** promote of **non-candidate** Freight; the pin suspends auto-promotion for that request until the request's **current** candidate is manually promoted again (or project auto-promotion is disabled). Failed promotions do not set or clear holds; there is no in-flight window and no timeout ([working with Stages](https://docs.kargo.io/user-guide/how-to-guides/working-with-stages)). HoBo has no durable hold + tick-skip path yet (`packages/cd/src/pipelines/controller.ts`; P4). |
+| **Freight** | Freight ledger (`@hobo/cd/freight`) + `CdFreight` (`@hobo/cd/domain`) | **pass** | Content-addressed manifest; alias; yank/retire/approve; Story BDD tests in `packages/cd/test/cd-kargo-pull-domain.test.ts`. Not CRD-compatible with Kargo. |
+| **Stage** | Pipeline node (`@hobo/cd/pipelines`) + `CdStage` (`@hobo/cd/domain`) | **pass** | Camps or Placement per node; graph validation in `apply`; pull-based Stage aggregate & saga in `packages/cd/src/domain/CdStage.aggregate.ts`. |
+| **requestedFreight / origin slots** | Per-node `from_sources` + `CdStage` `originSlots` (`OriginSlotId`) | **pass** | Named multi-origin slots with independent Freight state and auto-promotion holds per slot (`packages/cd/src/domain/CdStage.aggregate.ts`, `packages/cd/test/cd-kargo-pull-domain.test.ts`). |
+| **Availability OneOf / All** | `ONE_OF` / `ALL` | **pass** | `packages/cd/test/pipelines/availability.test.ts` (`Kargo parity:`) and `packages/cd/test/cd-kargo-pull-domain.test.ts`. |
+| **Soak** | `required_soak_ms` / `requiredSoakMs` | **pass** | Measured from upstream qualification; `packages/cd/test/pipelines/availability.test.ts` and `packages/cd/test/cd-kargo-pull-domain.test.ts`. |
+| **QUORUM (fleet)** | `QUORUM` + Placement | **pass** | Beyond Kargo; documented in pipelines README and tested in `packages/cd/test/cd-kargo-pull-domain.test.ts`. |
+| **Verification** | `VerificationEngine` + `CdVerificationGate` | **met-differently** | Deterministic stats + probes; no Argo Rollouts `AnalysisTemplate` / `AnalysisRun`. `packages/cd/src/verification/README.md`. |
+| **Implicit Argo CD health wait** | Publisher `observe()` + `ExecuteCdDeliveryFlow` + Rivet `pullWatch` | **partial** | GitOps pull adapter and RivetKit SQLite pull-watch actor wait for PR merge and Argo sync/health with timeout alarms (`packages/cd-gitops/src/flow-adapter.ts`, `packages/cd/src/host/rivet.ts`); no live cluster sync-window attribution yet. |
+| **Manual Freight approval** | `freight.Approved` / `ApproveFreightForStage` | **pass** | Policy-gated, expiring; audited in journal and `CdFreight` aggregate. |
+| **Auto-promotion Newest / MatchUpstream / MatchNode** | `AUTO_PROMOTION_*` on pipeline nodes + `CdStage` | **pass** | Proto (`AUTO_PROMOTION_MATCH_NODE` et al.), controller, fan-out catch-up tests (`packages/cd/test/pipelines/`, `fanout/`), and `CdStage`. |
+| **Auto-promotion holds** | `CdStage` per-slot holds (`StageAutoPromotionHoldSet` / `Cleared`) | **pass** | Manual promotion of non-candidate Freight pins the origin slot on completion, rejects `trigger: "auto"` with `AutoPromotionHeld`, ignores failed runs, and clears only on manual promotion of the latest candidate or when auto-promotion is disabled (`packages/cd/src/domain/CdStage.aggregate.ts`, `packages/cd/test/cd-kargo-pull-domain.test.ts`). |
 | **Project-level auto-promotion toggle** | Per-node `auto_promotion` only | **partial** | Kargo `ProjectConfig` gates who may enable auto-promotion. HoBo uses pipeline node fields + `pipeline.apply` authz; no project-wide admin-only switch. |
-| **Promotion template + steps** | Promotion saga + typed hooks | **met-differently** | No `git-clone`, `git-commit`, `argocd-update`, OCI copy, Helm, etc. Hooks: `RUNBOOK`, `NOTIFY`, `SUITE` only (ADR-0182 D4; `packages/cd/src/promotion/README.md`). |
+| **Promotion template + steps** | Promotion saga + typed hooks + deterministic GitOps updaters | **met-differently** | Typed hooks (`RUNBOOK`, `NOTIFY`, `SUITE`) plus deterministic JSON/YAML/Kustomize updaters in `packages/cd-gitops/src/updaters.ts`; no expression runtime (ADR-0182 D4). |
 | **Stage / promotion variables + `${{ }}` expressions** | — | **intentional-gap** | Kargo Stage `spec.vars` and promotion expressions. HoBo has no expression runtime (ADR-0182 D4; rejected in ADR-0182 consequences). |
 | **PromotionTasks (reusable templates)** | — | **intentional-gap** | Kargo shared task CRDs. HoBo uses typed hooks + Delta saga instead. |
 | **Promotion UI / graph** | `GET /v1/cd/pipelines/*` graph API | **partial** | Service tests show per-node Freight (`packages/cd/test/service/control-api.test.ts`). No first-class promotion graph UI like Kargo's. |
-| **argocd-update / argocd-wait steps** | Git commit + publisher `observe()` | **partial** | Promotion ends in Git publish and **read-only** observation (`PublisherPort`); HoBo never calls Argo's write API (`packages/cd-gitops/README.md`). Does not mirror imperative `Application.operation` updates or multi-app label selection. |
+| **argocd-update / argocd-wait steps** | `createArgoCdPullFlowAdapter` + `observeArgoApplicationsBySelector` | **partial** | Git branch/PR creation, deterministic updaters, label-selector Argo observation, and optional sync trigger live in `packages/cd-gitops/src/flow-adapter.ts` (`packages/cd-gitops/test/pull-flow.test.ts`, 13 tests); production cluster traffic still pending P9. |
 | **authorized-stage annotation** | Delivery authz at promote gate | **intentional-gap** | Kargo requires `kargo.akuity.io/authorized-stage` on Applications. HoBo authorizes `CdAction`s via `@hobo/cd/authz` and policy packs, not Application annotations. |
 | **Freight timeline UI** | `GET /v1/cd/freight/{id}` | **pass** | Service test covers timeline ordering. |
 
@@ -109,14 +109,10 @@ HoBo vocabulary is documented in `docs/competitors/kargo.md`. This table adds
 | Git as sole write path | Journal authoritative; Git optional publisher | ADR-0182 D5, `docs/design/continuous-delivery.md` |
 | Second promotion brain (Kargo/Octopus runtime) | Single `@hobo/cd` journal | ADR-0182 D4, `docs/competitors/kargo.md` |
 
-### Kargo gaps that **must** close for operator parity
+### Kargo gaps remaining after formalization
 
-These stay within ADR-0182 (typed hooks, pull GitOps, no expression runtime):
-
-1. **Auto-promotion holds** (durable per-request pin after successful manual non-candidate promote) and promote-by-origin UX — without expression language.
-2. **Multi-origin freight slots** per node (or an equivalent) with independent auto-promotion candidates.
-3. **GitOps observation depth**: sync-window timeouts and manual-vs-automated sync attribution in `observe()` results (not a new `argocd-update` hook kind — D4 hook set is closed until amended).
-4. **Promotion graph visibility** at least at CLI/MCP parity (API exists; product surface trails Kargo UI).
+1. **GitOps observation depth in production**: sync-window timeouts and manual-vs-automated sync attribution against a live Argo CD cluster (P9).
+2. **Promotion graph visibility** at least at CLI/MCP parity (API exists; product surface trails Kargo UI).
 
 ## Argo CD primitive map
 
@@ -127,33 +123,25 @@ behavior, rendered Applications, and observable convergence.
 | Argo CD primitive | HoBo counterpart | State | Evidence / gap |
 | --- | --- | --- | --- |
 | **Application (source → destination)** | Rendered `argo-cd.application.json` + ConfigMap set | **built-not-proven** | `packages/cd-gitops/src/render.ts`; golden tests. Consumer PACT — not provider-verified traffic; no production publisher→Argo observation yet (P9). |
-| **Sync / health status** | `observe()` → CONVERGED / CONVERGING / BLOCKED | **built-not-proven** | PACT + unit tests; revision must match Git commit. Same production observation gap. |
-| **Pull-based GitOps** | Publisher commits; engine pulls | **built-not-proven** | No Argo CD write API (by design). Channel rule needs one linked CONVERGED observation. |
-| **Flux alternative** | Same publisher package | **built-not-proven** | `flux.kustomization.json` path; same consumer PACT / golden proof as Argo (`packages/cd-gitops/README.md` Proof). No linked production publisher→Flux CONVERGED observation (P9 is Argo-only today). |
+| **Sync / health status** | `observe()` + `observeArgoApplicationsBySelector` | **built-not-proven** | PACT + pull-flow unit tests (`packages/cd-gitops/test/pull-flow.test.ts`); revision must match Git commit. Same production observation gap. |
+| **Pull-based GitOps** | Publisher + `createArgoCdPullFlowAdapter` | **built-not-proven** | Direct commit & PR-based pull flows verified in `packages/cd-gitops/test/pull-flow.test.ts`. Channel rule needs one linked CONVERGED observation. |
+| **Flux alternative** | `createFluxPullFlowAdapter` + Flux render | **built-not-proven** | `flux.kustomization.json` path + pull-flow tests (`packages/cd-gitops/test/pull-flow.test.ts`). No linked production publisher→Flux CONVERGED observation yet. |
 | **AppProject / RBAC** | `@hobo/cd/authz` + Station policy packs | **met-differently** | `authz` evaluates `@hobo/contracts` rules on the Station pack (`packages/cd/src/authz/README.md`). Not AppProject-shaped. `@hobo/policy` posture is separate (ADR-0182 D25). |
-| **OutOfSync / per-resource diff UI** | Drift events + `drift.DiffProposed` | **partial** | Reconciler emits drift; no Argo-like resource tree or live manifest diff UI. |
-| **ApplicationSet / matrix generators** | Placement + fan-out | **partial** | Fan-out is journal-driven over Camps; no Git-rendered ApplicationSet CRD. |
-| **Sync waves / hook ordering** | Rollout stages + change windows | **partial** | Promotion/rollout layer orders work; rendered manifests do **not** emit Argo `argocd.argoproj.io/sync-wave` annotations by default. |
+| **OutOfSync / per-resource diff UI** | Drift events + `drift.DiffProposed` + `outOfSyncResources` | **partial** | Reconciler emits drift and Argo verdict extracts `outOfSyncResources`; no live resource tree UI. |
+| **ApplicationSet / matrix generators** | Placement + fan-out + label-selector observation | **partial** | Fan-out is journal-driven over Camps; no Git-rendered ApplicationSet CRD. |
+| **Sync waves / hook ordering** | `renderPublication(..., { syncWave })` | **pass** | Emits `argocd.argoproj.io/sync-wave` annotations on rendered Argo CD Application and ConfigMap manifests (`packages/cd-gitops/src/render.ts`, `packages/cd-gitops/test/render.test.ts`). |
 | **Automated sync policy (prune/self-heal)** | `render.ts` when `autoSync` | **pass** | When `autoSync` is set, render emits `spec.syncPolicy.automated{prune,selfHeal:true}` (`packages/cd-gitops/src/render.ts`; golden `test/golden/argo-cd.application.json.golden`). |
 | **Multi-cluster hub** | `cd-kube-fleet` (OCM/Karmada) | **met-differently** | Not Argo CD hub-spoke; fleet transports differ (ADR-0182 D26). |
 | **Notifications** | CDEvents + NOTIFY hooks | **partial** | Structured events; not Argo Notifications CRD integration. |
-| **OCI / Helm / Kustomize sources** | Set resolution → ConfigMap JSON | **partial** | HoBo projects resolved sets; Argo-native multi-source Application spec not generated. |
+| **OCI / Helm / Kustomize sources** | Set resolution + `updaters.ts` (JSON/YAML/Kustomize) | **partial** | Deterministic updaters ship in `packages/cd-gitops/src/updaters.ts`; Argo multi-source Application spec not generated. |
 | **argocd CLI / UI parity for HoBo operators** | `hobo deploy camp show`, service API | **partial** | No embedded Argo UI; deep links not standardized. |
 
-### Argo CD integration gaps that **must** close
+### Argo CD integration gaps remaining
 
-Frozen `PublisherPort` (`publish` + `observe` only; `packages/cd/README.md`,
-`packages/cd/src/ports.ts`) and ADR-0182 D4/D5 forbid adding Argo write APIs or
-new hook kinds without an **ADR-0182 amendment**.
-
-1. **`packages/cd-argocd` (proposed)** — read-only engine adapter beside `cd-gitops`:
-   PACT-backed **read** client (applications, sync status, operation state) and
-   RUNBOOK hooks that **observe** sync (not `Application.operation` writes).
-2. **Sync-wave annotations** in publisher render (P6) — ordering gap only; syncPolicy
-   automated path already ships when `autoSync`.
-3. **ApplicationSet or documented equivalent** for fleet Camps (rendered or hub policy).
-4. **Drift surfacing** to CLI/API (journal-sourced diff is acceptable).
-5. **Production observation** of publisher → Argo CD (CONVERGED with real revision),
+1. **`packages/cd-argocd` (proposed)** — dedicated read-only engine adapter beside `cd-gitops` if split out from `cd-gitops/src/engines/`.
+2. **ApplicationSet or documented equivalent** for fleet Camps (rendered or hub policy).
+3. **Drift surfacing** to CLI/API (journal-sourced diff is acceptable).
+4. **Production observation** of publisher → Argo CD (CONVERGED with real revision),
    linked per AGENTS.md channel rule (P9).
 
 ## Cross-cutting scorecard
@@ -164,47 +152,43 @@ below are **not** included in those counts.
 
 | Topic | State | Notes |
 | --- | --- | --- |
-| `@hobo/cd` core (journal, pipelines, promotion) | **pass** | Executable module tests |
-| `@hobo/cd-gitops` publisher (Argo + Flux via Git) | **partial** | Feature rows in Argo map; production channel unproven |
+| `@hobo/cd` core (journal, pipelines, promotion) | **pass** | Executable module tests + `CdRelease` Story BDD suite |
+| `@hobo/cd-gitops` publisher (Argo + Flux via Git) | **partial** | Pull-flow adapter + sync waves pass unit/PACT tests; production channel unproven |
 | `@hobo/cd-kube-fleet` | **pass** | OCM/Karmada; not Argo CD hub |
 | `@hobo/cd-vercel` hosted runtime | **partial** | Tick schedule **and** `cd-api` (`/v1/cd/`, agent feed, probes); journal on Neon fleet |
 | `@hobo/hobo-cd` CD Bindle + `hobo cd up` | **partial** | Vercel connection/lifecycle ceremony; not `@hobo/cd/compose` |
-| `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) |
-| `@hobo/cd-argocd` native API adapter | **partial** | Read/observe PACT + RUNBOOK sync observation (P3); no Argo write API |
+| `CdEngineRegistry` in `@hobo/cd/compose` | **pass** | `engines.ts`, `packages/cd/test/compose/engines.test.ts`, `cd-gitops` bridge (P2) + flow router in `packages/cd/src/host/flow-router.ts` |
+| `@hobo/cd-argocd` native API adapter | **partial** | Read/observe PACT + RUNBOOK sync observation (P3: `@hobo/cd-argocd`) plus read/observe client in `@hobo/cd-gitops/src/engines/index.ts`; no Argo write API |
 | Separate `@hobo/cd-kargo` promotion runtime | **intentional-gap** | Would duplicate `@hobo/cd` brain (ADR-0182) |
-| Separate `@hobo/cd-octopus` engine | **intentional-gap** | Later optional target; same registry pattern only |
+| Separate `@hobo/cd-octopus` engine | **intentional-gap** | Supported as a pluggable `release-orchestrator` target via `CdEngineRegistry` + `createCdDeliveryFlowRouterLayer` |
 | Publisher registry lookup | **partial** | Unit test `createPublisherRegistry` in `packages/cd-gitops/test/publisher.test.ts` — not composition-suite wiring |
 | Release → Freight coupling | **partial** | CI/CD sources and ingest; release-script coupling is parallel work |
 | CD artifact provenance on ingest | **pass** | `@hobo/cd/provenance`, ingest paths (distinct from main-train npm/GHCR publish) |
 
-### Optional formalization (not ADR-0182; not backlog unless accepted)
+### EffectTS + Alchemy Domain + Rivet formalization
 
-ADR-0182 and `continuous-delivery.md` do not require Effect, Alchemy, or Rivet.
-ADR-0136 forbids **public** Effect-TS dependencies repo-wide. ADR-0182 D16 keeps
-the promotion journal on SQLite/Postgres EventStore ports, not a parallel Rivet queue.
-
-| Idea | Status | Constraint |
+| Component | Status | Evidence |
 | --- | --- | --- |
-| Effect inside `cd-*` engine packages only | **not-built** | Must not leak into `@hobo/cd` public API (ADR-0136) |
-| Alchemy workers for hosted tick | **not-built** | Precedent in `packages/iac/iac-alchemy` (isolation domains — not a “Domains” product noun) |
-| Rivet for observation loops | **not-built** | Cannot replace journal single-writer authority (ADR-0182 D16 / ADR-0135) |
+| `@hobo/cd/domain` (`CdRelease` Alchemy Domain model) | **pass** | `packages/cd/src/domain/` (`CdFreight`, `CdStage`, `CdDeliveryFlow`, `CdDeliveryRun`, `ExecuteCdDeliveryFlow`, holds & multi-origin slots); neutral `@hobo/cd` core preserved (`test/boundary/neutral-core.test.ts`) |
+| `@hobo/cd/host` (InMemory, SQLite, HTTP, Rivet) | **pass** | `packages/cd/src/host/` (`createCdDeliveryFlowRouterLayer`, `createCdPullWatchRegistry` SQLite actor + alarms + broadcasts, `packages/cd/test/cd-release-host.test.ts`) |
+| `@hobo/cd-gitops` pull-flow Effect adapters | **pass** | `packages/cd-gitops/src/flow-adapter.ts` (`createArgoCdPullFlowLayer`, `createFluxPullFlowLayer`, `packages/cd-gitops/test/pull-flow.test.ts`) |
 
 ## Stacked PR sequence (Step 2)
 
 Work **off `origin/main`**, one concern per PR, `agent:check -- --base=origin/main`
 green before handoff. Later PRs update row states in this file when they land.
 
-| PR | Scope | Closes (rows above) |
+| PR | Scope | Status / closes |
 | --- | --- | --- |
-| **P1** | `docs/cd/*` (this audit) + index links | Baseline |
-| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Cross-cutting: `CdEngineRegistry` — **implemented** (`engines.ts`, `cd-gitops` bridge) |
-| **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Argo read adapter; partial `argocd-wait` semantics — **implemented** (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
-| **P4** | Pipeline: durable auto-promotion **holds** (Kargo-style post-success pin + tick skip) + promote-by-origin | Kargo holds row |
-| **P5** | Pipeline: multi-origin slots per node | `requestedFreight` / origin slots row |
-| **P6** | Publisher: Argo **sync-wave** annotations in render | Sync waves partial row (syncPolicy already in render when `autoSync`) |
-| **P7** | CLI/MCP: promotion graph + freight timeline first-class | Promotion UI partial |
-| **P8** | Hosted tick hardening (`cd-vercel` / compose) if needed | Optional formalization row — only if product accepts |
-| **P9** | Production observation link: Git publisher → Argo CONVERGED | built-not-proven Argo channel rows |
+| **P1** | `docs/cd/*` (this audit) + index links | Landed |
+| **P2** | `CdEngineRegistry` contract in `@hobo/cd/compose` + wiring tests | Landed (`engines.ts`, `cd-gitops` bridge) |
+| **P3** | `packages/cd-argocd`: read/observe PACT + RUNBOOK observation hooks | Landed (`@hobo/cd-argocd`, `ARGO_CD_SYNC_RUNBOOK`, `packages/cd-argocd/test/*.test.ts`) |
+| **P4** | Durable auto-promotion holds in `CdStage` (`@hobo/cd/domain`) | Landed |
+| **P5** | Named multi-origin Freight slots in `CdStage` (`@hobo/cd/domain`) | Landed |
+| **P6** | Argo `sync-wave` annotations in `@hobo/cd-gitops/src/render.ts` | Landed |
+| **P7** | CLI/MCP promotion graph UI | Open |
+| **P8** | EffectTS + Alchemy Domain + Rivet formalization (`@hobo/cd/domain`, `@hobo/cd/host`, `@hobo/cd-gitops`) | Landed (PR #32) |
+| **P9** | Live production cluster observation: Git publisher → Argo CONVERGED | Open (requires live Argo CD cluster) |
 
 Additional engines (e.g. Octopus) follow the same registry pattern only if product
 rejects the **intentional-gap** on a second promotion brain.
