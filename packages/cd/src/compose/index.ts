@@ -3,6 +3,7 @@ export * from "./ci-bridge.js";
 export * from "./compose.js";
 export * from "./config.js";
 export * from "./defaults.js";
+export * from "./engine-registry.js";
 export * from "./errors.js";
 export * from "./fail-closed.js";
 export * from "./late.js";
