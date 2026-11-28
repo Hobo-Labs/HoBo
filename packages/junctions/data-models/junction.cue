@@ -48,9 +48,9 @@ package data_models
 }
 
 #TrustAnchorExchange: {
-	from_yard:  string & !=""
-	to_yard:    string & !=""
-	anchor_ref: string & !=""
+	from_yard: string & !=""
+	to_yard:   string & !=""
+	trust?: bytes
 }
 
 #PolicyPackDistribution: {

@@ -63,4 +63,5 @@ message WorkspaceEvent {
 message Registry {
   string root = 1;
   repeated WorkspaceRecord workspaces = 2;
+  uint32 event_count = 3;
 }

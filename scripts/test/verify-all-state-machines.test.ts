@@ -96,7 +96,7 @@ describe("state-machine verification jobs", () => {
 		[
 			'name="${1##*/}"',
 			`printf 'start %s\\n' "$name" >>'${events}'`,
-			"sleep 0.4",
+			'sleep "${FAKE_SKILL_SECONDS:-0.4}"',
 			`printf 'end %s\\n' "$name" >>'${events}'`,
 			'echo "checked $name"',
 			'[[ "$name" != verify-bad ]] || { echo boom; exit 1; }',
@@ -118,6 +118,10 @@ describe("state-machine verification jobs", () => {
 	spawnSync("git", ["init", "-q"], { cwd: repo, env: isolated });
 
 	function run(...args: string[]) {
+		return runWith({}, ...args);
+	}
+
+	function runWith(env: Record<string, string>, ...args: string[]) {
 		writeFileSync(events, "");
 		const result = spawnSync(
 			"bash",
@@ -129,6 +133,7 @@ describe("state-machine verification jobs", () => {
 					...isolated,
 					"BASH_FUNC_sha256sum%%": "() {  cat >/dev/null\n}",
 					TLA2TOOLS: join(repo, "tla2tools.jar"),
+					...env,
 				},
 			},
 		);
@@ -194,6 +199,20 @@ describe("state-machine verification jobs", () => {
 		assert.match(
 			result.stdout,
 			/^PASS verify-a .*\nPASS verify-c .*\nPASS verify-e /u,
+		);
+	});
+
+	it("fails a skill that exceeds FORMAL_SKILL_TIMEOUT_SEC", () => {
+		const result = runWith(
+			{ FORMAL_SKILL_TIMEOUT_SEC: "1", FAKE_SKILL_SECONDS: "5" },
+			"verify-a",
+		);
+		assert.equal(result.status, 1);
+		assert.match(result.stderr, /^FAIL verify-a \([12]s\)\n/u);
+		assert.doesNotMatch(readFileSync(events, "utf8"), /^end /mu);
+		assert.match(
+			result.stdout,
+			/Checked 1 skills with 1 jobs in \d+s; 1 failed\./u,
 		);
 	});
 

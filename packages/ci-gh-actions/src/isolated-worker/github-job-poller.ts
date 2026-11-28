@@ -105,9 +105,6 @@ export interface RunnerJobsSeen {
 	readonly inProgress: readonly RunnerJobInProgress[];
 }
 
-export type FleetJobInProgress = RunnerJobInProgress;
-export type FleetJobsSeen = RunnerJobsSeen;
-
 export interface GithubReadFailure {
 	readonly installationId: number;
 	readonly path: string;

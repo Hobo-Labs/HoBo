@@ -3,6 +3,8 @@
 These rules apply to every agent, plugin, skill, and harness and take precedence
 over conflicting repository workflow guidance.
 
+- Do not create GitHub blobs directly, including through the Git Data API or
+  blob-creation tools. Use local Git commits and `git push` for repository changes.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
@@ -10,6 +12,13 @@ over conflicting repository workflow guidance.
   dynamic imports.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Do not run GitHub Actions validation on draft pull requests. The first routing
+  job on every `pull_request` workflow skips draft events, so no Fabric runners
+  start until the pull request is marked ready for review. Review and validate
+  work locally while it stays draft. When every required ready-state gate is
+  green, the pull request may enter the merge queue. Any gate failure sends it
+  back to draft for in-place fixes on the same branch; mark it ready again to
+  re-run CI—do not open a new pull request to fix that branch's failing gates.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -17,6 +26,12 @@ over conflicting repository workflow guidance.
   alternatives and independent work before reporting a blocker. Respect the
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
+- An action request is not done until the delivery goal in `PRODUCT.md` is met
+  by the evidence it names; merged pull requests are not that evidence.
+- Before adding a credential, flow or provider, search the code and ADRs for
+  an existing mechanism and use it. List the hard constraints against the goal
+  and report any contradiction before building. The `hobo-setup` skill covers
+  owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
@@ -62,7 +77,10 @@ the pre-commit hook checks staged changes. The same edit hooks run
 each harness (`scripts/agent-secret-policy.mts`) refuses commands that store
 Actions secrets or variables, Vercel environment variables, `.env` writes,
 edits to secret files, and credential-storing tools such as
-`request_credential` before they run. `secrets:guard` also runs in the
+`request_credential` before they run. The same hook refuses stopping HoBo's MCP
+server or owner page driver, which holds the owner's open form, and a fourth
+unlanded pull request from one session's branches
+(`scripts/agent-session-policy.mts`; see `docs/agent-tooling.md`). `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
 other than the per-job token, secret files, environment credential reads
@@ -141,7 +159,7 @@ The repo-local **optimizexp** skill reviews real UX, DX, and AX behavior, implem
 
 Every proof layer has **folder-scoped `AGENTS.md` instructions** beside the packages (`src/draft/<kind>/AGENTS.md`, plus one per experience type). Implement the requested behavior and executable checks directly; do not create planning documents or placeholder proofs. New or changed proofs are validated by two gates that run automatically through `agent:check`:
 
-- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior.
+- `pnpm run draft:artifacts` — per-layer artifact requirements from a `proof.json` manifest (`scripts/lib/proof-manifest.ts`): gate-**executed** `examples/`, executed tslab `notebook.ipynb`, bench for technical proofs, executable cucumber `features/` for epics (`pnpm run test:behavior`), and per-type experience evidence. An inapplicable requirement can carry a reason in `proof.json`; do not waive unfinished behavior. `agent:check` builds the workspace packages a changed proof imports (`turbo run build --filter=./<proof>^...`) before running its examples, so a clean CI runner has their `dist/` outputs. A proof whose examples import workspace packages also declares a `draft:prepare` script that builds them, because `check:all` runs `draft:artifacts` without that prior build; the gate runs `draft:prepare` before the examples and allows it ten minutes.
 - `pnpm run draft:cascade` — a changed technical/exp proof must update every referencing epic/project rollup in the same diff (references resolve from `proof.json` graphs + import/ledger scans).
 
 Packages predating the standard are listed in `src/draft/_grandfathered.json` (advisory-only until their backfill wave removes them; never add new packages there).
@@ -929,7 +947,7 @@ Run the smallest sufficient lane through `pnpm agent:check`; no-arg mode validat
 
 ## Main train release versioning (repo + CI)
 
-Do **not** pick `@hobo-labs/*` semver or push `v0.0.0-alpha.N` tags by hand for the main train. [`version.json`](version.json) + **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` via `pnpm exec nbgv` under **`release/mise.toml`** dotnet only — not root [`mise.toml`](mise.toml)) compute **`0.0.0-alpha.{height+offset}`** from git. After green **`HoBo CI Fabric`** on a release-relevant **`main`** push, [`.github/workflows/release-hobo.yml`](.github/workflows/release-hobo.yml) (`workflow_run`) publishes npm (**`alpha`** dist-tag only), GHCR, and Pages, then **`release-tag`** ( **`environment: production`** ) SSH-signs the tag and pushes it over **HTTPS** with **`GITHUB_TOKEN`**. Use [`scripts/ci/compute-release-version.mts`](scripts/ci/compute-release-version.mts) locally after `mise -C release install --locked`.
+Do **not** pick `@hobo-labs/*` semver or push `v0.0.0-alpha.N` tags by hand for the main train. [`version.json`](version.json) + **[Nerdbank.GitVersioning](https://dotnet.github.io/Nerdbank.GitVersioning/)** (`nerdbank-gitversioning` via `pnpm exec nbgv` under **`release/mise.toml`** dotnet only — not root [`mise.toml`](mise.toml)) compute **`0.0.0-alpha.{height+offset}`** from git. After green **`HoBo CI Fabric`** on a release-relevant **`main`** push, [`.github/workflows/release-hobo.yml`](.github/workflows/release-hobo.yml) (`workflow_run`) publishes npm (**`alpha`** dist-tag only), GHCR, and Pages, then **`release-tag`** ( **`environment: production`** ) SSH-signs the tag and pushes it over **HTTPS** with **`GITHUB_TOKEN`**. Use [`scripts/ci/compute-release-version.mts`](scripts/ci/compute-release-version.mts) locally after [`scripts/ci/ensure-nbgv-toolchain.mts`](scripts/ci/ensure-nbgv-toolchain.mts), which runs `mise -C release install --locked dotnet` and sets `MISE_IGNORED_CONFIG_PATHS` to the absolute path of the repo-root `mise.toml`, appending any value already set (the same append preflight uses for `/etc/mise/config.toml`).
 
 ## Cursor Cloud specific instructions
 

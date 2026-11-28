@@ -66,8 +66,9 @@ Both engines keep their state under a local `file://` backend. Pulumi encrypts
 the secrets in it with `PULUMI_CONFIG_PASSPHRASE`; an empty passphrase leaves
 them readable by any process that can read the state directory. For a retained
 workspace, pass a recoverable non-empty `statePassphrase` from the caller's
-secret store (the legacy `PULUMI_CONFIG_PASSPHRASE` environment variable is
-also accepted). Reuse the same key when reopening the state. Without one,
+secret store; `PULUMI_CONFIG_PASSPHRASE` in the caller's environment is not
+read, and the engine sets it only in the Pulumi child's environment for that
+call. Reuse the same key when reopening the state. Without one,
 operations refuse before creating or changing state. A caller that guarantees a
 workspace is disposable may explicitly set `ephemeralState: true`; its key is
 random, kept in memory, and lost when the process ends.

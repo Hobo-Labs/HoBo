@@ -16,24 +16,11 @@ import {
 	mintElevatedAccessCapability,
 	parseIsolationClass,
 } from "@hobo/connectivity";
-import { createInMemoryKms, JwtSvidIssuer } from "@hobo/identity";
+import {
+	createLocalSvidIssuer,
+	LOCAL_SVID_ISSUER,
+} from "./credential-presenter.js";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
-
-const LOCAL_SVID_ISSUER = "spiffe://hobo.local";
-const SVID_KEY_ID = "presenter-svid-1";
-
-function createLocalSvidIssuer(
-	issuerUrl: string = LOCAL_SVID_ISSUER,
-): ElevatedCapabilityIssuer {
-	const kms = createInMemoryKms();
-	kms.generateRsaKey(SVID_KEY_ID);
-	return new JwtSvidIssuer({
-		issuerUrl,
-		kms,
-		activeKeyId: SVID_KEY_ID,
-		jwksKeyIds: [SVID_KEY_ID],
-	});
-}
 
 export interface AccessCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;

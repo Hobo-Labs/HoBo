@@ -1,15 +1,14 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { create, toJsonString } from "@bufbuild/protobuf";
 import {
-	type AssignmentAcceptOutcome,
-	assignmentKey,
 	createImmutableJournal,
-	type FleetAssignment,
 	ImmutableJournalError,
 	type ImmutableJournalMember,
 	type ImmutableJournalReplica,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
+import type { AssignmentAcceptOutcome, AssignmentEntry } from "@hobo/fleet";
+import { assignmentKey } from "@hobo/fleet/assignment";
 import { stableHash } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
 import { IacPricingPinSchema } from "../src/_generated/yard_placement_pb.js";
@@ -27,7 +26,7 @@ import { createRecoveryActorFixture } from "./support/recovery-actor.js";
 const NOW = "2026-10-30T12:00:00Z",
 	UNTIL = "2026-10-31T00:00:00Z";
 class Replica implements ImmutableJournalReplica {
-	readonly rows: FleetAssignment[] = [];
+	readonly rows: AssignmentEntry[] = [];
 	readonly documents = new Map<string, string>();
 	available = true;
 	afterAccept?: () => void;
@@ -36,7 +35,7 @@ class Replica implements ImmutableJournalReplica {
 		if (!this.available) throw new Error("provider unavailable");
 		return this.rows.slice(-(limit ?? this.rows.length));
 	}
-	async accept(value: FleetAssignment): Promise<AssignmentAcceptOutcome> {
+	async accept(value: AssignmentEntry): Promise<AssignmentAcceptOutcome> {
 		if (!this.available) throw new Error("provider unavailable");
 		const held = this.rows.find((row) => row.epoch === value.epoch);
 		if (held)

@@ -24,6 +24,40 @@ export {
 	type RivetSignedCapability,
 } from "./distributed-auth.js";
 export {
+	createRivetDurableTopicActor,
+	createRivetDurableTopicBusActor,
+	isRivetDurableTopicBinding,
+	isRivetDurableTopicBusBinding,
+	type RivetDurableTopicBinding,
+	type RivetDurableTopicBusBinding,
+	type RivetDurableTopicBusOptions,
+	type RivetDurableTopicContext,
+	type RivetDurableTopicOptions,
+} from "./durable-topic-actor.js";
+export {
+	RIVET_DURABLE_TOPIC_BUS_CAPABILITIES,
+	RIVET_DURABLE_TOPIC_BUS_LIMITS,
+} from "./durable-topic-bus.js";
+export {
+	createRivetDurableTopicClient,
+	createRivetDurableTopicMetadataGrant,
+	isRivetDurableTopicClientBoundTo,
+	isRivetDurableTopicClientFor,
+	type RivetDurableTopicCapabilities,
+	type RivetDurableTopicClient,
+	type RivetDurableTopicClientBinding,
+	type RivetDurableTopicClientOptions,
+	type RivetDurableTopicLogMessage,
+	type RivetDurableTopicLogOutcome,
+	type RivetDurableTopicMetadataGrant,
+	type RivetDurableTopicRequest,
+	type RivetDurableTopicTransportClaim,
+} from "./durable-topic-client.js";
+export {
+	RIVET_DURABLE_TOPIC_LOG_CAPABILITIES,
+	RIVET_DURABLE_TOPIC_LOG_LIMITS,
+} from "./durable-topic-log.js";
+export {
 	createRivetRuntimeHost,
 	diagnoseRivetReadiness,
 	type RivetRuntimeBundle,
@@ -36,6 +70,11 @@ export {
 } from "./journal.js";
 export type { RivetkitModule } from "./load-rivetkit.js";
 export { loadRivetkit, loadRivetkitClient } from "./load-rivetkit.js";
+export {
+	dispatchRivetOutbox,
+	type RivetOutboxEffect,
+	type RivetOutboxEffectInput,
+} from "./outbox.js";
 export {
 	parseRivetRuntimeConfig,
 	parseRivetRuntimeMode,

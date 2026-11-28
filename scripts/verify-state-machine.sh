@@ -31,6 +31,8 @@ if ! printf '%s  %s\n' \
 	exit 2
 fi
 
+export TLA2TOOLS="$jar"
+
 shopt -s nullglob
 tests=("$skill_dir"/tests/*.mts)
 models=("$skill_dir"/models/*.tla)

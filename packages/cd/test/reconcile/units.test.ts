@@ -155,6 +155,19 @@ describe("drift decisions", () => {
 });
 
 describe("attribute trimming", () => {
+	it("does not expose the names of undeclared attributes in reasons", () => {
+		const marker = "synthetic-private-attribute.invalid";
+		const out = trimAttributes({
+			resource: "api",
+			attributes: { [marker]: "value" },
+			observeFields: [],
+		});
+		expect(out.reasons.map((reason) => reason.code)).toContain(
+			"attribute-undeclared",
+		);
+		expect(JSON.stringify(out)).not.toContain(marker);
+	});
+
 	it("keeps declared fields only, redacts secrets, bounds bytes with reasons", () => {
 		const out = trimAttributes({
 			resource: "api",

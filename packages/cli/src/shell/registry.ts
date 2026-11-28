@@ -77,7 +77,7 @@ export function createCommandRegistry(
 	for (const [name, command] of Object.entries(overrides)) {
 		if (!verbNames.has(name)) {
 			throw new UsageError(`Cannot register unknown HoBo verb "${name}".`, [
-				"Register only verbs from docs/design/cli-spec.md.",
+				"Register only verbs from docs/cli-verbs.md.",
 			]);
 		}
 		registry.set(name, command);

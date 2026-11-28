@@ -17,6 +17,12 @@ delivery decision: every decision stays in the module that owns it.
 | `simulate.ts` | The labelled `--simulate` realizer: every observation carries reason `simulated`. |
 | `ci-bridge.ts` | `hoboCiSource` (HOBO_CI subscription, C15) and `hoboCiDogfoodSources` (HoBo's own CI relay and runner fleet). |
 | `errors.ts` | `COMPOSE_FAILURES`: every code with its remediation; `ComposeError`. |
+| `engines.ts` | `CdEngineRegistry`: pluggable CD engines (`gitops-publisher` first); legacy `argo` → `argo-cd`. |
+
+Engine names are canonicalized on registration and lookup: the legacy `argo` alias resolves to `argo-cd`. Duplicate canonical names are rejected instead of replacing a publisher.
+
+`conductorFor` uses the composed in-process transport unless the caller supplies
+an explicit `transport` override.
 
 ## Wiring order
 

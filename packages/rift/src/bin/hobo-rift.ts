@@ -15,10 +15,13 @@ import {
 	listDebris,
 	pruneDebris,
 	quoteVector,
+	type Registry,
+	RiftRegistryError,
 	readRegistry,
 	rebuildRegistry,
 	removeWorkspace,
 	runInWorkspace,
+	type WorkspaceRecord,
 } from "../workspace.js";
 
 const argv = process.argv.slice(2);
@@ -62,18 +65,31 @@ const command = verb();
 const root = flag("root") ?? process.cwd();
 const json = ours.includes("--json");
 
-/**
- * Print the human line, or the JSON form under `--json`.
- *
- * `data` is `unknown` because serializing is the only thing done with it. A
- * `JsonValue` parameter would be a promise this function does not need and
- * cannot check, paid for by every caller laundering an ordinary domain record
- * into a JSON view before handing it over.
- */
-function emit(human: string, data: unknown): void {
+type RiftCommandOutput =
+	| (ReturnType<typeof detectCapability> & {
+			contract: ReturnType<typeof deriveContract>;
+	  })
+	| ReturnType<typeof initRoot>
+	| WorkspaceRecord
+	| Registry
+	| (Registry & { debris: readonly string[] })
+	| { removed: readonly string[] }
+	| { removed: boolean; name: string };
+
+function emit(human: string, data: RiftCommandOutput): void {
 	process.stdout.write(
 		json ? `${JSON.stringify(data, null, 2)}\n` : `${human}\n`,
 	);
+}
+
+function withRegistryErrors<T>(action: () => T): T {
+	try {
+		return action();
+	} catch (error) {
+		if (!(error instanceof RiftRegistryError)) throw error;
+		process.stderr.write(`${error.message}\n`);
+		process.exit(1);
+	}
 }
 
 if (command === "capability") {
@@ -92,11 +108,13 @@ if (command === "capability") {
 	);
 } else if (command === "create") {
 	const name = flag("name") ?? `ws-${Date.now()}`;
-	const created = createWorkspace({
-		root,
-		name,
-		copyAll: ours.includes("--copy-all"),
-	});
+	const created = withRegistryErrors(() =>
+		createWorkspace({
+			root,
+			name,
+			copyAll: ours.includes("--copy-all"),
+		}),
+	);
 	if (!created.workspace) {
 		process.stderr.write(`${created.reason ?? "create failed"}\n`);
 		process.exit(1);
@@ -111,7 +129,7 @@ if (command === "capability") {
 	// Path on stdout, matching rift, so callers can capture it directly.
 	emit(created.workspace.path, created.workspace);
 } else if (command === "list") {
-	const registry = readRegistry(root);
+	const registry = withRegistryErrors(() => readRegistry(root));
 	const parked = listDebris(root);
 	emit(
 		[
@@ -137,8 +155,11 @@ if (command === "capability") {
 	);
 } else if (command === "repair") {
 	// Rebuild the snapshot from the journal after a torn write.
-	const registry = rebuildRegistry(root);
-	if (registry.undecidable) process.stderr.write(`${registry.undecidable}\n`);
+	const registry = withRegistryErrors(() => rebuildRegistry(root));
+	if (registry.undecidable) {
+		process.stderr.write(`${registry.undecidable}\n`);
+		process.exitCode = 1;
+	}
 	emit(
 		`registry now lists ${registry.workspaces.length} workspace(s)`,
 		registry,
@@ -149,7 +170,7 @@ if (command === "capability") {
 		process.stderr.write("remove needs --name\n");
 		process.exit(2);
 	}
-	const removed = removeWorkspace(root, name);
+	const removed = withRegistryErrors(() => removeWorkspace(root, name));
 	emit(removed ? `removed ${name}` : `no workspace named ${name}`, {
 		removed,
 		name,
@@ -174,7 +195,9 @@ if (command === "capability") {
 		);
 		process.exit(2);
 	}
-	const record = readRegistry(root).workspaces.find((w) => w.name === name);
+	const record = withRegistryErrors(() => readRegistry(root)).workspaces.find(
+		(w) => w.name === name,
+	);
 	if (!record) {
 		// Falling back to the source would run an agent's command against the
 		// very tree the workspace exists to protect.

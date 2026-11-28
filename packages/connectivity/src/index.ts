@@ -221,16 +221,3 @@ export {
 	type VercelTrafficRouting,
 	type VercelTrafficRoutingOptions,
 } from "./traffic-routing/vercel.js";
-export {
-	type DpopKeyPair,
-	exportDpopPrivateJwk,
-	generateDpopKeyPair,
-	importDpopKeyPair,
-	mintDpopProof,
-	verifyDpopProof,
-} from "./crypto/dpop.js";
-export {
-	mintJwtSvid,
-	spiffeIdForAgent,
-	verifyJwtSvid,
-} from "./crypto/jwt-svid.js";

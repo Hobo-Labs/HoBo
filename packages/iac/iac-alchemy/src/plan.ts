@@ -359,7 +359,7 @@ function isPlanOutput(value: unknown): boolean {
 function encode(
 	value: unknown,
 	ancestors: Set<object>,
-	budget: { remaining: number },
+	budget: { remaining: number; characters: number },
 	depth: number,
 	references?: ReadonlyMap<
 		object,
@@ -378,7 +378,8 @@ function encode(
 	if (value === null) return ["null"];
 	if (typeof value === "boolean") return ["boolean", value];
 	if (typeof value === "string") {
-		if (value.length > 4096)
+		budget.characters -= value.length;
+		if (value.length > 65_536 || budget.characters < 0)
 			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan string exceeds the fingerprint limit",
@@ -686,6 +687,12 @@ function encode(
 					"PLAN_UNINSPECTABLE",
 					"plan contains hidden or computed properties",
 				);
+			budget.characters -= key.length;
+			if (budget.characters < 0)
+				throw inspectionFailure(
+					"PLAN_UNINSPECTABLE",
+					"plan exceeds the total fingerprint string limit",
+				);
 			pairs.push([
 				key,
 				encode(
@@ -751,7 +758,7 @@ function digest(
 				encode(
 					value,
 					new Set(),
-					{ remaining: 20_000 },
+					{ remaining: 20_000, characters: 2_097_152 },
 					0,
 					references,
 					effects,
@@ -1072,6 +1079,18 @@ function inspectUnverified(
 				"the resource action is unsupported",
 			);
 		if (
+			row.resourceType === "Rivet.Namespace" &&
+			(plan.native.destroy === true ||
+				(row.action !== "create" && row.action !== "noop") ||
+				(row.action === "create" && previous !== undefined) ||
+				renamedFrom.length !== 0 ||
+				formerFqns.length !== 0)
+		)
+			throw inspectionFailure(
+				"RIVET_NAMESPACE_LIFECYCLE_UNSUPPORTED",
+				"Rivet namespaces cannot be deleted; uncertain creation, update, replacement, removal and rename are unsupported",
+			);
+		if (
 			previous === undefined &&
 			(node.action !== "create" || renamedFrom.length !== 0)
 		)
@@ -1133,6 +1152,14 @@ function inspectUnverified(
 				throw inspectionFailure(
 					"STATE_IDENTITY_UNVERIFIED",
 					"the prior resource state has an invalid type, identity, or status",
+				);
+			if (
+				type.value === "Rivet.Namespace" &&
+				row.resourceType !== "Rivet.Namespace"
+			)
+				throw inspectionFailure(
+					"RIVET_NAMESPACE_LIFECYCLE_UNSUPPORTED",
+					"a retained Rivet namespace cannot change resource type",
 				);
 
 			const allowedStatuses = {

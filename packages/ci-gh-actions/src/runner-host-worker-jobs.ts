@@ -1,45 +1,12 @@
-/**
- * The runner-host realizer's job ports, read from the box worker across a
- * process boundary (`deploy/runner-fleet/README.md`).
- *
- * The CD agent (`hobo deploy agent run`) and the worker daemon are separate
- * processes on one host. They share the worker's data directory (the
- * directory of `HOBO_CI_WORKER_DB`, bind-mounted into the controller
- * container), and that is the whole interface:
- *
- * - **Leases** are read from the worker's SQLite journal, opened read-only.
- *   The worker stays its only writer (one partition, one writer).
- * - **The mesh advert** is the file the worker rewrites after every mesh
- *   beat (`mesh-advert.json`, the `MeshAdvert` record as JSON): the host's
- *   own advertisement as it last made it.
- * - **The admission gate** is the `admission-paused` marker file. While it
- *   exists the worker admits no new job (its tick runs with `admit: false`)
- *   and advertises itself unhealthy; running jobs are untouched. Removing it
- *   reopens admission on the next tick.
- * - **Runners**: JIT hosts (`box-worker`, `mesh-node`) register a runner per
- *   job, and those jobs are already counted through their leases, so the
- *   port answers no standing registrations. A `local-runner` keeps a
- *   registered runner, and its controller (which holds the GitHub
- *   credential) reads that runner's GitHub presence and writes it to
- *   `runner-presence.json` with the time it read it. The port reads that
- *   file; a missing, corrupt or stale one answers no runner at all, so an
- *   unknown presence is never read as online.
- * - **The controller process**: on a host whose controller runs as a
- *   process, the daemon's supervisor owns `controller-desired.json` (what
- *   the agent asks it to run), `controller-status.json` (what it runs) and
- *   `controller-releases/` (releases staged by digest); see
- *   `runner-controller-process.ts`.
- */
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fromJsonString } from "@bufbuild/protobuf";
+import { fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import { ACTIVE_STATES, type Lease, LeaseSchema } from "@hobo/ci";
-import type { MeshNode } from "@hobo/ci/mesh";
+import { type Observation, ObservationSchema } from "@hobo/fleet";
 import { z } from "zod";
-import { meshAdvertJson, parseMeshAdvert } from "./mesh-records.js";
 import type { RunnerHostKind } from "./runner-fleet-delivery.js";
 import type {
 	RunnerHostJobs,
@@ -48,8 +15,8 @@ import type {
 
 // public-contract: the marker file that closes a worker's admission while it exists.
 export const WORKER_ADMISSION_PAUSED_FILE = "admission-paused";
-// public-contract: the file a worker rewrites with its own mesh advert after every beat.
-export const WORKER_MESH_ADVERT_FILE = "mesh-advert.json";
+// public-contract: the file the host's fleet agent rewrites with its own Observation after every beat.
+export const WORKER_OBSERVATION_FILE = "fleet-observation.json";
 // public-contract: the file a local runner's controller rewrites with its runner's GitHub presence.
 export const WORKER_RUNNER_PRESENCE_FILE = "runner-presence.json";
 // public-contract: the file the host's CD agent writes to ask the supervisor for a controller release.
@@ -66,7 +33,7 @@ export const RUNNER_PRESENCE_MAX_AGE_MS = 2 * 60_000;
 export type WorkerHostFiles = Readonly<{
 	database: string;
 	admissionPaused: string;
-	meshAdvert: string;
+	observation: string;
 	runnerPresence: string;
 	controllerDesired: string;
 	controllerStatus: string;
@@ -78,7 +45,7 @@ export function workerHostFiles(database: string): WorkerHostFiles {
 	return Object.freeze({
 		database,
 		admissionPaused: join(dir, WORKER_ADMISSION_PAUSED_FILE),
-		meshAdvert: join(dir, WORKER_MESH_ADVERT_FILE),
+		observation: join(dir, WORKER_OBSERVATION_FILE),
 		runnerPresence: join(dir, WORKER_RUNNER_PRESENCE_FILE),
 		controllerDesired: join(dir, CONTROLLER_DESIRED_FILE),
 		controllerStatus: join(dir, CONTROLLER_STATUS_FILE),
@@ -111,30 +78,17 @@ export function workerAdmissionPaused(files: WorkerHostFiles): boolean {
 	return existsSync(files.admissionPaused);
 }
 
-/**
- * Write the worker's own advert for the host's CD agent; atomic (write, then
- * rename). A worker its daemon's supervisor started at a release digest adds
- * `controllerDigest` beside the advert's fields, so the agent can tell an
- * advert from the new controller from one the old one left behind. Readers
- * of the advert ignore the extra field; it is never put on the mesh board.
- */
-export async function writeWorkerMeshAdvert(
+export async function writeWorkerObservation(
 	files: WorkerHostFiles,
-	node: MeshNode,
-	controllerDigest?: string | undefined,
+	observation: Observation,
 ): Promise<void> {
-	const advert = meshAdvertJson(node);
+	if (observation.observerId !== observation.memberId)
+		throw new Error("only the host's own observation is written");
 	await writeFileAtomically(
-		files.meshAdvert,
-		controllerDigest && CONTROLLER_DIGEST.test(controllerDigest)
-			? JSON.stringify({ ...JSON.parse(advert), controllerDigest })
-			: advert,
+		files.observation,
+		toJsonString(ObservationSchema, observation),
 	);
 }
-
-const AdvertController = z.object({
-	controllerDigest: z.string().regex(CONTROLLER_DIGEST).optional(),
-});
 
 /** One registered runner and its GitHub presence, as the local runner read it. */
 const RunnerPresence = z
@@ -211,15 +165,10 @@ export function readWorkerLeases(database: string): readonly Lease[] {
 	}
 }
 
-/**
- * The job ports a runner host's agent reads from its worker. A `local-runner`
- * answers its runners from the presence report its controller writes (see
- * the module comment); JIT hosts answer none.
- */
 export function createWorkerHostJobs(
 	input: Readonly<{
 		files: WorkerHostFiles;
-		hostKind: RunnerHostKind;
+		hostKind: RunnerHostKind | "local-runner";
 		now?: (() => number) | undefined;
 	}>,
 ): RunnerHostJobs {
@@ -230,22 +179,19 @@ export function createWorkerHostJobs(
 			// A worker that has not started yet has no journal and no jobs.
 			return existsSync(files.database) ? readWorkerLeases(files.database) : [];
 		},
-		async meshAdvert() {
+		async observation() {
 			try {
-				const text = await readFile(files.meshAdvert, "utf8");
-				const node = parseMeshAdvert(text);
-				if (!node) return undefined;
-				const extra = AdvertController.safeParse(JSON.parse(text));
-				const controllerDigest = extra.success
-					? extra.data.controllerDigest
-					: undefined;
-				return controllerDigest ? { ...node, controllerDigest } : node;
+				return fromJsonString(
+					ObservationSchema,
+					await readFile(files.observation, "utf8"),
+				);
 			} catch {
 				return undefined;
 			}
 		},
 		async runners() {
-			return input.hostKind === "local-runner"
+			return input.hostKind === "developer-device" ||
+				input.hostKind === "local-runner"
 				? readWorkerRunnerPresence(files, now())
 				: [];
 		},

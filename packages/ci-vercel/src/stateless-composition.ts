@@ -31,7 +31,6 @@ import {
 	createControlAuthenticator,
 	createGithubAppTransport,
 	createGithubOidcVerifier,
-	createGithubWorkflowVerifier,
 	createHostedControlPlane,
 	createHostedRelayRuntime,
 	createQueuedJobRepair,
@@ -40,14 +39,9 @@ import {
 	createRelayOwnerLogin,
 	createStatelessAppOnboarding,
 	createWebhookRepair,
-	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-	type FleetVerdictService,
-	type FleetVerdictSettings,
 	type GithubAppTransport,
-	type GithubWorkflowVerifier,
 	HostedRelay,
 	type IdentityVerifier,
-	parseFleetReporters,
 	RELAY_OWNER_LOGIN_PREFIX,
 	type RelayOwnerAccount,
 	reportRelayFailure,
@@ -78,7 +72,6 @@ import {
 	denyDirectSandboxEgress,
 	isolatedExecutionWiring,
 } from "./execution-wiring.js";
-import { createCacheFleetVerdicts } from "./fleet-verdict-cache.js";
 import {
 	mcpWaitCeilingMs,
 	RELAY_FUNCTION_MAX_DURATION_SECONDS,
@@ -162,7 +155,6 @@ export type StatelessRelayOptions = Readonly<{
 	fetch?: typeof fetch;
 	now?: () => string;
 	log?: StatelessRelayLog;
-	workflowIdentity?: GithubWorkflowVerifier;
 }>;
 
 export type StatelessRelayReadiness = Readonly<{
@@ -466,35 +458,6 @@ export async function composeStatelessRelay(
 		publicOrigin: origin,
 		resolve: onboarding.trustedBootstrapControl,
 	});
-	let fleetSettingsFrom: RelayRuntimeConfig | undefined;
-	let fleetSettings: FleetVerdictSettings | undefined;
-	const fleetVerdicts: FleetVerdictService = {
-		store: createCacheFleetVerdicts({
-			state: fleet.state,
-			environment,
-			now: nowMs,
-		}),
-		async settings() {
-			const config = await options.config.load();
-			if (config !== fleetSettingsFrom || !fleetSettings) {
-				fleetSettings = {
-					reporters: config.HOBO_CI_FLEET_REPORTERS_JSON
-						? (parseFleetReporters(config.HOBO_CI_FLEET_REPORTERS_JSON) ?? [])
-						: [],
-					serving: config.HOBO_CI_FLEET_VERDICT_SERVING !== "off",
-					dailyBlockMinutes: config.HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES
-						? Number(config.HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES)
-						: FLEET_VERDICT_DAILY_BLOCK_MINUTES,
-				};
-				fleetSettingsFrom = config;
-			}
-			return fleetSettings;
-		},
-		workflowIdentity:
-			options.workflowIdentity ??
-			createGithubWorkflowVerifier({ audience: origin, fetch: options.fetch }),
-		log: (event, fields) => log({ event, ...fields }),
-	};
 	const health = new CacheWorkerHealth({
 		state: fleet.state,
 		environment,
@@ -565,7 +528,6 @@ export async function composeStatelessRelay(
 			runtimeDiagnostic: () =>
 				runtimeDiagnostic({ deploymentId: env.VERCEL_DEPLOYMENT_ID, sandbox }),
 			readOnlyConfig: { configService: options.configService },
-			fleetVerdicts,
 		})(await delegateOwnerControl(request));
 	};
 	const runtime = createHostedRelayRuntime({

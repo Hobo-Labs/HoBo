@@ -79,14 +79,6 @@
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
-    },
-    "./fleet-v2": {
-      "types": "./dist/fleet-v2/index.d.ts",
-      "default": "./dist/fleet-v2/index.js"
-    },
-    "./mesh": {
-      "types": "./dist/mesh/index.d.ts",
-      "default": "./dist/mesh/index.js"
     }
   },
   "scripts": {
@@ -98,10 +90,10 @@
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
     "@hobo/bindles": "workspace:*",
-    "@hobo/core": "workspace:*",
-    "@hobo/fleet": "workspace:*",
     "@hobo/broker": "workspace:*",
+    "@hobo/core": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
+    "@hobo/fleet": "workspace:*",
     "@hobo/pricing": "workspace:*",
     "zod": "^4.1.13"
   },

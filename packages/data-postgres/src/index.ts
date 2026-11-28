@@ -263,10 +263,3 @@ export {
 	parsePostgresPort,
 	parsePostgresTarget,
 } from "./migration-profiles.js";
-export { FLEET_LOCK_CLASS } from "./fleet/layout.js";
-export type { FleetLayout, FleetLayoutInput } from "./fleet/layout.js";
-export type {
-	FleetReconcileReport,
-	FleetSchemaRole,
-} from "./fleet/reconcile.js";
-export type { PostgresBackend as FleetBackend } from "./fleet/sql.js";

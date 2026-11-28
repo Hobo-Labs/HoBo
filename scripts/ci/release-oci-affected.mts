@@ -19,10 +19,15 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import process from "node:process";
+import {
+	importerClosure,
+	type Lockfile,
+	parseLockfile,
+} from "../lib/pnpm-lockfile.mts";
 import type { ReleaseOciManifest } from "../lib/release-oci-contract.mts";
 import { OCI_IMAGES_MANIFEST } from "../lib/release-oci-contract.mts";
+import { SDK_PACKAGES } from "./sdk-package-list.mts";
 import { RELEASE_OCI_STAGE_SPECS } from "./stage-release-oci-app.mts";
-import { SDK_PACKAGES } from "./stage-sdk-artifacts.mts";
 
 const RELEASE_IMAGE_ORDER = [
 	"hobo-sdk",
@@ -40,6 +45,7 @@ const RELEASE_BUILD_INPUTS = [
 	"scripts/ci/stage-sdk-artifacts.mts",
 	"scripts/lib/release-oci-contract.mts",
 	"scripts/lib/ci-runner-contract.mts",
+	"scripts/lib/turbo-concurrency.ts",
 	"tsconfig.base.json",
 	"pnpm-workspace.yaml",
 	".npmrc",
@@ -52,7 +58,18 @@ const RELEASE_BUILD_INPUTS = [
 const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	[
 		"hobo-sdk",
-		["release/npm-scope-map.json", "scripts/ci/npm-publish-scope.mts"],
+		[
+			"release/npm-scope-map.json",
+			"scripts/ci/npm-publish-scope.mts",
+			"scripts/ci/sdk-package-list.mts",
+			"scripts/ci/verify-cli-sdk-artifacts.mts",
+			"scripts/ci/cli-sdk-acceptance-child.mts",
+			"scripts/ci/bundle-sqlite-sdk.mts",
+			"scripts/ci/vendor-runtime-grounding.mts",
+			"scripts/ci/bundle-cli-sdk.mts",
+			"scripts/ci/bundle-cli-declarations.mts",
+			"scripts/ci/run-cli-sdk-bundle.mts",
+		],
 	],
 	[
 		"hobo-site",
@@ -65,8 +82,12 @@ const EXTRA_INPUTS = new Map<string, readonly string[]>([
 	],
 ]);
 
-/** Images built FROM another release image. */
-const BUILT_FROM = new Map([["hobo-mcp", "hobo-cli"]]);
+const EXTRA_BUILD_INPUTS = new Set([...EXTRA_INPUTS.values()].flat());
+
+const BUILT_FROM = new Map([
+	["hobo-cli", "hobo-sdk"],
+	["hobo-mcp", "hobo-cli"],
+]);
 
 export type RepoTree = {
 	/** Blob oid by path, for every file the commit tracks outside submodules. */
@@ -82,22 +103,6 @@ type TurboJson = {
 	globalEnv?: string[];
 	envMode?: string;
 	tasks?: Record<string, TurboTask>;
-};
-
-type Importer = {
-	readonly block: string;
-	readonly links: readonly string[];
-	readonly deps: readonly (readonly [string, string])[];
-};
-type Snapshot = {
-	readonly block: string;
-	readonly deps: readonly (readonly [string, string])[];
-};
-export type Lockfile = {
-	readonly settings: string;
-	readonly importers: ReadonlyMap<string, Importer>;
-	readonly packages: ReadonlyMap<string, string>;
-	readonly snapshots: ReadonlyMap<string, Snapshot>;
 };
 
 function sha256(text: string): string {
@@ -122,106 +127,6 @@ function parseLockfileCached(text: string): Lockfile {
 	return parsed;
 }
 
-function unquote(key: string): string {
-	return key.replace(/^(['"])(.*)\1$/, "$2");
-}
-
-type ImporterLines = {
-	block: string[];
-	links: string[];
-	deps: [string, string][];
-};
-type SnapshotLines = { block: string[]; deps: [string, string][] };
-
-/** The importers, packages and snapshots of a pnpm v9 lockfile, by raw block. */
-export function parseLockfile(text: string): Lockfile {
-	const settings: string[] = [];
-	const importers = new Map<string, ImporterLines>();
-	const packages = new Map<string, string[]>();
-	const snapshots = new Map<string, SnapshotLines>();
-	let section = "";
-	let entry: string[] | undefined;
-	let importer: ImporterLines | undefined;
-	let importerDir = "";
-	let snapshot: SnapshotLines | undefined;
-	let depName: string | undefined;
-	let inSnapshotDeps = false;
-	for (const line of text.split("\n")) {
-		if (/^\S/.test(line)) {
-			section = line.replace(/:.*$/, "");
-			entry = undefined;
-			importer = undefined;
-			snapshot = undefined;
-			if (!["importers", "packages", "snapshots"].includes(section))
-				settings.push(line);
-			continue;
-		}
-		if (!["importers", "packages", "snapshots"].includes(section)) {
-			settings.push(line);
-			continue;
-		}
-		const head = /^ {2}(\S.*?):(?: (.*))?$/.exec(line);
-		if (head?.[1]) {
-			const key = unquote(head[1]);
-			entry = [line];
-			importer = undefined;
-			snapshot = undefined;
-			inSnapshotDeps = false;
-			if (section === "importers") {
-				importerDir = key;
-				importer = { block: entry, links: [], deps: [] };
-				importers.set(key, importer);
-			} else if (section === "packages") packages.set(key, entry);
-			else {
-				snapshot = { block: entry, deps: [] };
-				snapshots.set(key, snapshot);
-			}
-			continue;
-		}
-		if (!entry || line.trim() === "") continue;
-		entry.push(line);
-		if (importer) {
-			const name = /^ {6}(\S.*):$/.exec(line);
-			if (name?.[1]) depName = unquote(name[1]);
-			const version = /^ {8}version: (.+)$/.exec(line);
-			if (version?.[1] && depName) {
-				const value = version[1].trim();
-				if (value.startsWith("link:"))
-					importer.links.push(
-						posix.normalize(posix.join(importerDir, value.slice(5))),
-					);
-				else importer.deps.push([depName, value]);
-			}
-		} else if (snapshot) {
-			const group = /^ {4}(\S+):/.exec(line);
-			if (group?.[1])
-				inSnapshotDeps =
-					group[1] === "dependencies" || group[1] === "optionalDependencies";
-			const dep = /^ {6}(\S.*?): (.+)$/.exec(line);
-			if (inSnapshotDeps && dep?.[1] && dep[2])
-				snapshot.deps.push([unquote(dep[1]), unquote(dep[2].trim())]);
-		}
-	}
-	return {
-		settings: settings.join("\n"),
-		importers: new Map(
-			[...importers].map(([dir, value]) => [
-				dir,
-				{ block: value.block.join("\n"), links: value.links, deps: value.deps },
-			]),
-		),
-		packages: new Map(
-			[...packages].map(([key, lines]) => [key, lines.join("\n")]),
-		),
-		snapshots: new Map(
-			[...snapshots].map(([key, value]) => [
-				key,
-				{ block: value.block.join("\n"), deps: value.deps },
-			]),
-		),
-	};
-}
-
 /** `name` + `version` (or an `alias@version` value) as a snapshot key. */
 function snapshotKey(name: string, version: string): string {
 	const bare = version.split("(")[0] ?? version;
@@ -231,21 +136,6 @@ function snapshotKey(name: string, version: string): string {
 function packageKey(snapshot: string): string {
 	const peer = snapshot.indexOf("(");
 	return peer === -1 ? snapshot : snapshot.slice(0, peer);
-}
-
-export function importerClosure(
-	lockfile: Lockfile,
-	roots: Iterable<string>,
-): Set<string> {
-	const seen = new Set<string>();
-	const queue = [...roots];
-	for (let dir = queue.pop(); dir !== undefined; dir = queue.pop()) {
-		if (seen.has(dir)) continue;
-		seen.add(dir);
-		for (const next of lockfile.importers.get(dir)?.links ?? [])
-			queue.push(next);
-	}
-	return seen;
 }
 
 /** The lockfile text a set of importers resolves: their blocks and every snapshot they reach. */
@@ -338,9 +228,18 @@ export function isReleaseOciLayerNoise(path: string): boolean {
 	if (path.startsWith("scripts/test/")) return true;
 	// SAFETY: RELEASE_BUILD_INPUTS is a const string tuple; Array.includes requires readonly string[] to accept a general path.
 	const layerScripts = RELEASE_BUILD_INPUTS as readonly string[];
-	if (path.startsWith("scripts/ci/") && !layerScripts.includes(path))
+	const declaredExtra = EXTRA_BUILD_INPUTS.has(path);
+	if (
+		path.startsWith("scripts/ci/") &&
+		!layerScripts.includes(path) &&
+		!declaredExtra
+	)
 		return true;
-	if (path.startsWith("scripts/lib/") && !layerScripts.includes(path))
+	if (
+		path.startsWith("scripts/lib/") &&
+		!layerScripts.includes(path) &&
+		!declaredExtra
+	)
 		return true;
 	return false;
 }
@@ -557,7 +456,7 @@ export function affectedReleaseOciImages(
 			: ["new image"];
 		const from = after?.from;
 		if (from && imageKey(base, from) !== imageKey(head, from))
-			changed.push(`built FROM ${from}`);
+			changed.push(`depends on ${from}`);
 		affected.push({ id, changed });
 	}
 	return affected;

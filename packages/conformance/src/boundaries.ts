@@ -88,7 +88,6 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/claims",
 	"packages/trust",
 	"packages/fleet",
-	"packages/backend-fleet",
 	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
@@ -137,6 +136,7 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/manifest-request",
 	"packages/manifest-declaration",
 	"packages/manifest-plan",
+	"packages/auth-adapter-contract",
 	// The cross-manifest round-trip proof. Known but deliberately NOT a
 	// contract: it is a verification package that reads all four manifests and
 	// the packages they were decomposed out of, so it sits at layer 3 and
@@ -177,6 +177,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	// enforces its edges.
 	"packages/cd",
 	"packages/cd-gitops",
+	"packages/cd-argocd",
 	"packages/cd-kube-fleet",
 	"packages/resolver-components",
 	// The secret store a deploy chooses and hands over by claim (ADR-0179
@@ -199,14 +200,15 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/capability-profiles",
 	"packages/claims",
 	"packages/convex",
-	"packages/backend-fleet",
 	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
 	"packages/r2-object",
 	"packages/packs/pack-framework",
+	"packages/packs/pack-better-auth",
 	"packages/packs/pack-postgres-oci",
 	"packages/packs/pack-valkey-oci",
+	"packages/adapters/adapter-better-auth",
 	"packages/recipes",
 	"packages/status-page",
 	"packages/trust",
@@ -502,6 +504,9 @@ const ACCEPTED_ADAPTER_PACKAGE_EDGES = new Set([
 	// pinned beside the others in boundaries.test.ts.
 	"packages/adapters/adapter-1password->packages/identity",
 	"packages/adapters/adapter-bitwarden->packages/identity",
+	"packages/packs/pack-better-auth->packages/identity",
+	"packages/iac/iac-alchemy->packages/packs/pack-better-auth",
+	"packages/iac/iac-alchemy->packages/identity",
 	// Connector packages (#1052) are AUTHORING-side declarations, not runtime
 	// adapters: they export an opaque symbol built with @hobo/bindles'
 	// defineConnector so b.connector() can resolve it. The edge points at the

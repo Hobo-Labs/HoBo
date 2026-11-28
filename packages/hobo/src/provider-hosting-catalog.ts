@@ -1397,7 +1397,6 @@ function externalRegistry(
 
 // public-contract: Camp labels (binding) and Freight labels (directives) the catalog resolver realizer reads.
 export const CATALOG_REALIZER_LABELS = Object.freeze({
-	/** Camp: the credential locator (`env://NAME`, ...) the resolver may use. */
 	credentialRef: "hobo.cd/credential-ref",
 	/** Camp: `npmjs`, `github-packages` or a Verdaccio `https://` origin. */
 	npmRegistry: "hobo.cd/npm.registry",
@@ -1671,14 +1670,6 @@ export function catalogCampBinding(
 							throw new CatalogRealizerError(
 								"npm-provenance-bundle-missing",
 								`Camp ${camp.campId} requires npm provenance, and Freight ${freight.freightId} carries no Sigstore bundle for ${artifact.name}. Remediation: record the package's Sigstore provenance bundle (${artifact.name}.sigstore) in the Freight; HoBo never publishes a provenance-required package without one`,
-							);
-						if (
-							auth === "oidc-trusted-publishing" &&
-							packageName.startsWith("@")
-						)
-							throw new CatalogRealizerError(
-								"npm-oidc-scoped-unsupported",
-								`Camp ${camp.campId} binds npm OIDC trusted publishing, which @hobo/provider-npm refuses for the scoped package ${packageName}. Remediation: bind token auth (${L.npmAuth}=token) for scoped packages`,
 							);
 						out.push(
 							request(`npm-${artifact.name}`, {

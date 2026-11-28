@@ -1,7 +1,7 @@
 import {
 	type FleetFinancialModel,
 	parseFleetFinancialModel,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 
 // The vendor plans a CD journal fleet member may run on, as the fleet's cost
 // model for that member (`reconcileFleet({ models })`): what it costs a month

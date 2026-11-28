@@ -1,4 +1,10 @@
+import { createBoundaryDeferred, observeBoundary } from "./async-boundary.js";
 import type { BindleForAlchemy, PrimitiveDeclaration } from "./bindle.js";
+import {
+	quarantineCloudflareNative,
+	releaseCloudflareNative,
+	reserveCloudflareNative,
+} from "./cloudflare-capacity.js";
 import {
 	type CloudflareR2Store,
 	createCloudflareR2Store,
@@ -8,6 +14,7 @@ import {
 	cloudflareR2Grant,
 	cloudflareR2Option,
 } from "./cloudflare-r2-protocol.js";
+import { compareCodeUnits } from "./code-unit-order.js";
 
 export type {
 	CloudflareR2Object,
@@ -32,6 +39,18 @@ import {
 	encodeCloudflareKvKey,
 	readCloudflareKvBytes,
 } from "./cloudflare-kv-protocol.js";
+import { awaitCloudflareNative } from "./cloudflare-native-await.js";
+import { observeCloudflareNativePromise } from "./cloudflare-native-promise.js";
+import {
+	cloudflareAbortSignal,
+	cloudflareDiscardResponse,
+	cloudflareHeaders,
+	cloudflareNonThenable,
+	cloudflareProtectResponse,
+	cloudflareRequestInit,
+	cloudflareResponseBody,
+	cloudflareResponseStatus,
+} from "./cloudflare-web-options.js";
 
 export {
 	CLOUDFLARE_KV_MAX_KEY_BYTES,
@@ -40,6 +59,26 @@ export {
 	type CloudflareKvGrant,
 	type CloudflareKvMode,
 } from "./cloudflare-kv-protocol.js";
+
+const hasOwnDescriptor = Object.hasOwn;
+const getKvNative = Reflect.get;
+const applyKvNative = Reflect.apply;
+const NativeRequest = Request;
+const NativeAbortController = AbortController;
+const NativeBytes = Uint8Array;
+const isView = ArrayBuffer.isView;
+const hasInstance = Function.prototype[Symbol.hasInstance];
+const bytePrototype = Object.getPrototypeOf(NativeBytes.prototype);
+const byteLength = Object.getOwnPropertyDescriptor(
+	bytePrototype,
+	"byteLength",
+)?.get;
+const byteBuffer = Object.getOwnPropertyDescriptor(
+	bytePrototype,
+	"buffer",
+)?.get;
+const ownDescriptor = Object.getOwnPropertyDescriptor;
+const abortController = AbortController.prototype.abort;
 
 type Json =
 	| string
@@ -110,7 +149,9 @@ export interface CloudflareService {
 
 export interface CloudflareResources {
 	service(name: string): CloudflareService;
+
 	kv(name: string): CloudflareKvStore;
+
 	bucket(name: string): CloudflareR2Store;
 }
 
@@ -191,13 +232,15 @@ export function withCloudflareEventualKv<Requirements>(
 	const declarations: Record<string, PrimitiveDeclaration> =
 		Object.create(null);
 	for (const [resourceName, declaration] of Object.entries(bindle.resources)) {
-		const choice = choices[resourceName];
+		const choice = hasOwnDescriptor(choices, resourceName)
+			? choices[resourceName]
+			: undefined;
 		if (choice === undefined) {
 			declarations[resourceName] = declaration;
 			continue;
 		}
 		if (
-			!("value" in choice) ||
+			!hasOwnDescriptor(choice, "value") ||
 			!choice.enumerable ||
 			declaration.kind !== "kv" ||
 			declaration.annotations.length !== 0
@@ -227,6 +270,15 @@ export function withCloudflareEventualKv<Requirements>(
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-apply -- SAFETY: Workers supplies an external env record; each selected binding and method is checked before invocation. */
 export type CloudflareEnvironment = Readonly<Record<string, unknown>>;
 
+const applyNative = Reflect.apply;
+const getNative = Reflect.get;
+const getWeakMap = WeakMap.prototype.get;
+const setWeakMap = WeakMap.prototype.set;
+const handlerDescriptor = Object.getOwnPropertyDescriptor;
+const handlerHasOwn = Object.hasOwn;
+const handlerPrototype = Object.getPrototypeOf;
+const objectPrototype = Object.prototype;
+
 function name(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -236,23 +288,68 @@ function name(value: string): boolean {
 	);
 }
 
-async function invoke(
+function invoke(
 	environment: CloudflareEnvironment,
 	binding: CloudflareBindingDescriptor,
 	operation: string,
 	...args: unknown[]
-): Promise<unknown> {
-	if (!binding.allow.includes(operation))
+): Promise<import("./async-boundary.js").BoundaryBox<unknown>> {
+	let allowed = false;
+	for (let index = 0; index < binding.allow.length; index++) {
+		if (binding.allow[index] === operation) {
+			allowed = true;
+			break;
+		}
+	}
+	if (!allowed)
 		throw new Error(`operation is not allowed: ${binding.name}.${operation}`);
 	const value = environment[binding.env];
 	if (typeof value !== "object" || value === null)
 		throw new Error(`native resource is unavailable: ${binding.name}`);
-	const run = Reflect.get(value, operation);
+	const run = getNative(value, operation);
 	if (typeof run !== "function")
 		throw new Error(
 			`native resource lacks the requested operation: ${binding.name}.${operation}`,
 		);
-	return await Reflect.apply(run, value, args);
+	const lease = reserveCloudflareNative();
+	if (lease === undefined) throw new Error("native capacity unavailable");
+	const result = createBoundaryDeferred<unknown>();
+	let output: unknown;
+	try {
+		output = applyNative(run, value, args);
+	} catch (error) {
+		quarantineCloudflareNative(lease);
+		throw error;
+	}
+	if (cloudflareProtectResponse(output)) {
+		result.resolve(output);
+		observeBoundary(
+			result.promise,
+			() => releaseCloudflareNative(lease),
+			() => {},
+		);
+	} else if (
+		!observeCloudflareNativePromise(
+			output,
+			(value) => {
+				if (!cloudflareProtectResponse(value)) {
+					quarantineCloudflareNative(lease);
+					result.reject(new Error("service returned an invalid response"));
+					return;
+				}
+				result.resolve(value);
+				releaseCloudflareNative(lease);
+			},
+			() => {
+				releaseCloudflareNative(lease);
+				result.reject(new Error("native resource request failed"));
+			},
+		)
+	) {
+		quarantineCloudflareNative(lease);
+		throw new Error("native resource result could not be observed");
+	}
+	return result.promise;
 }
 
 function resources(
@@ -260,12 +357,16 @@ function resources(
 	environment: CloudflareEnvironment,
 ): CloudflareResources {
 	const find = (name: string, kind: CloudflareBindingDescriptor["kind"]) => {
-		const binding = bindings.find(
-			(item) => item.name === name && item.kind === kind,
-		);
-		if (binding === undefined)
-			throw new Error(`resource is not bound: ${name}`);
-		return binding;
+		for (let index = 0; index < bindings.length; index++) {
+			const binding = bindings[index];
+			if (
+				binding !== undefined &&
+				binding.name === name &&
+				binding.kind === kind
+			)
+				return binding;
+		}
+		throw new Error(`resource is not bound: ${name}`);
 	};
 	return {
 		bucket(name) {
@@ -276,8 +377,10 @@ function resources(
 			const binding = find(name, "service");
 			return {
 				async fetch(request) {
-					const response = await invoke(environment, binding, "fetch", request);
-					if (!(response instanceof Response))
+					const response = (
+						await invoke(environment, binding, "fetch", request)
+					).value;
+					if (!cloudflareProtectResponse(response))
 						throw new Error("service returned an invalid response");
 					return response;
 				},
@@ -290,63 +393,81 @@ function resources(
 				key: string,
 				value?: Uint8Array,
 			): Promise<Response> => {
-				if (!binding.allow.includes(operation))
+				let allowed = false;
+				for (let index = 0; index < binding.allow.length; index++) {
+					if (binding.allow[index] === operation) {
+						allowed = true;
+						break;
+					}
+				}
+				if (!allowed)
 					throw new CloudflareKvError(
 						"KV_OPERATION_DENIED",
 						`operation is not allowed: ${operation}`,
 					);
 				const encoded = encodeCloudflareKvKey(key);
-				if (
-					operation === "set" &&
-					(!(value instanceof Uint8Array) ||
-						value.byteLength > CLOUDFLARE_KV_MAX_VALUE_BYTES)
-				)
-					throw new CloudflareKvError(
-						"KV_VALUE_INVALID",
-						"value must be bounded bytes",
-					);
-				const body =
-					value === undefined ? undefined : new Uint8Array(value).buffer;
-				const controller = new AbortController();
-				const init: RequestInit = {
-					method: "POST",
-					headers: { "x-hobo-kv-key": encoded },
-					signal: controller.signal,
-				};
-				if (body !== undefined) init.body = body;
-				const request = new Request(
-					`https://hobo-kv.internal/${operation}`,
-					init,
-				);
-				let timer: ReturnType<typeof setTimeout> | undefined;
+				if (operation === "set") {
+					let valid = false;
+					try {
+						valid =
+							value !== undefined &&
+							isView(value) &&
+							byteLength !== undefined &&
+							applyKvNative(hasInstance, NativeBytes, [value]) &&
+							applyKvNative(byteLength, value, []) <=
+								CLOUDFLARE_KV_MAX_VALUE_BYTES;
+					} catch {}
+					if (!valid)
+						throw new CloudflareKvError(
+							"KV_VALUE_INVALID",
+							"value must be bounded bytes",
+						);
+				}
 				try {
+					if (byteBuffer === undefined)
+						throw new Error("byte buffer unavailable");
+					const body =
+						value === undefined
+							? undefined
+							: applyKvNative(byteBuffer, new NativeBytes(value), []);
+					const controller = new NativeAbortController();
+					const init = cloudflareRequestInit(
+						cloudflareHeaders("x-hobo-kv-key", encoded),
+						cloudflareAbortSignal(controller),
+						body,
+					);
+					const request = new NativeRequest(
+						`https://hobo-kv.internal/${operation}`,
+						init,
+					);
 					const proxy = environment[binding.env];
 					if (typeof proxy !== "object" || proxy === null)
 						throw new Error("service unavailable");
-					const fetch = Reflect.get(proxy, "fetch");
+					const fetch = getKvNative(proxy, "fetch");
 					if (typeof fetch !== "function")
 						throw new Error("service unavailable");
-					const response = await Promise.race([
-						Reflect.apply(fetch, proxy, [request]),
-						new Promise<never>((_, reject) => {
-							timer = setTimeout(() => {
-								controller.abort();
-								reject(new Error("service timed out"));
-							}, 10_000);
-						}),
-					]);
-					if (!(response instanceof Response))
+					const result = await awaitCloudflareNative<unknown>(
+						() => applyKvNative(fetch, proxy, [request]),
+						() => applyKvNative(abortController, controller, []),
+						cloudflareDiscardResponse,
+					);
+					const response = result.value;
+					if (!cloudflareProtectResponse(response))
 						throw new Error("invalid service response");
+					const status = cloudflareResponseStatus(response);
 					if (
-						response.status !== 204 &&
-						!(
-							operation === "get" &&
-							(response.status === 200 || response.status === 404)
-						)
-					)
+						status !== 204 &&
+						!(operation === "get" && (status === 200 || status === 404))
+					) {
+						cloudflareDiscardResponse(response);
 						throw new Error("service request failed");
-					if (operation === "get" && response.status === 204)
+					}
+					if (operation === "get" && status === 204) {
+						cloudflareDiscardResponse(response);
 						throw new Error("invalid read response");
+					}
+					if (operation === "get" && status === 404)
+						cloudflareDiscardResponse(response);
 					return response;
 				} catch {
 					throw new CloudflareKvError(
@@ -357,15 +478,17 @@ function resources(
 							? "KV read failed"
 							: "KV mutation may have taken effect; reconcile before retry",
 					);
-				} finally {
-					if (timer !== undefined) clearTimeout(timer);
 				}
 			};
 			const get = async (key: string): Promise<Uint8Array | undefined> => {
 				const response = await perform("get", key);
-				if (response.status === 404) return undefined;
+				if (cloudflareResponseStatus(response) === 404) return undefined;
 				try {
-					return new Uint8Array(await readCloudflareKvBytes(response.body));
+					return cloudflareNonThenable(
+						new NativeBytes(
+							await readCloudflareKvBytes(cloudflareResponseBody(response)),
+						),
+					);
 				} catch {
 					throw new CloudflareKvError(
 						"KV_READ_UNAVAILABLE",
@@ -384,7 +507,20 @@ function resources(
 							"KV_VALUE_INVALID",
 							"entry must contain a key and bytes",
 						);
-					await perform("set", entry.key, entry.value);
+					const key = ownDescriptor(entry, "key");
+					const value = ownDescriptor(entry, "value");
+					if (
+						key === undefined ||
+						!hasOwnDescriptor(key, "value") ||
+						value === undefined ||
+						!hasOwnDescriptor(value, "value") ||
+						typeof key.value !== "string"
+					)
+						throw new CloudflareKvError(
+							"KV_VALUE_INVALID",
+							"entry must contain own key and bytes",
+						);
+					await perform("set", key.value, value.value);
 				},
 				async delete(key: string) {
 					await perform("delete", key);
@@ -397,7 +533,13 @@ function resources(
 export function cloudflareBindings(
 	context?: CloudflareContextRef,
 ): CloudflareResources {
-	const result = context === undefined ? undefined : contexts.get(context);
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: only the private contexts map is queried through the captured intrinsic.
+	const result =
+		context === undefined
+			? undefined
+			: (applyNative(getWeakMap, contexts, [context]) as
+					| CloudflareResources
+					| undefined);
 	if (result === undefined)
 		throw new Error("Cloudflare bindle context is unavailable");
 	return result;
@@ -420,25 +562,33 @@ export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 			"KV runtime is unsupported: WASI store semantics and consistency are not bound; explicit eventual worker-js mode is required",
 		);
 	const config = Object.getOwnPropertyDescriptors(annotation.config);
-	const mode = config.mode;
-	const epoch = config.grantEpoch;
-	const namespace = config.namespaceEpoch;
-	const consistency = config.consistency;
-	const runtime = config.runtime;
+	const mode = hasOwnDescriptor(config, "mode") ? config.mode : undefined;
+	const epoch = hasOwnDescriptor(config, "grantEpoch")
+		? config.grantEpoch
+		: undefined;
+	const namespace = hasOwnDescriptor(config, "namespaceEpoch")
+		? config.namespaceEpoch
+		: undefined;
+	const consistency = hasOwnDescriptor(config, "consistency")
+		? config.consistency
+		: undefined;
+	const runtime = hasOwnDescriptor(config, "runtime")
+		? config.runtime
+		: undefined;
 	if (
 		Object.keys(config).length !== 5 ||
 		mode === undefined ||
-		!("value" in mode) ||
+		!hasOwnDescriptor(mode, "value") ||
 		(mode.value !== "read-only" && mode.value !== "write-only") ||
 		epoch === undefined ||
-		!("value" in epoch) ||
+		!hasOwnDescriptor(epoch, "value") ||
 		namespace === undefined ||
-		!("value" in namespace) ||
+		!hasOwnDescriptor(namespace, "value") ||
 		consistency === undefined ||
-		!("value" in consistency) ||
+		!hasOwnDescriptor(consistency, "value") ||
 		consistency.value !== "eventual" ||
 		runtime === undefined ||
-		!("value" in runtime) ||
+		!hasOwnDescriptor(runtime, "value") ||
 		runtime.value !== "worker-js"
 	)
 		throw new Error(
@@ -614,7 +764,7 @@ export function bindleCloudflareWorker<Requirements>(
 		declaration === undefined ||
 		declaration.name !== resourceName ||
 		!["web", "api", "service"].includes(declaration.kind) ||
-		!(entrypoint instanceof Function)
+		typeof entrypoint !== "function"
 	)
 		throw new Error("an HTTP bindle entrypoint is required");
 	if (
@@ -625,7 +775,7 @@ export function bindleCloudflareWorker<Requirements>(
 	validateCloudflareHttpAnnotations(declaration);
 	const edges = bindle.edges
 		.filter((edge) => edge.from === resourceName)
-		.sort((a, b) => a.to.localeCompare(b.to));
+		.sort((a, b) => compareCodeUnits(a.to, b.to));
 	if (
 		edges.length > 256 ||
 		new Set(edges.map((edge) => edge.to)).size !== edges.length
@@ -662,26 +812,75 @@ export function bindleCloudflareWorker<Requirements>(
 					throw new Error("connector bindings are unsupported");
 				},
 			});
-			contexts.set(context, resources(bindings, environment));
+			applyNative(setWeakMap, contexts, [
+				context,
+				resources(bindings, environment),
+			]);
 			const result = entrypoint(context);
-			if (result instanceof Function) return result(request);
+			let output: unknown;
+			if (typeof result === "function")
+				output = applyNative(result, undefined, [request]);
+			else if (typeof result === "object" && result !== null) {
+				if (
+					observeCloudflareNativePromise(
+						result,
+						() => {},
+						() => {},
+					)
+				)
+					throw new Error("bindle entrypoint did not return an HTTP handler");
+				let current: object | null = result;
+				let found = false;
+				for (
+					let depth = 0;
+					current !== null && current !== objectPrototype && depth < 32;
+					depth++
+				) {
+					const field = handlerDescriptor(current, "fetch");
+					if (field !== undefined) {
+						if (
+							!handlerHasOwn(field, "value") ||
+							typeof field.value !== "function"
+						)
+							throw new Error(
+								"bindle entrypoint did not return an HTTP handler",
+							);
+						output = applyNative(field.value, result, [request]);
+						found = true;
+						break;
+					}
+					current = handlerPrototype(current);
+				}
+				if (!found)
+					throw new Error("bindle entrypoint did not return an HTTP handler");
+			} else
+				throw new Error("bindle entrypoint did not return an HTTP handler");
+			if (cloudflareProtectResponse(output)) return output;
+			const pending = createBoundaryDeferred<unknown>();
 			if (
-				typeof result === "object" &&
-				result !== null &&
-				"fetch" in result &&
-				result.fetch instanceof Function
+				!observeCloudflareNativePromise(
+					output,
+					(value) => pending.resolve(value),
+					(reason) => pending.reject(reason),
+				)
 			)
-				return result.fetch(request);
-			throw new Error("bindle entrypoint did not return an HTTP handler");
+				throw new Error("bindle handler result could not be observed");
+			const response = (await pending.promise).value;
+			if (!cloudflareProtectResponse(response))
+				throw new Error("bindle handler returned an invalid response");
+			return response;
 		},
 	};
-	workers.set(worker, description);
+	applyNative(setWeakMap, workers, [worker, description]);
 	return Object.freeze(worker);
 }
 
 export function inspectCloudflareWorker(
 	value: CloudflareWorker,
 ): CloudflareWorkerDescription | undefined {
-	return workers.get(value);
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: only the private workers map is queried through the captured intrinsic.
+	return applyNative(getWeakMap, workers, [value]) as
+		| CloudflareWorkerDescription
+		| undefined;
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-apply */

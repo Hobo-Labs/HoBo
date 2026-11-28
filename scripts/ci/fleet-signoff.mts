@@ -792,7 +792,3 @@ export async function observeRunnerVerification(input: {
 	}
 	return { ...choice, baseSha: base };
 }
-
-export const executeFleetVerification = executeRunnerVerification;
-export const observeFleetVerification = observeRunnerVerification;
-export const planFleetVerification = planRunnerVerification;

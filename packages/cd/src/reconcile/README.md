@@ -119,6 +119,12 @@ parsed once into derived types and never re-checked downstream:
   reason, a value that no longer fits is dropped with `attribute-dropped`),
   `retained`, `claims` (attributed to the reconciler) and `handover`
   (secret-scanned).
+- **Realizer reasons** retain the stable codes of built-in catalog, relay,
+  runner-host and resolver failures, with fixed remediations. Release Freight and
+  OCI registry refusals may also carry a validated `ReasonStructuredDetail`
+  (`detailKind` plus credential ref and scope) for release logs. Other codes become
+  `realizer-detail-redacted`; provider-supplied messages, remediations and
+  subjects are never reported. A transport cannot use realizer-only codes.
 - **`OBSERVE_ONLY`** Camps are read and reported (`OBSERVED`), drift is
   recorded, nothing is applied (architecture-tested).
 - **Departure** (`SET_ORIGIN_DEPARTURE`) follows the `DepartureAction`
@@ -141,7 +147,9 @@ parsed once into derived types and never re-checked downstream:
   version transition `planFor(input)` returns, with the lease fence as the
   coordinator's writer fence, and advances at most `maxSteps` steps. Only a
   `SETTLED` state whose destination owns writes is `CONVERGED`; `RESTORED`,
-  `BLOCKED` or settled-back states block with the coordinator's reason.
+  `BLOCKED` or settled-back states block with a fixed reason; provider and
+  coordinator exception text is not included in observations. Check provider
+  access, credentials, and the transition's private diagnostics when needed.
 
 ## Metrics (`TelemetrySink`)
 

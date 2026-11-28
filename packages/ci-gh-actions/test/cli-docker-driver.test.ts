@@ -25,8 +25,8 @@ describe("cli docker driver socket mount", () => {
 		]);
 	});
 
-	it("omits socket flags when host docker is not allowed", () => {
-		expect(dockerSocketMountCreateArgs(false)).toEqual([]);
+	it("omits socket flags unless the fleet allows host Docker", () => {
+		expect(dockerSocketMountCreateArgs(false, () => 998)).toEqual([]);
 	});
 });
 

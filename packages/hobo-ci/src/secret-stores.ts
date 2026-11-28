@@ -73,11 +73,6 @@ import {
 
 export type SecretStoreId = SecretStoreOption["id"];
 
-export type OwnerAgentVault = Readonly<{
-	api: InfisicalAgentVaultApi;
-	siteUrl: string;
-}>;
-
 /** An opened store: the port, and how to name a stored entry without its value. */
 export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
@@ -85,6 +80,11 @@ export interface OpenedSecretStore {
 	readonly reference: (name: string) => string;
 	readonly agentVault?: OwnerAgentVault;
 }
+
+export type OwnerAgentVault = Readonly<{
+	api: InfisicalAgentVaultApi;
+	siteUrl: string;
+}>;
 
 export type SecretStoreOpening =
 	| { readonly ok: true; readonly store: OpenedSecretStore }
@@ -421,6 +421,10 @@ export async function openSecretStore(
 							? readOnlySecretsPort(createInfisicalSecretsPort({ client }))
 							: createInfisicalSecretsPort({ client }),
 						reference: (name) => infisicalSecretRef(binding, name),
+						agentVault: {
+							api: client.agentVault(),
+							siteUrl: binding.siteUrl,
+						},
 					},
 				};
 			} catch {

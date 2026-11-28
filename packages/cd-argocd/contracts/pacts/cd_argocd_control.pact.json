@@ -1,0 +1,65 @@
+{
+	"consumer": {
+		"name": "HoboCdArgocdControl"
+	},
+	"provider": {
+		"name": "ArgoCdApplicationsApi"
+	},
+	"interactions": [
+		{
+			"description": "read Application status for convergence observation",
+			"providerState": "converged",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/applications/hobo-prod",
+				"query": "appNamespace=argocd",
+				"headers": {
+					"authorization": "Bearer synthetic-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {
+					"metadata": {
+						"name": "hobo-prod",
+						"namespace": "argocd"
+					},
+					"status": {
+						"sync": {
+							"status": "Synced",
+							"revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5"
+						},
+						"health": {
+							"status": "Healthy"
+						}
+					}
+				}
+			}
+		},
+		{
+			"description": "trigger Application sync at a published revision",
+			"providerState": "sync-requested",
+			"request": {
+				"method": "POST",
+				"path": "/api/v1/applications/hobo-prod/sync",
+				"query": "appNamespace=argocd",
+				"headers": {
+					"authorization": "Bearer synthetic-token",
+					"content-type": "application/json"
+				},
+				"body": {
+					"revision": "9f8e7d6c5b4a39281706f5e4d3c2b1a098f7e6d5",
+					"prune": false,
+					"dryRun": false,
+					"syncStrategy": {
+						"hook": {}
+					}
+				}
+			},
+			"response": {
+				"status": 200,
+				"body": {}
+			}
+		}
+	]
+}

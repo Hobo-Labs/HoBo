@@ -62,6 +62,66 @@ historical source observation before approving the plan.
 Alchemy does not run the multi-pool mapper while reconstructing a deletion;
 the host's plan verifier must also authenticate the affected pool and runner
 ownership and maintain its fencing until deletion completes.
+AWS DynamoDB supports an explicitly selected, bounded Node.js KV subset. Keep
+its provider choice outside the Bindle: pass the neutral Bindle through
+`withAwsDynamoKv(bindle, { cache: true })` and use
+`awsDynamoKvBindleMappers()` from `@hobo/iac-alchemy/aws/kv-mapper`. Install the
+optional `@distilled.cloud/aws` peer and use `createAwsDynamoKvStore` from
+`@hobo/iac-alchemy/aws/kv` with the mapped table's physical name, AWS partition, owner account and region,
+host-issued resource and grant epochs, an explicit operation allow-list, a
+per-key authorization verifier, and the AWS credentials and HTTP Effect layer.
+The host must authenticate the actual table incarnation, never reuse a
+revoked epoch, fence outstanding requests during ownership changes, and enforce
+matching IAM permissions. Requests use the full table ARN. Reads are strongly consistent; keys are limited to 2,048 UTF-8
+bytes and values to 256 KiB. A failed or timed-out write or delete has an
+unknown outcome and requires reconciliation. Each store retains capacity for a
+timed-out request until the transport settles. This subset does not bind a
+HoBo application or WASI guest to the table, implement transactions, or prevent
+out-of-band AWS access. The bounded `AwsKvRuntime` model assumes the host's
+verifier and transport behave as specified; it does not prove those components.
+It models one bounded store and permits transport to remain in flight after a
+caller times out.
+
+For bounded Node.js S3 objects, use `withAwsS3(bindle, { assets: true })` and
+`awsS3BindleMappers()` from `@hobo/iac-alchemy/aws/s3-mapper`. To combine S3
+and DynamoDB on the same target, apply both target choices and pass
+`awsDynamoKvBindleMappers()` to `awsS3BindleMappers`. These target views retain
+the original neutral Bindle unchanged. The separate
+`createAwsS3Store` runtime requires a host-authenticated bucket, owner account
+and grant, per-key authorization, IAM and the AWS credentials and HTTP Effect
+layer. Each operation sends S3's expected-owner condition. It
+supports objects up to 1 MiB, 1,024-byte keys, at most 1,024 body chunks and
+SHA-256 content-digest metadata. Failed writes and deletes have unknown
+outcomes; the host must fence ownership changes and reconcile them. It does not
+bind an application or WASI guest, implement blob events or version management,
+or authenticate the digest against a separate authority.
+The bounded `AwsS3Objects` model uses one key and a collision-free abstract
+digest. It includes out-of-band objects with foreign metadata, oversized bodies
+and corrupted digests; it does not prove the hash implementation or provider.
+
+`inspectAwsDynamoKvStore` and `inspectAwsS3Store` expose the captured immutable
+grant only for a store created by this runtime instance. The grant identifies
+the store; the host must still authenticate it and authorize each operation.
+The store captures its allowed operations at construction, so later changes to
+application array prototypes do not change the captured grant.
+
+A Node.js HTTP host can bind those two AWS stores to a Bindle application with
+`createAwsBindleApplication` and read them through `awsHttpBindings(context)`
+from `@hobo/iac-alchemy/aws/http-runtime`. The host supplies the selected
+Bindle, its application name, exactly the declared stores, and a synchronous
+verifier that authenticates each exact captured store grant. The runtime rejects forged stores,
+extra permissions and unverified bindings, and retires scoped handles when the
+request ends. It buffers responses up to 1 MiB, 1,024 chunks and 16 KiB of
+headers; a stalled handler keeps one of 32 capacity slots until it settles.
+The host must authenticate HTTP requests, independently enforce IAM and fence
+in-flight AWS operations across grant or resource ownership changes. This host
+adapter does not yet map or start an Alchemy AWS HTTP resource, bound incoming
+request bodies, stream responses, or provide connectors or session replay. The
+bounded `AwsHttpBindings` model checks request retirement, grant revalidation
+and timed-out capacity. It assumes host verification and transport behavior;
+it does not prove AWS, HTTP parsing, byte limits or liveness.
+The model explores one application with two request slots.
+
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 Import their mappings from `@hobo/iac-alchemy/cloudflare` and the application
 runtime from `@hobo/iac-alchemy/cloudflare/runtime`.
@@ -79,7 +139,7 @@ permission choices and two ownership incarnations. It checks three grant
 epochs with one request for A→B→A and, separately, two epochs with two
 concurrent requests for draining; it makes no liveness claim. From the
 repository root, run the pinned model runner with `HOBO_TLA_TOOLS` set to the
-path of the `tla2tools-1.8.0.jar` file:
+path of the `tla2tools-1.7.4.jar` file:
 
 ```sh
 node --experimental-strip-types scripts/check-iac-models.ts
@@ -162,6 +222,10 @@ Requirements, declarations, annotations and edges must be bounded, acyclic data;
 the mapper copies and freezes them before invoking provider callbacks. Invalid,
 accessor-backed or oversized data is rejected. The host remains responsible for
 attesting callback code and captured state.
+An optional `validateGraph` callback receives the complete immutable declaration
+graph and dependency names before any mapper registers resources. It must return
+synchronously; rejection or an asynchronous result stops the mapping. Graph
+validators do not receive application entrypoints.
 Only explicit registry entries count as mappings. Connector declarations are
 rejected until their authorization and runtime bindings can be mapped.
 `describeAlchemyPrimitiveSupport` reports supported, partial and
@@ -238,6 +302,85 @@ control. State identity fields are snapshotted for guarded writes, but provider
 properties, attributes and other nonidentity values may still be shared by
 reference. The host must fence those values, the plan and its capabilities
 against concurrent mutation throughout the operation.
+
+For example, a host can supply its own pricing terms for a Rivet resource.
+The `host` values below are application-supplied configuration and verified
+authorities, not services created by the adapter:
+
+```ts
+import { createIacFinancialServices } from "@hobo/broker";
+import { alchemyTarget, createAlchemyIacProvider } from "@hobo/iac-alchemy";
+
+const target = alchemyTarget({
+  targetId: "rivet-prod",
+  tenantId: host.tenantId,
+  stackName: "App",
+  stage: "prod",
+  programResourceId: "app",
+  sourceDigest: host.sourceDigest,
+  inventoryEvidenceRef: host.inventoryEvidenceRef,
+  resources: [{
+    resourceId: "events",
+    resourceType: "Rivet.DurableObject",
+    providerId: host.rivetProviderId,
+    providerAccountRef: host.rivetAccountRef,
+    productId: host.rivetProductId,
+  }],
+});
+
+const financial = createIacFinancialServices({
+  ...host.financialAuthorities,
+  pricing: {
+    modelId: "rivet-contract",
+    revision: "1",
+    scenario: host.rivetQuoteScenario,
+    bindings: [{ resourceId: "events", candidateIndex: 0 }],
+  },
+  destroyPricing: host.rivetDestroyPricing,
+});
+
+const provider = createAlchemyIacProvider({
+  ...host.providerOptions,
+  stack: host.alchemyStack,
+  target,
+  financial,
+});
+const assessment = await provider.assessPricing(host.program);
+const providerCoverage = assessment.providerCoverage.providers;
+const budgetBeforeAdmission = assessment.budget;
+const outcome = await provider.applyWithAdmission(host.program);
+```
+
+The coverage report identifies each provider as quoted, unavailable, incomplete,
+or unverified, and identifies the source of a quoted model. The quote scenario
+must cover the declared inventory and its candidate indexes.
+The host must independently verify the scope and liability of its estimate.
+Destroy has its own price scenario; an apply quote is not assumed to cover it.
+To use an unpriced target, omit the pricing models and configure the broker's
+explicit unpriced policy and exposure authority. Admission otherwise refuses
+the operation. An authorized unpriced admission bypasses budget evaluation and
+holds unbounded exposure: on that ledger, bounded admissions are refused until
+the exposure is reconciled, and unpriced admission is refused while a bounded
+reservation is active. A quoted assessment reports budget as not evaluated;
+financial admission checks the budget and creates the appropriate hold.
+
+`mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
+Bindle's requirements, operations, annotations, dependencies and entrypoints.
+It refuses missing mappings and unbound dependencies.
+When two declarations share one Alchemy resource, a mapper can set
+`sharedDependency` to a declared dependency's name and return that dependency's
+exact primary resource. It must return no additional resources, actions or
+bindings. A mapper that validates the complete graph can instead use
+`sharedPrimitive` to reuse an already mapped primitive without claiming a
+dependency edge; it must return that primitive's exact primary resource and no
+additional resources, actions or bindings. The shared resource appears once
+in the mapped inventory; the mapper and host remain responsible for proving the
+application binding and for accounting for all usage of that resource.
+The bounded `SharedMapping` model treats graph validation as a trusted,
+synchronous decision; it does not prove a provider's validator or code.
+`describeAlchemyPrimitiveSupport` reports the supplied mappers' operational
+coverage; it does not authenticate them, price their resources, or authorize
+routing. Hosts must attest the mapping and its execution environment.
 
 `target.stackName` is the physical Alchemy stack name and must match the
 configured `Stack`; `program.stackName` is an opaque HoBo logical identifier
@@ -521,6 +664,126 @@ usage reconciliation and can use the budget authority's settlement APIs.
 These restrictions can exclude valid Alchemy programs; there is no automatic
 fallback to an unbudgeted apply.
 
+The optional `@hobo/iac-alchemy/rivet` entry point maps one attested API, web,
+or service entrypoint to an Alchemy Rivet `DurableObject`. The accompanying
+`rivet/runtime` entry point binds the application handler to a Rivet actor. The
+host must verify and fence the source, artifact and exclusive pool. This mapping
+does not bind resource dependencies or enabled session replay. Other primitive
+kinds require additional mappers; `describeRivetPrimitiveSupport` reports their gaps.
+The package tests exercise an isolated local Rivet engine and Alchemy providers
+with test doubles; a live cloud deployment has not been verified.
+
+`@hobo/iac-alchemy/rivet/namespace` maps an infrastructure-only `project`
+declaration to an Alchemy `Rivet.Namespace`:
+
+```ts
+import * as Redacted from "effect/Redacted";
+import {
+  rivetNamespaceBindleMappers,
+  rivetNamespaceResourceId,
+} from "@hobo/iac-alchemy/rivet/namespace";
+
+const mappers = rivetNamespaceBindleMappers([{
+  bindleName: "shop",
+  resourceName: "project",
+  endpoint: host.rivetEndpoint,
+  namespaceName: "shop-prod",
+  token: Redacted.make(host.rivetAdminToken),
+}]);
+const resourceId = rivetNamespaceResourceId("shop", "project");
+// Include resourceId and resourceType "Rivet.Namespace" in the authenticated target inventory.
+```
+
+This mapping does not bind the project's resource ownership or dependencies.
+The host must independently authenticate the control plane, namespace ownership,
+inventory and pricing. Alchemy's Rivet provider cannot delete namespaces, so
+HoBo refuses uncertain creation retries and namespace update, replacement,
+rename, removal and destroy plans before admission. Reconcile an interrupted
+creation independently; a retained namespace may continue to incur costs. Credentials
+and provider state are sensitive; use a protected Alchemy state backend.
+`model/RivetNamespace.tla` checks a finite abstraction of these decisions and
+does not prove the TypeScript implementation or the Rivet provider.
+
+`@hobo/iac-alchemy/rivet/queue` additionally provides an opt-in asynchronous
+JSON queue backed by a Rivet actor and an Alchemy `DurableObject`. Its runtime
+uses durable transactions, idempotent enqueue keys and fenced delivery leases.
+The host supplies authorization, a trusted clock, source fencing and exclusive
+pool verification. The actor retains at most 10,000 messages and rejects new
+ones at capacity. A timeout or lost response leaves the outcome unknown;
+consumers must reconcile leases and fence their own effects. This queue does not
+map HoBo's WIT queue or asynchronous durable topic ABI.
+The finite `model/RivetQueue.tla` checks queue retry, lease and completion
+decisions for one key, two payloads, at most two leases and three clock values.
+It assumes atomic transactions and a trusted clock; it does not prove the
+TypeScript implementation, host callbacks or provider behavior.
+
+`@hobo/iac-alchemy/rivet/kv` provides an opt-in asynchronous byte-preserving
+key-value actor mapped to Alchemy's Rivet `DurableObject`. It supports get, set,
+delete and exists, with bounded keys, values and storage. Its exported
+`RIVET_ASYNC_KV_CAPABILITIES` reports missing operations, including listing,
+compare-and-set, TTL and watches. It has no durable idempotency or automatic
+retries; an uncertain write requires reconciliation. The host supplies the
+source, pool and ingress authorities and enforces single dispatch. This is not
+yet the synchronous HoBo WASI store or a Bindle storage dependency.
+The finite `model/RivetKv.tla` checks one set or delete, a lost reply, late
+commit and fenced retirement. It assumes an independently effective host fence
+and does not prove the implementation, host callbacks or provider behavior.
+
+`@hobo/iac-alchemy/rivet/http-kv` binds an HTTP application and its asynchronous
+key-value actor in one Rivet program. The host must attest the exact registry,
+source, transport, pool and isolation domain. HTTP authorization, storage
+authorization and response disclosure remain distinct decisions, and an
+uncertain write must be reconciled before retrying. This binding does not
+implement the synchronous HoBo WASI store or Bindle storage dependencies.
+The bounded `model/RivetHttpKv.tla` checks one HTTP request and one write under
+the host authority, fencing and draining assumptions described in the model;
+it does not prove those assumptions or the implementation.
+
+`@hobo/iac-alchemy/rivet/http-queue` binds an HTTP application and its asynchronous
+JSON queue actor in one Rivet program. The host must attest the registry, source,
+transport, pool and isolation domain. Admission and response authorization are
+separate decisions; an uncertain queue operation requires reconciliation. This
+does not implement the synchronous HoBo WIT queue or Bindle queue dependencies.
+The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
+under its stated host authority, fencing and draining assumptions; it does not
+prove those assumptions, the implementation or the provider.
+
+The separate optional `@hobo/alchemy-rivet` composition package maps the
+Rivet retained-log and asynchronous topic-bus actors to Alchemy
+`Rivet.DurableObject` resources. Its capability profiles distinguish the two.
+The scoped topic composition can bind one HTTP application and its named
+asynchronous topics to a shared resource. Host-owned source, pool, storage and
+authorization evidence is required.
+
+The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
+declarations to Alchemy Cloudflare components, including Workers, Vite websites,
+KV namespaces, R2 buckets, queues, Secrets Store secrets, D1 databases and
+Flagship flags. The support
+report distinguishes infrastructure provisioning from implemented runtime
+operations. Resource dependencies, consistency and identity must be validated
+against the exact mapping and independently attested host environment.
+
+For an infrastructure-only `secret` declaration, pass `secrets` to
+`cloudflareBindleMappers` with the Bindle and resource names, the existing
+Cloudflare account and store IDs, the secret name, and an Effect `Redacted`
+string value. `cloudflareSecretResourceId` gives the Alchemy resource ID for
+the target inventory. The host must verify the store, account, secret ownership
+and plan scope, and provide the authenticated secret fingerprint authority.
+Alchemy's local state persists secret values, so use a state backend that protects
+them. This mapping does not bind HoBo's runtime `put` or `access` operations.
+`model/CloudflareSecret.tla` checks a bounded mapping and preview decision under
+host-attested store, inventory and fingerprint assumptions; it does not prove
+the implementation or Cloudflare's behavior.
+
+The opt-in `@hobo/iac-alchemy/cloudflare/kv` and `cloudflare/r2` mappers bind
+Worker JavaScript to separately authorized KV and R2 proxy resources. KV grants
+are read-only or write-only and have eventual visibility; read-your-writes and
+WASI guests are unsupported. R2 supports bounded object reads, writes and deletes;
+blob events, presigned URLs, ranges and multipart uploads remain unsupported.
+Source, resource and grant authorities must be synchronous and host-attested.
+The finite `model/CloudflareGrant.tla` checks the abstract mapping decision under
+those host assumptions; it does not prove the implementation or provider.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.
@@ -532,6 +795,38 @@ the RivetKit 3 runtime package in one host-shaped fixture. It imports the
 Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
 declarations (the same peer-aligned instances the adapter resolves) and builds
 its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+`test/better-auth-session-durability.test.ts` simulates sign-in, a process
+restart (SQLite file reopen), and brokered signing-secret re-resolution so
+session rows and cookie integrity survive host recycle. The session file is
+the harness `sessionStorePath`. `openBetterAuthSessionStore` applies the pack
+migration plan's `create-table` steps from `planBetterAuthRelationalMigrations`
+to that file; there is no hand-written session DDL.
+`test/better-auth-cross-box-session.test.ts` shares one file-backed session
+database across two Alchemy host harness instances (two boxes, one relational
+URL). `test/better-auth-onboarding-steps.test.ts` chains the executable onboarding
+evidence steps (construction config → bundle plan → migrations → broker wire →
+first session).
+`test/better-auth-secret-providers.test.ts` models Alchemy-style secret-provider
+**ordering** for auth-stack CI (construction-key merge only; **no** committed
+`.env` files or live Infisical — synthetic fixtures and memory `SecretsPort`
+only). `test/better-auth-host-harness.test.ts` exercises a minimal Better Auth host
+fixture: construction-time `HOBO_AUTH_*` dotenv-shaped keys, in-memory Alchemy
+state, a file-backed `sqlite` path (the same session file, not an in-memory
+database), and `@hobo/pack-better-auth` bundle planning with camp `SecretsPort`
+broker wire (synthetic signing material only; no live Worker/D1 deploy).
+On Linux x64 with Docker, `pnpm --filter @hobo/iac-alchemy run test:aws-emulator`
+runs the mapped AWS resources and budget-routing scenarios against both the
+Vercel Labs AWS emulator and the official AWS Emulator. The runner downloads
+and verifies a pinned official package, starts an isolated loopback-only
+container, and removes it afterward. It bind-mounts the unpacked binary when
+the Docker daemon can see that path. A job container's `/tmp` is often a
+private tmpfs, and an Actions runner's daemon may be in another mount
+namespace, so the runner probes host-visible work directories and, when none
+of those paths are visible, copies the binary into a private image instead.
+An existing copy of the same package may be supplied with
+`HOBO_AWS_EMULATOR_PACKAGE`; its digest is still checked.
+The pricing workflow uses HoBo's routed CI runner for the simulator job, with
+the same hosted fallback as the other pricing checks and a 20-minute job limit.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
 
@@ -670,3 +965,45 @@ or otherwise reconcile messages, and authorize destruction before deleting or
 recreating the actor: destroying its database destroys messages and deduplication
 history. Provider credentials, pool isolation, source identity, durable storage,
 and clock correctness remain independently verified host responsibilities.
+
+### AWS infrastructure and financial routing
+
+The optional AWS mapper registers Alchemy DynamoDB tables, S3 buckets, SQS queues
+and SNS topics for the corresponding HoBo declarations. This increment provides
+infrastructure only: runtime operations and application bindings are not yet
+supported, and unsupported operations are reported explicitly. Budget-based
+routing requires a complete supplied pricing model. An explicitly authorized
+unpriced admission instead bypasses budget evaluation and holds unbounded
+exposure; uncertain partial applies retain exposure for reconciliation. The
+mapping and budget outcomes are exercised against the Vercel Labs emulator and
+the opt-in official AWS Emulator; these tests do not establish production
+deployment or IAM behavior.
+
+### AWS Vite websites
+
+The AWS Vite mapper maps an assets-only web application to Alchemy's
+`AWS.Website.Vite` composite. Its financial inventory includes the complete
+nine-resource graph, and its source and plan fences must verify before apply.
+Application dependencies and server-side rendering are not supported by this
+mapping. The emulator test exercises the mapped CloudFront key-value store;
+it does not deploy the complete site.
+
+### Bounded AWS key-value runtime
+
+The optional Node.js DynamoDB runtime supports bounded get, set and delete
+operations with explicit grants. A timed-out request retains capacity until
+its transport settles; uncertain mutations require reconciliation. The host
+must authenticate the table incarnation and each operation, enforce AWS permissions
+and fence in-flight work. Values are limited to 256 KiB to leave room for keys and
+attributes within DynamoDB's item limit. If completion observation cannot be
+established after an effect may have started, its capacity remains occupied.
+This slice does not yet map the runtime into applications.
+The shared transport boundary permits at most 32 concurrent operations per
+store and uses a ten-second deadline. A deadline does not stop the provider.
+
+The optional Node.js S3 runtime supports bounded object reads, writes and
+deletes with per-key grants and a one MiB object limit. The host authenticates
+the bucket incarnation and IAM scope on each operation. Responses with invalid
+metadata or ranges consume at most one chunk so the stream scope closes;
+uncertain mutations require reconciliation. This runtime is not yet bound to
+applications.

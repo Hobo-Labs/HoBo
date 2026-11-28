@@ -17,7 +17,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations), `python@3.12` (state-machine verification's pinned Z3 interpreter). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations), `python@3.12` (state-machine verification's pinned Z3 interpreter), `nats-server@2.15.3` (the fleet NATS integration tests' JetStream server; the runner image probes it in both build paths). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -56,6 +56,8 @@ mise refuses to run untrusted config:
 - **`mise settings set trusted_config_paths`** — persistent trust.
 
 HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so `build.sh`, the `dev-env-smoke` mise job and every job that runs `ci-runner-preflight` (which exports it to the rest of the job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`, so the checkout's pins rule; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
+
+Nerdbank.GitVersioning's `dotnet` pin stays in [`release/mise.toml`](../../release/mise.toml). [`scripts/lib/nbgv-toolchain.mts`](../../scripts/lib/nbgv-toolchain.mts) installs that tool with `mise -C release install --locked dotnet` and sets `MISE_IGNORED_CONFIG_PATHS` to the absolute path of the repo-root `mise.toml`, appending any value already set (including preflight's `/etc/mise/config.toml`). `mise -C release` otherwise walks up to the root config, and `mise install` then pulls `betterleaks`, `python`, and `syft`. The versioning helper runs the installed `nerdbank-gitversioning` CLI with the parent job's Node executable by absolute path inside `mise exec`, so it continues to work when mise removes its Node directory from `PATH`.
 
 ## `mise activate` vs shims
 

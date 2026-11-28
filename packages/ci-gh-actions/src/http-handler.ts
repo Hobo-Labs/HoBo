@@ -21,6 +21,7 @@ export type HostedRelayApplication = Readonly<{
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
+	startFence?(request: Request): Promise<Response>;
 	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;
 	page?(request: Request): Promise<Response | undefined>;
@@ -162,6 +163,15 @@ export function createRelayHandler(options: {
 		}
 		const mounted = engineSubPath(url.pathname, engineId);
 		const path = mounted ?? url.pathname;
+		if (path === "/v2/fleet/start-fence") {
+			if (request.method !== "POST") return json(405, { ok: false });
+			if (!options.application.startFence) return json(503, { ok: false });
+			try {
+				return noStore(await options.application.startFence(request));
+			} catch {
+				return json(503, { ok: false });
+			}
+		}
 		if (request.method === "GET" && path === "/healthz") {
 			const engines = new Map<string, HttpBody>([[engineId, { ok: true }]]);
 			for (const [id] of stubEngines) engines.set(id, { ok: true });
@@ -270,15 +280,7 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				// The mesh's node list; the control plane authenticates it like
-				// the account API's other reads.
-				path === "/v1/mesh/nodes" ||
-				// Fleet verdicts (ADR-0180): read by anyone, reported by an
-				// enrolled reporter's signature; reporter status, read by a
-				// workflow of the repository with its OIDC token.
-				path.startsWith("/v1/fleet/verdicts/") ||
-				path.startsWith("/v1/fleet/reporters/") ||
-				path === "/v1/fleet/start-fence") &&
+				path === "/v1/fleet/members") &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {

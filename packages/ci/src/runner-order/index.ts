@@ -8,12 +8,12 @@ export {
 	describeDecision,
 	describeSkip,
 	effectiveRelayInputs,
-	type RunnerFleetState,
 	NO_ROUTE_FACTS,
 	noRunnerReason,
 	type RouteFacts,
 	type RouteRetry,
 	RUNNER_SKIP_REASONS,
+	type RunnerFleetState,
 	type RunnerSkipReason,
 } from "./decide.js";
 export {

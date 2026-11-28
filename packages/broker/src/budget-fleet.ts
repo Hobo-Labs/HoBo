@@ -3,7 +3,7 @@ import { fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	type ImmutableJournal,
 	ImmutableJournalError,
-} from "@hobo/backend-fleet";
+} from "@hobo/backend-routing";
 import {
 	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,

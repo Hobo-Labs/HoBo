@@ -3,15 +3,11 @@
 // public-contract: agent event names appended by `@hobo/cd/agent`.
 export const AGENT_EVENTS = Object.freeze({
 	BootstrapTokenIssued: "reconciler.BootstrapTokenIssued",
-	DpopProofAccepted: "reconciler.DpopProofAccepted",
-	SvidIssued: "reconciler.SvidIssued",
 } as const);
 
 // public-contract: agent stream ids.
 export const AGENT_STREAMS = Object.freeze({
 	bootstrap: (tokenHash: string) => `cd-bootstrap-${tokenHash}`,
-	dpop: (reconcilerId: string, bucket: number) =>
-		`cd-dpop-${reconcilerId}-${bucket}`,
 });
 
 // public-contract: schema id of agent event bodies.

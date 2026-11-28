@@ -18,6 +18,7 @@ import type {
 	TrafficShifter,
 	VerifyPort,
 } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 import { composeRefusal } from "./errors.js";
 
 // public-contract: metric names the fail-closed adapters emit.
@@ -32,13 +33,9 @@ function count(
 	atMs: number,
 	attributes: OtelMetricPoint["attributes"],
 ): void {
-	sink
-		?.metrics([
-			{ name, kind: "counter", value: 1, unit: "1", atMs, attributes },
-		])
-		.catch(() => {
-			// Telemetry is best-effort; it never changes an outcome.
-		});
+	emitMetrics(sink, [
+		{ name, kind: "counter", value: 1, unit: "1", atMs, attributes },
+	]);
 }
 
 export function unconfiguredRunbooks(

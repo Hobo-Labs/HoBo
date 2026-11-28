@@ -88,6 +88,27 @@ describe("wireContinuousDelivery", () => {
 		}
 	});
 
+	it("routes verification HTTP separately while retaining provider HTTP", () => {
+		const providerHttp: CdComposeInput["http"] = async () => ({
+			status: 200,
+			headers: {},
+			body: "provider",
+		});
+		const verificationHttp: CdComposeInput["http"] = async () => ({
+			status: 404,
+			headers: {},
+			body: "probe",
+		});
+		wireContinuousDelivery(
+			input(log, calls, { http: providerHttp, verificationHttp }),
+		);
+		expect(argsOf(calls, "createHealthSources").http).toBe(verificationHttp);
+		expect(argsOf(calls, "createVerificationEngine").http).toBe(
+			verificationHttp,
+		);
+		expect(argsOf(calls, "createArtifactVerifier").http).toBe(providerHttp);
+	});
+
 	it("exposes every ContinuousDelivery member on the facade", () => {
 		const cd = wireContinuousDelivery(input(log, calls));
 		for (const key of [
@@ -113,11 +134,13 @@ describe("wireContinuousDelivery", () => {
 			"failover",
 			"campPolicy",
 			"posture",
+			"engines",
 		] as const) {
 			expect(cd[key], key).toBeDefined();
 		}
 		expect(cd.deltas).toBe(cd.desired);
 		expect(cd.postureSeries).toBe(cd.posture);
+		expect(cd.engines.names()).toEqual([]);
 	});
 
 	it("closes the pipelines ⇄ promotions and fan-out → promotions cycles with forwarding references", async () => {
@@ -262,6 +285,20 @@ describe("wireContinuousDelivery", () => {
 				false,
 			);
 			expect(argsOf(calls, "createCampReconciler").transport).toBe(transport);
+		});
+
+		it("passes a conductor's explicit transport without changing its identity", () => {
+			const cd = wireContinuousDelivery(input(log, calls));
+			const transport = recordingModule<ReconcilerTransport>("bounded", log);
+			conductorFor(cd, { campIds: [asCamp("c1")], holderId: "h1", transport });
+			expect(calls.some((c) => c.factory === "createInProcessTransport")).toBe(
+				false,
+			);
+			const r = argsOf(calls, "createCampReconciler");
+			expect(r.mode).toBe(ReconcilerMode.CONDUCTOR);
+			expect(r.reconcilerId).toBe("conductor:h1");
+			expect(r.campIds).toEqual(["c1"]);
+			expect(r.transport).toBe(transport);
 		});
 
 		it("refuses a mode with no realizer with a typed code, remediation and metric", async () => {

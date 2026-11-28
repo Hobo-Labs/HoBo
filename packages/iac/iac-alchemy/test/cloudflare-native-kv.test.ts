@@ -1,22 +1,29 @@
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import { Providers } from "@alchemy.run/cloudflare/Providers";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { inMemoryState, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
+import * as Bundle from "alchemy/Bundle/Bundle";
 import * as Provider from "alchemy/Provider";
 import type { ResourceClass } from "alchemy/Resource";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { Miniflare } from "miniflare";
 import { describe, expect, it, vi } from "vitest";
 import {
 	describeAlchemyPrimitiveSupport,
 	mapBindleToAlchemy,
 } from "../src/bindle.js";
+import {
+	cloudflareEventualKv,
+	cloudflareKvGrant,
+} from "../src/cloudflare-kv-protocol.js";
 import {
 	type CloudflareKvProxyEnvironment,
 	cloudflareKvProxy,
@@ -35,7 +42,7 @@ import {
 } from "../src/cloudflare-runtime.js";
 import { alchemyTarget, createAlchemyIacProvider } from "../src/index.js";
 import { hashAlchemyPriorState } from "../src/plan.js";
-import worker, {
+import {
 	application,
 	neutralApplication,
 } from "./fixtures/cloudflare-kv-app.js";
@@ -152,6 +159,185 @@ function assessRequirements(requirements: {
 }
 
 describe("Cloudflare eventual KV JavaScript subset", () => {
+	it("rejects inherited descriptor records and accessor grants", () => {
+		let traps = 0;
+		const fields = {
+			mode: "read-only",
+			grantEpoch: readGrant.grantEpoch,
+			namespaceEpoch: readGrant.namespaceEpoch,
+			allow: ["get"],
+		};
+		const previous = Object.entries(fields).map(
+			([key]) =>
+				[key, Object.getOwnPropertyDescriptor(Object.prototype, key)] as const,
+		);
+		const oldValue = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: intentionally malformed values exercise the untrusted input boundary.
+		const missingChoice = { x: 1, y: 2, z: 3 } as never;
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: intentionally malformed values exercise the untrusted input boundary.
+		const missingGrant = { x: 1, y: 2, z: 3, w: 4 } as never;
+		const choice = Object.defineProperty({ ...readGrant }, "mode", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw new Error("getter");
+			},
+		});
+		for (const [key, value] of Object.entries(fields))
+			Object.defineProperty(Object.prototype, key, {
+				configurable: true,
+				writable: true,
+				value: { value, enumerable: true },
+			});
+		Object.defineProperty(Object.prototype, "value", {
+			configurable: true,
+			get() {
+				traps++;
+				throw new Error("inherited value");
+			},
+		});
+		const errors: unknown[] = [];
+		try {
+			for (const run of [
+				() => cloudflareEventualKv(missingChoice),
+				() => cloudflareKvProxySource("app", "cache", missingGrant),
+				() => cloudflareEventualKv(choice),
+			])
+				try {
+					run();
+				} catch (error) {
+					errors.push(error);
+				}
+		} finally {
+			if (oldValue === undefined)
+				Reflect.deleteProperty(Object.prototype, "value");
+			else Object.defineProperty(Object.prototype, "value", oldValue);
+			for (const [key, old] of previous) {
+				if (old === undefined) Reflect.deleteProperty(Object.prototype, key);
+				else Object.defineProperty(Object.prototype, key, old);
+			}
+		}
+		expect(errors).toHaveLength(3);
+		expect(traps).toBe(0);
+	});
+
+	it("rejects a proxied host grant without invoking its traps", () => {
+		let traps = 0;
+		const grant = new Proxy(
+			{ ...readGrant, allow: ["get"] },
+			{
+				ownKeys() {
+					traps++;
+					throw new Error("trap");
+				},
+			},
+		);
+		expect(() => cloudflareKvProxySource("app", "cache", grant)).toThrow(
+			"KV_GRANT_INVALID",
+		);
+		expect(traps).toBe(0);
+	});
+
+	it("rejects a proxied nested allow list before invoking its traps", () => {
+		let traps = 0;
+		const allow = new Proxy(["get"], {
+			get() {
+				traps++;
+				throw new Error("trap");
+			},
+			ownKeys() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		const revoked = Proxy.revocable(["get"], {});
+		revoked.revoke();
+		for (const list of [allow, revoked.proxy])
+			expect(() =>
+				cloudflareKvProxySource("app", "cache", { ...readGrant, allow: list }),
+			).toThrow("KV_GRANT_INVALID");
+		expect(traps).toBe(0);
+	});
+
+	it("rejects sparse grant arrays even when an inherited descriptor claims their missing element", () => {
+		const sparse: string[] = [];
+		sparse.length = 1;
+		const old = Object.getOwnPropertyDescriptor(Object.prototype, "0");
+		Object.defineProperty(Object.prototype, "0", {
+			configurable: true,
+			writable: true,
+			value: { value: "get", enumerable: true },
+		});
+		Object.defineProperty(sparse, "extra", {
+			enumerable: true,
+			value: "ignored",
+		});
+		let error: unknown;
+		try {
+			cloudflareKvGrant(
+				"read-only",
+				readGrant.grantEpoch,
+				readGrant.namespaceEpoch,
+				sparse,
+			);
+		} catch (caught) {
+			error = caught;
+		} finally {
+			if (old === undefined) Reflect.deleteProperty(Object.prototype, "0");
+			else Object.defineProperty(Object.prototype, "0", old);
+		}
+		expect(error).toMatchObject({ code: "KV_GRANT_INVALID" });
+	});
+
+	it("uses captured service invocation intrinsics for an eventual KV request", async () => {
+		const native = nativeNamespace();
+		let traps = 0;
+		const app = appFor("read-only", ["get"], (context) => async () => {
+			const kv = cloudflareBindings(context).kv("cache");
+			await kv.get("key");
+			return new Response("ok");
+		});
+		const oldGet = Reflect.get;
+		const oldApply = Reflect.apply;
+		const restore = () => {
+			Reflect.get = oldGet;
+			Reflect.apply = oldApply;
+		};
+		const real = service({
+			HOBO_KV_MODE: "read-only",
+			HOBO_KV_ALLOW: "get",
+			HOBO_KV_NAMESPACE: native.binding,
+		});
+		const environment = Object.defineProperty({}, "HOBO_RESOURCE_0", {
+			get() {
+				Reflect.get = () => {
+					traps++;
+					throw new Error("get");
+				};
+				Reflect.apply = () => {
+					traps++;
+					throw new Error("apply");
+				};
+				return {
+					fetch(request: Request) {
+						restore();
+						return real.fetch(request);
+					},
+				};
+			},
+		});
+		try {
+			await bindleCloudflareWorker(app, "web").fetch(
+				new Request("https://app.test"),
+				environment,
+			);
+		} finally {
+			restore();
+		}
+		expect(native.calls).toEqual(["get:key:stream"]);
+		expect(traps).toBe(0);
+	});
+
 	it("keeps the real Bindle provider-neutral and rejects invalid target choices", () => {
 		expect(neutralApplication.resources.cache?.annotations).toEqual([]);
 		expect(neutralApplication.requirements).toMatchObject({
@@ -292,6 +478,41 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			),
 		).toThrow("KV_GRANT_UNVERIFIED");
 	});
+	it.each([
+		"namespace",
+		"grant",
+	] as const)("rejects and observes an asynchronous KV %s verifier", async (field) => {
+		const rejected = Promise.reject(new Error("authority unavailable"));
+		const verifiers = {
+			verifyNamespace: () => true,
+			verifyGrant: () => true,
+		};
+		Object.defineProperty(
+			verifiers,
+			field === "namespace" ? "verifyNamespace" : "verifyGrant",
+			{ value: () => rejected, enumerable: true },
+		);
+		expect(() =>
+			mapBindleToAlchemy(
+				application,
+				cloudflareNativeKvBindleMappers({
+					workerModules: { web: main },
+					sourceFence: {
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "test:host",
+						verify: () => true,
+					},
+					...verifiers,
+				}),
+				{ assessRequirements: () => ({ status: "supported" }) },
+			),
+		).toThrow(
+			field === "namespace" ? "KV_NAMESPACE_UNVERIFIED" : "KV_GRANT_UNVERIFIED",
+		);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
 	it("reads binary, empty and missing values through an isolated read-only proxy", async () => {
 		const native = nativeNamespace();
 		native.values.set("bin\u0000雪", new Uint8Array([0, 255, 127]));
@@ -377,11 +598,11 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 							headers: { "x-hobo-kv-key": "key" },
 						}),
 						{
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test deliberately sends malformed external bindings.
 							HOBO_KV_MODE:
-								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test deliberately sends malformed external bindings.
 								mode as CloudflareKvProxyEnvironment["HOBO_KV_MODE"],
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed grant strings are intentional negative cases.
 							HOBO_KV_ALLOW:
-								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed grant strings are intentional negative cases.
 								grant as CloudflareKvProxyEnvironment["HOBO_KV_ALLOW"],
 							HOBO_KV_NAMESPACE: native.binding,
 						},
@@ -544,42 +765,6 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		expect(canceled).toBe(true);
 	});
 
-	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
-		vi.useFakeTimers();
-		try {
-			const native = nativeNamespace();
-			let finish: (() => void) | undefined;
-			let completed = false;
-			const result = cloudflareKvProxy.fetch(
-				new Request("https://hobo-kv.internal/set", {
-					method: "POST",
-					headers: { "x-hobo-kv-key": "key" },
-				}),
-				{
-					HOBO_KV_MODE: "write-only",
-					HOBO_KV_ALLOW: "set",
-					HOBO_KV_NAMESPACE: {
-						...native.binding,
-						async put() {
-							await new Promise<void>((resolve) => {
-								finish = resolve;
-							});
-							completed = true;
-						},
-					},
-				},
-			);
-			await vi.advanceTimersByTimeAsync(10_000);
-			expect((await result).status).toBe(502);
-			expect(completed).toBe(false);
-			finish?.();
-			await vi.runAllTicks();
-			expect(completed).toBe(true);
-		} finally {
-			vi.useRealTimers();
-		}
-	});
-
 	it.each([
 		["read-only", []],
 		["read-only", ["get", "set"]],
@@ -628,7 +813,12 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 		const before = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "home");
 		try {
-			const created: { type: string; news: object; bindings?: object[] }[] = [];
+			const created: {
+				type: string;
+				fqn: string;
+				news: object;
+				bindings?: object[];
+			}[] = [];
 			const uncertain: string[] = [];
 			let admissions = 0;
 			let revokeOnFinancialRevalidation = false;
@@ -688,9 +878,9 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					),
 			};
 			const namespaceProvider = Provider.succeed(Namespace, {
-				reconcile: ({ news }) =>
+				reconcile: ({ news, fqn }) =>
 					Effect.sync(() => {
-						created.push({ type: Namespace.Type, news });
+						created.push({ type: Namespace.Type, fqn, news });
 						return {
 							...news,
 							title: news.title ?? "cache",
@@ -703,12 +893,13 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			});
 			/* oxlint-disable anti-slop/no-chained-type-assertions -- SAFETY: this provider is a narrowly scoped test double for beta.87's overloaded Worker class. */
 			const workerProvider = Provider.succeed(
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: beta.87's overloaded Worker class is narrower than Provider.succeed's test port.
 				Worker as unknown as ResourceClass<Worker>,
 				{
 					reconcile: ({ news, bindings, fqn }) =>
 						Effect.sync(() => {
-							created.push({ type: Worker.Type, news, bindings });
-							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this in-memory test provider only resolves the workerName
+							created.push({ type: Worker.Type, fqn, news, bindings });
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this provider double supplies the workerName used by the service binding.
 							return {
 								...news,
 								workerName: fqn,
@@ -986,6 +1177,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 				(entry) => entry.type === Worker.Type && entry !== proxy,
 			);
 			expect(appWorker?.news).toMatchObject({
+				main: relative(process.cwd(), main),
 				env: {
 					HOBO_RESOURCE_0: expect.objectContaining({ workerName: proxyId }),
 				},
@@ -1013,16 +1205,94 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					}),
 				]),
 			);
+			const physicalNamespace = created.find(
+				(entry) =>
+					entry.type === Namespace.Type &&
+					entry.fqn === namespaceClaim.resourceId,
+			);
+			if (proxy === undefined || physicalNamespace === undefined)
+				throw new Error("mapped KV resources missing");
+			// SAFETY: the assertion above checked the generated proxy's read-only environment.
+			const proxyEnvironment = proxy.news as {
+				env: { HOBO_KV_MODE: string; HOBO_KV_ALLOW: string };
+			};
+			const source = (name: string) =>
+				stripTypeScriptTypes(
+					readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8"),
+					{ mode: "transform" },
+				);
+			const modules = [
+				"cloudflare-kv-proxy",
+				"cloudflare-kv-protocol",
+				"async-boundary",
+				"cloudflare-capacity",
+				"cloudflare-native-promise",
+				"cloudflare-native-await",
+				"cloudflare-byte-stream",
+				"cloudflare-web-options",
+			].map((name) => ({
+				type: "ESModule" as const,
+				path: `${name}.js`,
+				contents: source(name),
+			}));
+			if (appWorker === undefined)
+				throw new Error("mapped application missing");
+			const bundleDirectory = join(directory, "worker-bundle");
+			await Effect.runPromise(
+				Bundle.build(
+					{
+						input: main,
+						platform: "node",
+						resolve: { conditionNames: [...Bundle.NODE_CONDITION_NAMES] },
+						plugins: [],
+					},
+					{
+						dir: bundleDirectory,
+						format: "esm",
+						entryFileNames: "main.js",
+						codeSplitting: false,
+					},
+				),
+			);
+			const workerd = new Miniflare({
+				compatibilityDate: "2026-01-01",
+				compatibilityFlags: ["nodejs_compat"],
+				workers: [
+					{
+						name: appWorker.fqn,
+						modules: true,
+						script: readFileSync(join(bundleDirectory, "main.js"), "utf8"),
+						serviceBindings: { HOBO_RESOURCE_0: proxy.fqn },
+					},
+					{
+						name: proxy.fqn,
+						modules,
+						kvNamespaces: { HOBO_KV_NAMESPACE: physicalNamespace.fqn },
+						bindings: {
+							HOBO_KV_MODE: proxyEnvironment.env.HOBO_KV_MODE,
+							HOBO_KV_ALLOW: proxyEnvironment.env.HOBO_KV_ALLOW,
+						},
+					},
+				],
+			});
+			try {
+				const namespace = await workerd.getKVNamespace(
+					"HOBO_KV_NAMESPACE",
+					proxy.fqn,
+				);
+				await namespace.put(
+					"greeting",
+					new TextEncoder().encode("hello").buffer,
+				);
+				const mappedApplication = await workerd.getWorker(appWorker.fqn);
+				const result = await mappedApplication.fetch("https://app.test/");
+				expect(result.status).toBe(200);
+				expect(await result.text()).toBe("hello");
+			} finally {
+				await workerd.dispose();
+			}
 			const native = nativeNamespace();
 			native.values.set("greeting", new TextEncoder().encode("hello"));
-			const result = await worker.fetch(new Request("https://app.test"), {
-				HOBO_RESOURCE_0: service({
-					HOBO_KV_MODE: "read-only",
-					HOBO_KV_ALLOW: "get",
-					HOBO_KV_NAMESPACE: native.binding,
-				}),
-			});
-			expect(await result.text()).toBe("hello");
 
 			const writerGrant = {
 				mode: "write-only" as const,
@@ -1194,6 +1464,52 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			if (before === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = before;
 			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("bounds a native mutation wait without claiming the timed-out write stopped", async () => {
+		vi.useFakeTimers();
+		vi.resetModules();
+		try {
+			const { cloudflareKvProxy: timedProxy } = await import(
+				"../src/cloudflare-kv-proxy.js"
+			);
+			const native = nativeNamespace();
+			let finish: (() => void) | undefined;
+			let completed = false;
+			let started: () => void = () => {};
+			const putStarted = new Promise<void>((resolve) => {
+				started = resolve;
+			});
+			const result = timedProxy.fetch(
+				new Request("https://hobo-kv.internal/set", {
+					method: "POST",
+					headers: { "x-hobo-kv-key": "key" },
+				}),
+				{
+					HOBO_KV_MODE: "write-only",
+					HOBO_KV_ALLOW: "set",
+					HOBO_KV_NAMESPACE: {
+						...native.binding,
+						async put() {
+							started();
+							await new Promise<void>((resolve) => {
+								finish = resolve;
+							});
+							completed = true;
+						},
+					},
+				},
+			);
+			await putStarted;
+			await vi.advanceTimersByTimeAsync(10_001);
+			expect((await result).status).toBe(502);
+			expect(completed).toBe(false);
+			finish?.();
+			await vi.runAllTicks();
+			expect(completed).toBe(true);
+		} finally {
+			vi.useRealTimers();
 		}
 	});
 });

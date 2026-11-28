@@ -217,9 +217,6 @@ export const DeliveryPolicySchema: GenMessage<DeliveryPolicy> = /*@__PURE__*/
   messageDesc(file_broker, 3);
 
 /**
- * One connector registration in the broker's connector registry
- * (github-app | pulumi | azure | vercel | cloudflare | custom).
- *
  * @generated from message hobo.broker.v1.ConnectorConfig
  */
 export type ConnectorConfig = Message<"hobo.broker.v1.ConnectorConfig"> & {
