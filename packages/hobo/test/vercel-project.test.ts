@@ -12,6 +12,8 @@ import {
 	VercelApiError,
 	type VercelFetch,
 	type VercelFetchResponse,
+	VercelProductionDeploymentMissingError,
+	VercelPromotionUnconfirmedError,
 	VercelTransportError,
 } from "../src/vercel-client.js";
 import {
@@ -1510,6 +1512,170 @@ describe("a transport failure (scripted transport, no network)", () => {
 // `deleteDeployment`) follow the client's rules: a request with nothing to send
 // carries no body (`fetch` refuses a GET with one), the team id is trimmed, and
 // a transport that throws is a redacted VercelTransportError.
+describe("production promotion", () => {
+	it("does not promote when the project lookup lacks a valid project ID", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, { id: "not-a-project-id" })],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(
+			client.promoteDeployment("hobo-ci", "dpl_123"),
+		).rejects.toThrow("project read returned an invalid identity");
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
+
+	it.each([
+		["no targets", { id: "prj_relay" }],
+		["a non-object targets", { id: "prj_relay", targets: [] }],
+		["no production target", { id: "prj_relay", targets: {} }],
+		[
+			"a null production target",
+			{ id: "prj_relay", targets: { production: null } },
+		],
+		[
+			"a non-object production target",
+			{ id: "prj_relay", targets: { production: "dpl_current" } },
+		],
+	])("refuses to read a current production deployment when the project has %s", async (_case, body) => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, body)],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		const pending = client.getProductionDeploymentId("hobo-ci");
+		await expect(pending).rejects.toBeInstanceOf(
+			VercelProductionDeploymentMissingError,
+		);
+		await expect(pending).rejects.toMatchObject({
+			name: "VercelProductionDeploymentMissingError",
+		});
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
+
+	it("reads the current production deployment id", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+			],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.getProductionDeploymentId("hobo-ci")).resolves.toBe(
+			"dpl_current",
+		);
+	});
+
+	it("promotes with the verb and path Vercel documents, then confirms the read-back", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_123" } },
+				}),
+			],
+			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(
+			client.promoteDeployment("hobo-ci", "dpl_123"),
+		).resolves.toBeUndefined();
+		expect(transport.routes()).toEqual([
+			"GET /v9/projects/hobo-ci",
+			"POST /v10/projects/prj_relay/promote/dpl_123",
+			"GET /v9/projects/hobo-ci",
+		]);
+	});
+
+	it("refuses a promotion whose bounded read-back polling still names the previous deployment", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": Array.from({ length: 25 }, () =>
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+			),
+			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+			sleep: async () => {},
+		});
+		const pending = client.promoteDeployment("hobo-ci", "dpl_123");
+		await expect(pending).rejects.toBeInstanceOf(
+			VercelPromotionUnconfirmedError,
+		);
+		await expect(pending).rejects.toThrow(
+			"vercel-client: promotion remains unconfirmed",
+		);
+		expect(transport.routes()).toEqual([
+			"GET /v9/projects/hobo-ci",
+			"POST /v10/projects/prj_relay/promote/dpl_123",
+			...Array.from({ length: 24 }, () => "GET /v9/projects/hobo-ci"),
+		]);
+	});
+
+	it.each([
+		["an id without the dpl_ prefix", "hobo-ci-deploy-123"],
+		["an empty id", ""],
+		["an id with a path separator", "dpl_1/../../v13/deployments"],
+	])("refuses to promote %s before any request is sent", async (_case, id) => {
+		const transport = scripted({});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.promoteDeployment("hobo-ci", id)).rejects.toThrow(
+			"invalid deployment receipt identity",
+		);
+		expect(transport.routes()).toEqual([]);
+	});
+
+	it.each([
+		[
+			"a production id that is not a deployment id",
+			{ id: "prj_relay", targets: { production: { id: "not-a-deployment" } } },
+		],
+		[
+			"a production id that is not a string",
+			{ id: "prj_relay", targets: { production: { id: 7 } } },
+		],
+		[
+			"a production target holding no id",
+			{ id: "prj_relay", targets: { production: {} } },
+		],
+	])("refuses to read the current production deployment when it holds %s", async (_case, body) => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [reply(200, body)],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.getProductionDeploymentId("hobo-ci")).rejects.toThrow(
+			"invalid production deployment identity",
+		);
+		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
+	});
+});
+
 describe("createVercelClient's deployment read and delete (scripted transport, no network)", () => {
 	const READ = "GET /v13/deployments/dpl_1";
 	const DELETE = "DELETE /v13/deployments/dpl_1";

@@ -92,6 +92,7 @@ function refusedConnect(code: string, message: string): CommandResult {
 export async function runCiSecretStoreConnect(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
+	const credentialFetch = input.credentialFetch ?? input.fetch;
 	let existingText: string | undefined;
 	try {
 		existingText = await readSecretStoreBindingText(input.bindingStore);
@@ -174,7 +175,9 @@ export async function runCiSecretStoreConnect(
 		const subject = await resolveDeploySubject({
 			repository,
 			credentials: input.credentials,
-			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+			...(credentialFetch !== undefined
+				? { fetch: credentialFetch }
+				: undefined),
 		});
 		trust = githubDeployTrust(subject);
 		readerTrust = githubDeployReaderTrust(subject);
@@ -261,7 +264,9 @@ export async function runCiSecretStoreConnect(
 					ownerAccessToken: ownerToken,
 					deployIdentityId: update.identityId,
 					trust: update.trust,
-					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+					...(credentialFetch !== undefined
+						? { fetch: credentialFetch }
+						: undefined),
 				});
 				updated.push(update.identity);
 			} catch (error) {
@@ -748,6 +753,7 @@ async function relayRead(
 export async function runCiSecretStoreVerify(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
+	const credentialFetch = input.credentialFetch ?? input.fetch;
 	let binding: ParsedSecretStoreBinding | undefined;
 	try {
 		binding = await loadSecretStoreBinding(input.bindingStore);
@@ -796,12 +802,12 @@ export async function runCiSecretStoreVerify(
 	const githubJwt = githubActionsJwtSource({
 		env,
 		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		...(credentialFetch !== undefined ? { fetch: credentialFetch } : undefined),
 	});
 	const writerJwt = githubActionsJwtSource({
 		env,
 		audience: RELAY_GITHUB_OIDC_AUDIENCE,
-		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		...(credentialFetch !== undefined ? { fetch: credentialFetch } : undefined),
 	});
 	let githubWorkloadJwt: string | undefined;
 	const memoGithubJwt = async () => {
@@ -848,8 +854,8 @@ export async function runCiSecretStoreVerify(
 									identityId: store.deployCredentialIdentityId,
 									jwt: memoGithubJwt,
 								}),
-								...(input.fetch !== undefined
-									? { fetch: input.fetch }
+								...(credentialFetch !== undefined
+									? { fetch: credentialFetch }
 									: undefined),
 							}),
 						memoGithubJwt,
@@ -885,8 +891,8 @@ export async function runCiSecretStoreVerify(
 									identityId: store.deployIdentityId,
 									jwt: memoWriterJwt,
 								}),
-								...(input.fetch !== undefined
-									? { fetch: input.fetch }
+								...(credentialFetch !== undefined
+									? { fetch: credentialFetch }
 									: undefined),
 							}),
 						memoWriterJwt,
@@ -908,7 +914,9 @@ export async function runCiSecretStoreVerify(
 							identityId: store.relayIdentityId,
 							jwt: async () => vercelJwt,
 						}),
-						...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+						...(credentialFetch !== undefined
+							? { fetch: credentialFetch }
+							: undefined),
 					}),
 				)
 			: {

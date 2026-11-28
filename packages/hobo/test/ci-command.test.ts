@@ -20,6 +20,7 @@ import {
 	createCiCommand,
 } from "../src/ci-command.js";
 import { OwnerCredentialUnavailable } from "../src/owner-store-session.js";
+import { ownerStoreEntries } from "./support/owner-store-stand-in.js";
 
 const FLEET_VIEWS: CiFleetStatus = async () => ({
 	ok: true,
@@ -76,6 +77,8 @@ async function fixture(
 		prompt?: (question: string) => Promise<string>;
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
+		credentialFetch?: typeof fetch;
+		ownerStore?: boolean;
 		fleetStatus?: CiFleetStatus;
 		account?: CredentialResolver | "no-session";
 	} = {},
@@ -132,6 +135,12 @@ async function fixture(
 		},
 		interactive: options.interactive ?? false,
 		fetch: send,
+		...(options.credentialFetch !== undefined
+			? { credentialFetch: options.credentialFetch }
+			: undefined),
+		...(options.ownerStore === true
+			? { ownerEntries: () => ownerStoreEntries(home) }
+			: undefined),
 		git: async (args) => {
 			if (args[0] === "rev-parse") return home;
 			if (args.length === 1) return options.remotes ?? "origin";
@@ -840,5 +849,71 @@ describe("hobo ci setup", () => {
 			"--repo <owner/name> must be a GitHub owner/name",
 		);
 		expect(requests).toEqual([]);
+	});
+	it("forwards credentialFetch to secret-store credentials, not the relay fetch", async () => {
+		const credentialSeen: string[] = [];
+		const credentialFetch: typeof fetch = async (url, init) => {
+			const target = new URL(String(url));
+			credentialSeen.push(
+				`${init?.method ?? "GET"} ${target.host}${target.pathname}`,
+			);
+			if (target.host !== "api.github.com")
+				return Response.json({}, { status: 404 });
+			if (target.pathname === "/repos/Hobo-Labs/HoBo")
+				return Response.json({
+					id: 1274791462,
+					name: "HoBo",
+					owner: { login: "Hobo-Labs", id: 344805935 },
+				});
+			if (
+				target.pathname ===
+				"/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub"
+			)
+				return Response.json({
+					use_default: true,
+					use_immutable_subject: true,
+					sub_claim_prefix: "repo:Hobo-Labs@344805935/HoBo@1274791462",
+				});
+			return Response.json({ message: "Not Found" }, { status: 404 });
+		};
+		const resolved: string[] = [];
+		const { cli, home, requests } = await fixture({
+			account: {
+				async resolve(ref) {
+					resolved.push(ref);
+					if (ref !== "github-app://Hobo-Labs/HoBo")
+						throw new OwnerCredentialUnavailable(ref, "not-in-store");
+					return { token: "synthetic-installation-token" };
+				},
+			},
+			credentialFetch,
+			ownerStore: true,
+		});
+		const result = await cli.run(
+			[
+				"ci",
+				"secret-store",
+				"connect",
+				"--project-id",
+				"proj-runtime",
+				"--relay-identity-id",
+				"relay-identity",
+				"--deploy-identity-id",
+				"deploy-identity",
+				"--team",
+				"team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				"--repo",
+				"Hobo-Labs/HoBo",
+				"--json",
+			],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(requests).toEqual([]);
+		expect(resolved).toEqual(["github-app://Hobo-Labs/HoBo"]);
+		expect(credentialSeen).toEqual([
+			"GET api.github.com/repos/Hobo-Labs/HoBo",
+			"GET api.github.com/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub",
+		]);
 	});
 });

@@ -71,6 +71,31 @@ export function hookPointName(point: HookPoint): string {
 	return POINT_NAME.get(point) ?? "unspecified";
 }
 
+const FORWARDED_REASON_CODES: ReadonlySet<string> = new Set([
+	...Object.values(HOOK_REASON),
+	"compose-runbook-unconfigured",
+	"compose-suite-unconfigured",
+]);
+
+function forwardedCodes(
+	reasons: readonly ReasonRecord[],
+	point: HookPoint,
+	subject: HookSubject,
+): ReasonRecord[] {
+	return reasons.flatMap((forwarded) =>
+		FORWARDED_REASON_CODES.has(forwarded.code)
+			? [
+					reason(
+						forwarded.code,
+						`A hook reported ${forwarded.code} at ${hookPointName(point)}.`,
+						"Inspect the hook's own report for the cause.",
+						subject.campId,
+					),
+				]
+			: [],
+	);
+}
+
 export function createHookRunner(
 	d: Readonly<{
 		runbooks: RunbookExecutor;
@@ -84,7 +109,7 @@ export function createHookRunner(
 		point: HookPoint,
 		subject: HookSubject,
 		ctx: CdContext,
-	): Promise<ReasonRecord | undefined> {
+	): Promise<readonly ReasonRecord[]> {
 		const args: JsonObject = {
 			promotionId: subject.promotionId,
 			campId: subject.campId,
@@ -96,13 +121,16 @@ export function createHookRunner(
 		switch (hook.kind) {
 			case HookKind.RUNBOOK: {
 				const result = await d.runbooks.run({ path: hook.ref, args }, ctx);
-				if (result.ok) return undefined;
-				return reason(
-					HOOK_REASON.runbookFailed,
-					`A runbook hook failed at ${hookPointName(point)}.`,
-					"Fix the runbook or the condition it checks; the promotion retries the hook on its next tick.",
-					subject.campId,
-				);
+				if (result.ok) return [];
+				return [
+					reason(
+						HOOK_REASON.runbookFailed,
+						`A runbook hook failed at ${hookPointName(point)}.`,
+						"Fix the runbook or the condition it checks; the promotion retries the hook on its next tick.",
+						subject.campId,
+					),
+					...forwardedCodes(result.reasons, point, subject),
+				];
 			}
 			case HookKind.SUITE: {
 				const result = await d.suites.run(
@@ -113,13 +141,16 @@ export function createHookRunner(
 					},
 					ctx,
 				);
-				if (result.ok) return undefined;
-				return reason(
-					HOOK_REASON.suiteFailed,
-					`A verification suite hook failed at ${hookPointName(point)}.`,
-					"Inspect the suite report; promote Freight that passes it.",
-					subject.campId,
-				);
+				if (result.ok) return [];
+				return [
+					reason(
+						HOOK_REASON.suiteFailed,
+						`A verification suite hook failed at ${hookPointName(point)}.`,
+						"Inspect the suite report; promote Freight that passes it.",
+						subject.campId,
+					),
+					...forwardedCodes(result.reasons, point, subject),
+				];
 			}
 			case HookKind.NOTIFY: {
 				try {
@@ -143,15 +174,17 @@ export function createHookRunner(
 					});
 					void error;
 				}
-				return undefined;
+				return [];
 			}
 			default:
-				return reason(
-					HOOK_REASON.unknownKind,
-					`hook ${hook.ref} has no kind`,
-					"Declare the hook as RUNBOOK, NOTIFY or SUITE in the pipeline.",
-					subject.campId,
-				);
+				return [
+					reason(
+						HOOK_REASON.unknownKind,
+						`hook ${hook.ref} has no kind`,
+						"Declare the hook as RUNBOOK, NOTIFY or SUITE in the pipeline.",
+						subject.campId,
+					),
+				];
 		}
 	}
 
@@ -160,18 +193,20 @@ export function createHookRunner(
 			const due = hooks.filter((hook) => hook.point === point);
 			const failures: ReasonRecord[] = [];
 			for (const hook of due) {
-				let failure: ReasonRecord | undefined;
+				let failure: readonly ReasonRecord[] = [];
 				try {
 					failure = await runOne(hook, point, subject, ctx);
 				} catch {
-					failure = reason(
-						hook.kind === HookKind.SUITE
-							? HOOK_REASON.suiteFailed
-							: HOOK_REASON.runbookFailed,
-						`A hook could not run at ${hookPointName(point)}.`,
-						"Fix the hook target; the promotion retries the hook on its next tick.",
-						subject.campId,
-					);
+					failure = [
+						reason(
+							hook.kind === HookKind.SUITE
+								? HOOK_REASON.suiteFailed
+								: HOOK_REASON.runbookFailed,
+							`A hook could not run at ${hookPointName(point)}.`,
+							"Fix the hook target; the promotion retries the hook on its next tick.",
+							subject.campId,
+						),
+					];
 				}
 				emitMetric(d.telemetry, {
 					name: PROMOTION_METRIC.hookRun,
@@ -179,11 +214,11 @@ export function createHookRunner(
 					attributes: {
 						kind: HookKind[hook.kind] ?? "UNSPECIFIED",
 						point: hookPointName(point),
-						outcome: failure ? "failed" : "ok",
+						outcome: failure.length > 0 ? "failed" : "ok",
 					},
 				});
-				if (failure) {
-					failures.push(failure);
+				if (failure.length > 0) {
+					failures.push(...failure);
 					// Failure hooks all run; forward points stop at the first failure.
 					if (point !== HookPoint.ON_FAILURE) break;
 				}

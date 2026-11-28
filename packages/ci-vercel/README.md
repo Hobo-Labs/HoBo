@@ -220,7 +220,7 @@ store), promotes it through the relay's pipeline and the CD gate, and a
 conductor reconciler realizes it on Vercel. The Set converges only once Vercel
 reports the deployment READY.
 
-The relay is realized with `--build prebuilt` (what the workflow runs): HoBo
+The relay is realized with `--build prebuilt`: HoBo
 is the only builder, and the Vercel project is never connected to Git.
 
 - **Preview stages.** The preview node builds this checkout once, at the
@@ -235,11 +235,14 @@ is the only builder, and the Vercel project is never connected to Git.
   (`POST /v10/projects/{project}/promote/{deployment}`): no rebuild, so
   production serves the bytes preview verified. It is READY only once
   production serves it.
-- **A failed production verification rolls back.** Production goes back to
-  the deployment it served before the promotion (`POST
-  /v1/projects/{project}/rollback/{deployment}`), and the command fails with
+- **A failed production verification attempts rollback.** HoBo attempts to
+  restore the deployment production served before the promotion (`POST
+  /v1/projects/{project}/rollback/{deployment}`) and fails the command with
   `HOBO_CI_DEPLOY_ROLLED_BACK` (or `HOBO_CI_DEPLOY_ROLLBACK_FAILED`, naming
-  the deployment to restore by hand).
+  the deployment to restore by hand). Vercel rollback has no conditional
+  current-target input, so an external promotion between the pre-rollback
+  check and the rollback cannot be prevented; the result reports the observed
+  outcome and requires manual recovery when it is not `rolled-back`.
 
 `--build git` (the default for other callers) still realizes from a git ref
 through `createVercelDeployProvider`'s git-artifact mode, which needs
@@ -251,7 +254,7 @@ packages/ci-vercel/deploy/delivery.ts` applies the same records):
 
 | Node | Camp | Takes Freight from | Verified by |
 |---|---|---|---|
-| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz` (the preview Camp has no config-service binding, so its `/readyz` answers 503 and is not required) |
+| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz`; with `--sha` it must name that commit (the preview Camp has no config-service binding, so its `/readyz` is not required) |
 | `production` | `hobo-ci-relay/production` | **only** Freight `preview` qualified | probes of `$HOBO_CI_RELAY_URL/healthz` (which must name the Freight's commit) and `/readyz` |
 
 `hobo ci deploy --adopt` verifies the same nodes differently: preview by its
@@ -325,6 +328,37 @@ the commit, `/readyz` answers 200), rolling back when that fails
 refuses with `HOBO_CI_SECRET_STORE_SESSION_REQUIRED` before anything is sent;
 with a session whose store holds no token, with `HOBO_CI_DEPLOY_AUTH_REQUIRED`
 pointing at `hobo cd up`. Vercel's Git integration is never connected.
+
+`HOBO_CI_RELAY_STAGED_PRODUCTION=true` makes `hobo ci deploy --target
+production --wait --sha <commit>` realize production without promoting traffic:
+conductor convergence waits for the staged deployment to be READY, and the
+`AFTER_QUALIFIED` finalizer is the only step that promotes it. Its `/healthz`
+and `/readyz` are verified on the deployment and, after promotion, on the
+public origin `HOBO_CI_RELAY_PUBLIC_URL` (required, `https`) before the deploy
+deadline. The finalization hook runs only in the driving `hobo ci deploy`
+process; it is never written into the shared pipeline record that `hobo serve
+cd` and non-staged deliveries drive. Its promotion is driver-only, so another
+CD driver leaves it pending instead of advancing past that finalizer. Staged promotion needs a distinct previous
+production deployment, recorded in the CD handover. When live verification
+fails, the command fails
+with `HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED`; if production still names the
+rejected candidate, HoBo re-promotes the previous deployment first and reports
+`data.rollback` as `completed`, `failed`, `superseded` (a concurrent promotion
+moved production, which it leaves untouched) or `unknown`. Anything but
+`completed` needs the manual recovery the message names.
+The deploy token is the same `owner://HOBO_CD_VERCEL_TOKEN` read through the
+owner session. The relay deploy workflow's secret-store verify step annotates
+failures through `scripts/ci/relay-deploy-secret-store-verify-report.mts`,
+which redacts credentials in check identity, method, result, and detail via
+`relay-deploy-redaction.mts` (percent-decoded search, `HOBO_*` codes kept).
+The probes of the staged deployment (and of a preview with
+`HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true`) carry a GitHub OIDC token to the
+project's Vercel Trusted Source. Outside a GitHub Actions job no such token can
+be minted, so those probes answer 503: a preview fails verification, and staged
+production fails closed with `HOBO_CI_DEPLOY_RELAY_NOT_READY` before any
+promotion (`HOBO_CI_RELAY_STAGED_PRODUCTION` accepts only `true` or `false` on
+production `--wait` runs). Public-origin
+probes never carry that token.
 
 A relay left behind its sources is raised, not silent: the
 [CI health monitor](../../docs/ci/health-monitor.md) compares the commit the

@@ -4,6 +4,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { KEPT_LOCATOR } from "../../packages/provider-redaction/dist/provider-redaction.js";
+import { assertRevealsNoMore } from "../../packages/redaction-test-harness/dist/redaction-differential.js";
+import { redactRelayDeployText } from "../ci/relay-deploy-redaction.mts";
+import { retiredRelayDeployRedactNoise } from "./fixtures/relay-deploy-retired-redact-noise.js";
 
 const root = join(import.meta.dirname, "..", "..");
 const report = join(
@@ -48,8 +52,62 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 				ran.stdout,
 				/login-denied.*oidc_sub=repo:Hobo-Labs\/HoBo:ref:refs\/heads\/main/u,
 			);
+			assert.match(ran.stdout, /hobo-ci-writer/u);
+			assert.doesNotMatch(ran.stdout, /hobo-ci-deploy/u);
 			assert.match(ran.stdout, /::error title=Secret store verify::/u);
 			assert.doesNotMatch(ran.stdout, /eyJ/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps HoBo deploy error codes in relay-deploy redaction", () => {
+		for (const code of [
+			"HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+			"HOBO_CI_DEPLOY_BUDGET_EXHAUSTED",
+		]) {
+			const out = redactRelayDeployText(
+				`${code}: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig`,
+			);
+			assert.match(out, new RegExp(code, "u"));
+			assert.doesNotMatch(out, /eyJhbGciOiJIUzI1NiJ9/u);
+		}
+	});
+
+	it("keeps HoBo deploy refusal codes while redacting credentials in check rows", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "out.json");
+		const err = join(dir, "err.txt");
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig";
+		try {
+			writeFileSync(
+				json,
+				`${JSON.stringify({
+					ok: false,
+					code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+					message: "verify failed",
+					data: {
+						checks: [
+							{
+								identity: `hobo-ci-writer Bearer ${jwt}`,
+								method: "GitHub Actions OIDC",
+								result: "fail",
+								detail: `nested ${jwt}`,
+							},
+						],
+					},
+				})}\n`,
+			);
+			writeFileSync(err, "");
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /HOBO_CI_DEPLOY_ROLLBACK_FAILED/u);
+			assert.doesNotMatch(ran.stdout, /eyJhbGciOiJIUzI1NiJ9/u);
+			assert.match(ran.stdout, /\[redacted\]/u);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -86,7 +144,7 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
 			);
 			assert.equal(ran.status, 1);
-			assert.match(ran.stdout, /\[jwt redacted\]/u);
+			assert.match(ran.stdout, /\[redacted\]/u);
 			assert.doesNotMatch(ran.stdout, /eyJhbGciOiJIUzI1NiJ9/u);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -108,6 +166,85 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			assert.equal(ran.status, 1);
 			assert.match(ran.stdout, /HOBO_CI_SECRET_STORE_VERIFY_NO_ENVELOPE/u);
 			assert.match(ran.stdout, /::error title=Secret store verify::/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("hides every credential the retired redactNoise rule hid, at the production call sites' own windows", () => {
+		const hidden = assertRevealsNoMore(
+			retiredRelayDeployRedactNoise,
+			(text) => redactRelayDeployText(text),
+			{ count: 5_000, kept: KEPT_LOCATOR },
+		);
+		assert.ok(hidden > 500);
+		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
+		for (const text of [
+			"Bearer SECRetKpR9wZ",
+			"bearer\tSECRetKpR9wZ",
+			`Authorization: Bearer SECRetKpR9wZ ${jwt}`,
+		])
+			for (const window of [undefined, 4096])
+				assert.equal(
+					redactRelayDeployText(text, window).includes("SECRetKpR9wZ"),
+					false,
+					String(window),
+				);
+	});
+
+	it("emits no credential past the window it searches, at the report scripts' own bounds", () => {
+		const filler = "provider noise line\n";
+		const total = 20_000;
+		const chars = filler.repeat(total / filler.length).split("");
+		const place = (offset: number, credential: string) => {
+			chars.splice(offset, credential.length, ...credential);
+		};
+		place(8_000, "Bearer in-window-credential-8k");
+		place(9_000, "Bearer past-default-window-9k");
+		place(17_000, "Bearer past-4096-window-17k");
+		place(18_000, "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.pastwindow");
+		const text = chars.join("");
+		for (const maxLength of [undefined, 4096] as const) {
+			const out = redactRelayDeployText(text, maxLength);
+			for (const marker of [
+				"in-window-credential-8k",
+				"past-default-window-9k",
+				"past-4096-window-17k",
+				"pastwindow",
+			])
+				assert.equal(
+					out.includes(marker),
+					false,
+					`${marker} leaked at maxLength ${String(maxLength)}`,
+				);
+			assert.ok(
+				out.length <= (maxLength ?? 256) + 1,
+				`emission unbounded at maxLength ${String(maxLength)}: ${out.length}`,
+			);
+			assert.ok(out.endsWith("…"), "a text past the window is marked cut");
+		}
+	});
+
+	it("redacts an untrusted envelope code in the summary and annotation", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "out.json");
+		try {
+			writeFileSync(
+				json,
+				JSON.stringify({
+					ok: false,
+					code: "HOBO_TEST Bearer SECRetKpR9wZ",
+					message: "login-denied",
+				}),
+			);
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, "", "1"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /\[redacted\]/iu);
+			assert.doesNotMatch(ran.stdout, /SECRetKpR9wZ/u);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

@@ -2,7 +2,8 @@
 
 For repository CI, run `hobo ci connect`; see [CI setup and command reference](CI.md)
 for Git remote detection, isolated runner consent, account credentials, run logs,
-retries, and the documented Vercel CLI parity.
+retries, staged relay production delivery from the owner's store session, and
+the documented Vercel CLI parity.
 
 **Product composition root** for the end-user `hobo` CLI (and `hobo-mcp`).
 This package is the composed product binary; **`@hobo/cli`** is the shell,
@@ -528,9 +529,9 @@ non-secret settings), and realizes it as one git-source Vercel deployment
 through the git-artifact mode above: the non-secret settings first, then each of
 the Bindle's resources applied through the provider the Yard names, which
 deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
-otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
-currently adopts and verifies a Git-sourced deployment; it does not run this
-deploy command.
+otherwise). No workflow runs this deploy command: it reads the Vercel token
+`owner://HOBO_CD_VERCEL_TOKEN` through the owner's store session, which no
+GitHub Actions job holds.
 
 Delivery planning also reads declared secret projections from Yards in the
 relay's own Junction, keeping each projection under its source Yard. A declared

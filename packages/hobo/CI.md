@@ -681,7 +681,26 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
 | `--wait` | Drive the deployment to READY and verification with a 20-minute budget checked between passes; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
-| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+| `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration; preview only, since production needs the bundled store binding (`HOBO_CI_DEPLOY_PRODUCTION_NEEDS_PREBUILT`). `prebuilt` (what the relay's owner-session deploy runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
+
+Preview `--wait` requires `--sha` and verifies the commit on the deployment
+just created with a GitHub OIDC token scoped to that deployment's origin. The
+deployment URL must normalize to an `https` `*.vercel.app` host under the
+project name, using Vercel's [generated deployment or Git-branch URL
+form](https://vercel.com/docs/deployments/generated-urls); otherwise the
+protected probe fails closed (HTTP 503) and no token is minted. If protected
+OIDC probing is unavailable or disabled, or `--sha` is omitted, the command
+refuses before creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a
+shared preview origin cannot substitute for that attestation. Protected probing
+is enabled by `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true`, and
+`HOBO_CI_RELAY_STAGED_PRODUCTION=true` uses the same probe on a staged
+production deployment before promoting it ([staged
+production](../ci-vercel/README.md#deploying-the-relay-with-hobo)). Each opt-in
+accepts only `true` or `false` when its path is used; a malformed value does not
+reject a dry run or an unrelated deploy path. The
+token is minted only inside a GitHub Actions job, so from an owner store session
+these probes answer 503: the deploy fails, and a staged production deploy rolls
+production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`).
 
 An in-flight provider operation can outlast the budget. This relay path does
 not durably fence it across lease expiry, processes or restarts; inspect the

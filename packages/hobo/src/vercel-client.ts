@@ -127,6 +127,7 @@ export interface CreateGitDeploymentInput {
 	// "production", or nothing for a preview deployment: Vercel takes a request
 	// with no `target` as preview, so production is only ever asked for by name.
 	readonly target?: "production";
+	readonly autoAssignCustomDomains?: false;
 	// The project name/id (Vercel `project`); defaults to `name` when omitted.
 	readonly project?: string;
 	// Project build settings (Vercel `projectSettings`), sent only when given:
@@ -276,6 +277,27 @@ export class VercelEnvRefusal extends Error {
 	}
 }
 
+export class VercelProductionDeploymentMissingError extends Error {
+	constructor() {
+		super("vercel-client: project read has no production deployment");
+		this.name = "VercelProductionDeploymentMissingError";
+	}
+}
+
+export class VercelPromotionUnconfirmedError extends Error {
+	readonly observedProduction: string | undefined;
+
+	constructor(observedProduction?: string) {
+		super(
+			observedProduction === undefined
+				? "vercel-client: promotion remains unconfirmed; production has no deployment"
+				: `vercel-client: promotion remains unconfirmed; production names ${observedProduction}`,
+		);
+		this.name = "VercelPromotionUnconfirmedError";
+		this.observedProduction = observedProduction;
+	}
+}
+
 // Create Deployment's answer when the project it names does not exist: 404,
 // `{"error":{"code":"not_found","message":"Project not found"}}`.
 export function isProjectNotFound(error: Error): boolean {
@@ -298,6 +320,7 @@ export interface VercelClientOptions {
 	readonly teamId?: string;
 	// The API base URL. Defaults to https://api.vercel.com (override for tests).
 	readonly baseUrl?: string;
+	readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface VercelClient {
@@ -335,6 +358,7 @@ export interface VercelClient {
 		readonly target?: "production" | "preview";
 		readonly limit?: number;
 	}): Promise<readonly VercelProjectDeployment[]>;
+	getProductionDeploymentId(project: string): Promise<string>;
 	promoteDeployment(project: string, deploymentId: string): Promise<void>;
 	rollbackProduction(
 		project: string,
@@ -344,6 +368,8 @@ export interface VercelClient {
 }
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
+const PROMOTION_CONFIRMATION_ATTEMPTS = 24;
+const PROMOTION_CONFIRMATION_INTERVAL_MS = 1000;
 
 // The global `fetch` presented through the injectable `VercelFetch` shape. Node
 // 18+ and modern runtimes expose a global `fetch`; we adapt it without importing
@@ -949,6 +975,9 @@ function gitDeploymentBody(input: CreateGitDeploymentInput): JsonObject {
 			...(gitSource.sha !== undefined ? { sha: gitSource.sha } : undefined),
 		},
 		...(input.target !== undefined ? { target: input.target } : undefined),
+		...(input.autoAssignCustomDomains === false
+			? { autoAssignCustomDomains: false }
+			: undefined),
 		...(input.projectSettings !== undefined
 			? { projectSettings: input.projectSettings }
 			: undefined),
@@ -1078,6 +1107,21 @@ function envStep(
 	return { key, action: "update", id: only.id };
 }
 
+function productionDeploymentId(payload: JsonObject): string {
+	const targets = payload.targets;
+	if (!isJsonObject(targets))
+		throw new VercelProductionDeploymentMissingError();
+	const production = targets.production;
+	if (!isJsonObject(production))
+		throw new VercelProductionDeploymentMissingError();
+	const id = production.id;
+	if (!isJsonString(id) || !/^dpl_[A-Za-z0-9_-]+$/u.test(id))
+		throw new Error(
+			"vercel-client: project read returned an invalid production deployment identity",
+		);
+	return id;
+}
+
 // Create the REAL Vercel deployment client. No network call happens at
 // construction; a request is formed and sent only by a method call.
 export function createVercelClient(options: VercelClientOptions): VercelClient {
@@ -1092,6 +1136,9 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	const secrets = tokenPatterns(token);
 	const fetchImpl = options.fetch ?? globalFetch;
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
 	const teamId = normalizeVercelTeamId(options.teamId);
 	const query = teamQuery(teamId);
@@ -1199,6 +1246,22 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			raw: payload,
 		};
 	}
+	const readProjectRecord = async (
+		reference: string,
+	): Promise<JsonObject & { id: string }> => {
+		const response = await send(
+			"get project",
+			"GET",
+			`${baseUrl}/v9/projects/${encodeURIComponent(reference)}${query}`,
+		);
+		if (!response.ok) throw await failure("get project", response, secrets);
+		const payload = await payloadFrom("get project", response);
+		if (!isJsonString(payload.id) || !/^prj_[A-Za-z0-9_-]+$/u.test(payload.id))
+			throw new Error(
+				"vercel-client: project read returned an invalid identity",
+			);
+		return { ...payload, id: payload.id };
+	};
 	return {
 		getDeployment: readDeployment,
 		async readProject(project: string) {
@@ -1270,13 +1333,39 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			}
 			return found;
 		},
-		async promoteDeployment(project: string, deploymentId: string) {
+		async getProductionDeploymentId(project) {
+			const reference = projectRef(project);
+			return productionDeploymentId(await readProjectRecord(reference));
+		},
+		async promoteDeployment(project, deploymentId) {
+			if (!deploymentId || !/^dpl_[A-Za-z0-9_-]+$/u.test(deploymentId))
+				throw new TypeError("invalid deployment receipt identity");
+			const reference = projectRef(project);
+			const projectData = await readProjectRecord(reference);
 			const what = "promote deployment";
 			const response = await postEmpty(
 				what,
-				`${baseUrl}/v10/projects/${projectSegment(project)}/promote/${deploymentSegment(deploymentId)}${query}`,
+				`${baseUrl}/v10/projects/${encodeURIComponent(projectData.id)}/promote/${encodeURIComponent(deploymentId)}${query}`,
 			);
 			if (!response.ok) throw await failure(what, response, secrets);
+			let observed: string | undefined;
+			for (
+				let attempt = 0;
+				attempt < PROMOTION_CONFIRMATION_ATTEMPTS;
+				attempt += 1
+			) {
+				try {
+					observed = productionDeploymentId(await readProjectRecord(reference));
+				} catch (error) {
+					if (!(error instanceof VercelProductionDeploymentMissingError))
+						throw error;
+					observed = undefined;
+				}
+				if (observed === deploymentId) return;
+				if (attempt + 1 < PROMOTION_CONFIRMATION_ATTEMPTS)
+					await sleep(PROMOTION_CONFIRMATION_INTERVAL_MS);
+			}
+			throw new VercelPromotionUnconfirmedError(observed);
 		},
 		async rollbackProduction(
 			project: string,

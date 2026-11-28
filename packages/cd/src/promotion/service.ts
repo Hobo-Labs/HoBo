@@ -71,6 +71,7 @@ import type {
 	PromoteRequest,
 	PromotionId,
 	PromotionService,
+	PromotionTickOptions,
 	RolloutId,
 	SetId,
 	SetResolver,
@@ -239,6 +240,18 @@ function asPromotion(id: string): PromotionId {
 
 function isRail(freight: FreightRecord): boolean {
 	return freight.manifest?.subject === FreightSubject.RAIL;
+}
+
+const DRIVER_ONLY_PREFIX = "hobo.cd/driver-only:";
+
+function storedIdempotencyKey(input: PromoteRequest): string {
+	return input.driverOnly === true
+		? `${DRIVER_ONLY_PREFIX}${input.idempotencyKey}`
+		: input.idempotencyKey;
+}
+
+function isDriverOnly(request: PromotionRecord): boolean {
+	return request.idempotencyKey.startsWith(DRIVER_ONLY_PREFIX);
 }
 
 export function createPromotionService(
@@ -1679,11 +1692,13 @@ export function createPromotionService(
 		promotionId: string,
 		ctx: CdContext,
 		all?: readonly PromotionView[],
+		allowDriverOnly = false,
 	): Promise<void> {
 		const loaded = await load(promotionId);
 		if (!loaded || loaded.view.rolledBack || loaded.view.sagaCompleted) return;
 		const { view, trigger } = loaded;
 		if (view.preview && view.previewExpired) return;
+		if (isDriverOnly(view.request) && !allowDriverOnly) return;
 		const everyone = all ?? (await views());
 		let failure: CampFailure | undefined;
 		const saga = defineSaga({
@@ -1772,6 +1787,7 @@ export function createPromotionService(
 				sourceCampId: input.sourceCampId ?? "",
 				strategy: input.strategy ?? null,
 				proposal: input.proposal === true,
+				...(input.driverOnly === true ? { driverOnly: true } : undefined),
 				fanoutId: input.fanoutId ?? "",
 				intent,
 				deploymentMode: input.deploymentMode ?? "",
@@ -1801,6 +1817,7 @@ export function createPromotionService(
 			recorded.fanoutId === (input.fanoutId ?? "") &&
 			recorded.strategy === (input.strategy ?? RolloutStrategy.UNSPECIFIED) &&
 			recorded.proposal === (input.proposal === true) &&
+			isDriverOnly(recorded) === (input.driverOnly === true) &&
 			canonicalJson(recorded.targetCampIds) === canonicalJson(input.targets) &&
 			(!preview ||
 				(loaded.view.preview?.ttlMs === preview.ttlMs &&
@@ -1948,7 +1965,7 @@ export function createPromotionService(
 			requestedAt: iso(ctx.now()),
 			strategy: input.strategy ?? node?.strategy ?? RolloutStrategy.UNSPECIFIED,
 			proposal,
-			idempotencyKey: input.idempotencyKey,
+			idempotencyKey: storedIdempotencyKey(input),
 			fanoutId: input.fanoutId ?? "",
 			subject: rail ? FreightSubject.RAIL : FreightSubject.BINDLE,
 			deploymentMode: input.deploymentMode ?? "",
@@ -2376,11 +2393,21 @@ export function createPromotionService(
 				: filtered;
 		},
 
-		async tick(ctx) {
+		async tick(ctx, options?: PromotionTickOptions) {
 			const all = await views();
 			for (const view of all) {
 				if (view.rolledBack || view.sagaCompleted) continue;
-				await advance(view.promotionId, ctx, all);
+				if (
+					options?.promotionId !== undefined &&
+					view.promotionId !== options.promotionId
+				)
+					continue;
+				await advance(
+					view.promotionId,
+					ctx,
+					all,
+					options?.allowDriverOnly === true,
+				);
 			}
 		},
 

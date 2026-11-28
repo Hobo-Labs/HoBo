@@ -4350,7 +4350,14 @@ describe("the workflows that route", () => {
 			"scripts/ci/route-runner.mts",
 			"scripts/ci/runner-routing.mts",
 		]);
-		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
+		assert.deepEqual([...routed].sort(), [
+			".github/workflows/hobo-ci.yml",
+			".github/workflows/pricing-ci.yml",
+			".github/workflows/relay-deploy.yml",
+			".github/workflows/release-hobo.yml",
+			".github/workflows/release-pricing.yml",
+			".github/workflows/release-ts-autocode.yml",
+		]);
 		for (const path of routed) {
 			const lines = new Set(
 				read(path)

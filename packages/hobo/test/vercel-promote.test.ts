@@ -46,20 +46,33 @@ const TEAM = "team_000000000000000000000000";
 const PROJECT = "prj_0000000000000000000000000000";
 
 describe("promote and rollback", () => {
-	it("promotes a deployment by id with no body, team-scoped", async () => {
-		const transport = scripted([reply(201, {})]);
+	it("promotes a deployment by id with no body, team-scoped, and confirms production", async () => {
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(201, {}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
 		const client = createVercelClient({
 			token: TOKEN,
 			teamId: TEAM,
 			fetch: transport.fetch,
 		});
 		await client.promoteDeployment(PROJECT, "dpl_staged1");
-		expect(transport.sent).toHaveLength(1);
-		const [request] = transport.sent;
+		expect(transport.sent.map((request) => request.init.method)).toEqual([
+			"GET",
+			"POST",
+			"GET",
+		]);
+		const request = transport.sent[1];
 		expect(request?.url).toBe(
 			`https://api.vercel.com/v10/projects/${PROJECT}/promote/dpl_staged1?teamId=${TEAM}`,
 		);
-		expect(request?.init.method).toBe("POST");
 		expect(request?.init.body).toBeUndefined();
 		expect(request?.init.headers).toEqual({
 			Authorization: `Bearer ${TOKEN}`,
@@ -67,15 +80,92 @@ describe("promote and rollback", () => {
 	});
 
 	it("accepts 202 (promotion queued) as success", async () => {
-		const transport = scripted([reply(202, {})]);
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(202, {}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
 		const client = createVercelClient({ token: TOKEN, fetch: transport.fetch });
 		await expect(
 			client.promoteDeployment(PROJECT, "dpl_staged1"),
 		).resolves.toBeUndefined();
 	});
 
+	it("polls a queued promotion until the production read-back names it", async () => {
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(202, {}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
+		const sleeps: number[] = [];
+		const client = createVercelClient({
+			token: TOKEN,
+			fetch: transport.fetch,
+			sleep: async (ms) => {
+				sleeps.push(ms);
+			},
+		});
+		await expect(
+			client.promoteDeployment(PROJECT, "dpl_staged1"),
+		).resolves.toBeUndefined();
+		expect(transport.sent.map((request) => request.init.method)).toEqual([
+			"GET",
+			"POST",
+			"GET",
+			"GET",
+		]);
+		expect(sleeps).toEqual([1000]);
+	});
+
+	it("polls through a read-back with no production assignment yet", async () => {
+		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
+			reply(202, {}),
+			reply(200, { id: PROJECT, targets: {} }),
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_staged1" } },
+			}),
+		]);
+		const sleeps: number[] = [];
+		const client = createVercelClient({
+			token: TOKEN,
+			fetch: transport.fetch,
+			sleep: async (ms) => {
+				sleeps.push(ms);
+			},
+		});
+		await expect(
+			client.promoteDeployment(PROJECT, "dpl_staged1"),
+		).resolves.toBeUndefined();
+		expect(sleeps).toEqual([1000]);
+	});
+
 	it("fails typed when Vercel refuses the promotion, without the token", async () => {
 		const transport = scripted([
+			reply(200, {
+				id: PROJECT,
+				targets: { production: { id: "dpl_live" } },
+			}),
 			reply(409, {
 				error: {
 					code: "deployment_not_ready",

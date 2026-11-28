@@ -513,6 +513,7 @@ export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
+		credentialFetch?: typeof fetch;
 		interactive?: boolean;
 		prompt?: (question: string) => Promise<string>;
 		git?: (args: readonly string[], cwd: string) => Promise<string>;
@@ -682,6 +683,9 @@ export function createCiCommand(
 					values,
 					env: deps.env ?? process.env,
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
+					...(deps.credentialFetch !== undefined
+						? { credentialFetch: deps.credentialFetch }
+						: undefined),
 					...(deps.ownerCredentials !== undefined
 						? { ownerCredentials: deps.ownerCredentials(flags.cwd) }
 						: undefined),
@@ -732,6 +736,9 @@ export function createCiCommand(
 						: undefined),
 					...bindingStoreFor(deps.ownerEntries, flags.cwd),
 					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					...(deps.credentialFetch !== undefined
+						? { credentialFetch: deps.credentialFetch }
+						: undefined),
 					...(deps.runtime !== undefined
 						? { runtime: deps.runtime }
 						: undefined),
@@ -772,7 +779,9 @@ export function createCiCommand(
 								: String(values["owner-id"]),
 						env: deps.env ?? process.env,
 						emitProgress,
-						fetch: deps.fetch,
+						...((deps.credentialFetch ?? deps.fetch) !== undefined
+							? { fetch: deps.credentialFetch ?? deps.fetch }
+							: undefined),
 						sleep: deps.sleep,
 					});
 				const allowed = new Set([

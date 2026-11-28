@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-141 codes.
+145 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -63,6 +63,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDLE_PROVIDER`](#hobo_ci_deploy_bindle_provider) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_BUDGET_EXHAUSTED`](#hobo_ci_deploy_budget_exhausted) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_BUILD_FAILED`](#hobo_ci_deploy_build_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`](#hobo_ci_deploy_checkout_mismatch) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_COMMIT_MISMATCH`](#hobo_ci_deploy_commit_mismatch) | `packages/hobo/src/ci-relay-verify.ts` |
@@ -71,18 +72,21 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_FAILED`](#hobo_ci_deploy_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_FREIGHT_REFUSED`](#hobo_ci_deploy_freight_refused) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_INCOMPLETE`](#hobo_ci_deploy_incomplete) | `packages/hobo/src/ci-relay-delivery.ts` |
+| [`HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED`](#hobo_ci_deploy_live_verification_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NOT_QUALIFIED`](#hobo_ci_deploy_not_qualified) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_READY`](#hobo_ci_deploy_not_ready) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
-| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_NO_ANSWER`](#hobo_ci_deploy_no_answer) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NO_CAMP`](#hobo_ci_deploy_no_camp) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_NO_HTTP_ENTRY`](#hobo_ci_deploy_no_http_entry) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_PLANNED`](#hobo_ci_deploy_planned) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`](#hobo_ci_deploy_preview_commit_unverified) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_PROMOTE_FAILED`](#hobo_ci_deploy_promote_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
-| [`HOBO_CI_DEPLOY_PROMOTION_REFUSED`](#hobo_ci_deploy_promotion_refused) | `packages/hobo/src/ci-relay-delivery.ts` |
+| [`HOBO_CI_DEPLOY_PROMOTION_REFUSED`](#hobo_ci_deploy_promotion_refused) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED`](#hobo_ci_deploy_relay_not_configured) | `packages/hobo/src/ci-relay-verify.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_READY`](#hobo_ci_deploy_relay_not_ready) | `packages/hobo/src/ci-relay-verify.ts` |
 | [`HOBO_CI_DEPLOY_ROLLBACK_FAILED`](#hobo_ci_deploy_rollback_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN`](#hobo_ci_deploy_rollback_target_unknown) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_ROLLED_BACK`](#hobo_ci_deploy_rolled_back) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_SETTING_REFUSED`](#hobo_ci_deploy_setting_refused) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
@@ -671,6 +675,22 @@ Message:
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOY_BUDGET_EXHAUSTED
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Messages:
+
+```text
+The deploy deadline {…} passed before production was created.
+```
+
+```text
+The deploy deadline {…} passed before production traffic was promoted.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_BUILD_FAILED
 
 Returned from `packages/hobo/src/vercel-prebuilt.ts`.
@@ -733,6 +753,10 @@ deploy/delivery.ts: {loaded.code}: {loaded.message}. {loaded.remediation}
 ```
 
 ```text
+The relay finalizer needs exactly one {pipeline}/{node} pipeline node; found {finalizationTargets}.
+```
+
+```text
 CD refused the relay's delivery records: {…}
 ```
 
@@ -752,7 +776,18 @@ CD could not be configured: {…}
 The CD journal could not be opened (cd-store-unavailable): {…}
 ```
 
-What to do: follow the message.
+```text
+The relay finalization suite has no finalizer configured
+```
+
+```text
+The relay finalization suite ran for another promotion
+```
+
+What to do:
+
+- Run staged production through hobo ci deploy with its finalizer.
+- Run the finalizer for the Freight and Camp being delivered.
 
 ### HOBO_CI_DEPLOY_FAILED
 
@@ -794,6 +829,18 @@ The promotion of {freight.alias} to {campId} had not finished ({…}) when the w
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message:
+
+```text
+Vercel accepted the promotion, but {liveOrigin} did not become healthy for the pinned commit before the deploy deadline.{recovery.note}
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_NOT_QUALIFIED
 
 Returned from `packages/hobo/src/ci-relay-delivery.ts`.
@@ -830,9 +877,13 @@ What to do:
 
 ### HOBO_CI_DEPLOY_NOT_STAGED
 
-Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts`.
 
 Messages:
+
+```text
+The build staged for Freight {freightId} ({existing.id}) names commit {…}, not {pinned}: it is not promoted.
+```
 
 ```text
 Project {input.project} has no build staged for Freight {input.freightId}: production promotes only the build its staging node uploaded and verified. Run hobo ci deploy --target preview --build prebuilt for {input.sha} first.
@@ -898,6 +949,22 @@ Dry run: nothing was sent to Vercel, and no deploy token was read.
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Messages:
+
+```text
+A staged production deploy pinned to --sha verifies exactly that commit's deployment; {RELAY_VERIFY_ORIGIN.production} is not set to an https origin, so this deploy would verify none.
+```
+
+```text
+A --wait deploy pinned to --sha verifies exactly that commit's deployment; this {target} deploy would verify none. Pass --sha with GitHub OIDC verification (preview) or --target production with --sha.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_PROMOTE_FAILED
 
 Returned from `packages/hobo/src/vercel-prebuilt.ts`.
@@ -905,26 +972,56 @@ Returned from `packages/hobo/src/vercel-prebuilt.ts`.
 Message:
 
 ```text
-Vercel refused to promote {staged.id}: {…}
+Vercel refused to promote {staged.id}: {reason}
 ```
 
 What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_PROMOTION_REFUSED
 
-Returned from `packages/hobo/src/ci-relay-delivery.ts`.
+Returned from `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts`.
 
 Messages:
+
+```text
+Camp {request.campId}'s desired Set {…} carries Freight {…}, not {request.freightId}: the finalizer never runs for another promotion's candidate
+```
 
 ```text
 CD refused to promote {freight.alias} to {campId}: {…}
 ```
 
 ```text
+The promotion of {freight.alias} to {campId} ended promoted, but no desired Set exists to bind its finalizer to: the finalizer never runs without the Set it promoted.
+```
+
+```text
+The promotion of {freight.alias} to {campId} ended {…}, but the Camp's desired Set {set.setId} carries Freight {set.freightId}, not {freight.freightId}: the finalizer never runs for another promotion's candidate.
+```
+
+```text
 The promotion of {freight.alias} to {campId} ended {…}: {…}
 ```
 
-What to do: follow the message.
+```text
+The staged production deployment was not qualified; production traffic was not changed.
+```
+
+```text
+Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.
+```
+
+```text
+Production traffic names {…}, not the staged deployment {safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.
+```
+
+```text
+Production traffic names no deployment, not the staged deployment {safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.
+```
+
+What to do:
+
+- Re-run hobo ci deploy for the Freight being delivered; its own promotion drives the finalizer.
 
 ### HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED
 
@@ -980,6 +1077,18 @@ What to do:
 Returned from `packages/hobo/src/ci-relay-deploy.ts`.
 
 Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message:
+
+```text
+The staged deployment is already current production, but {liveOrigin} is not healthy for the pinned commit and no previous production deployment was recorded; manual recovery is required.
+```
 
 What to do: follow the message.
 

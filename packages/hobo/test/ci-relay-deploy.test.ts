@@ -305,6 +305,23 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
+	it("ignores malformed opt-in probe settings on a dry run that uses neither", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "not-a-boolean",
+			},
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_PLANNED",
+		});
+		expect(sent).toEqual([]);
+	});
+
 	it("refuses a production deploy Vercel would build from git, in a dry run too: it carries no store coordinates", async () => {
 		const { fetch, sent } = unreachable();
 		for (const mode of [["--dry-run"], []]) {
@@ -1272,6 +1289,110 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(sent).toEqual([]);
 	});
 
+	it("ignores a malformed staged-production setting when staged production is not used", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				"--build",
+				"prebuilt",
+				"--wait",
+			],
+			{
+				fetch,
+				env: {
+					VERCEL_TOKEN: TOKEN,
+					VERCEL_TEAM_ID: TEAM,
+					...ORIGINS,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "false",
+				},
+			},
+		);
+		expect(ran.envelope).not.toMatchObject({
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses a malformed staged-production setting on the staged production path", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				"--build",
+				"prebuilt",
+				"--wait",
+			],
+			{
+				fetch,
+				env: {
+					VERCEL_TOKEN: TOKEN,
+					VERCEL_TEAM_ID: TEAM,
+					...ORIGINS,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "not-a-boolean",
+				},
+			},
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_STAGED_PRODUCTION accepts only true or false",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses a malformed preview-OIDC setting only on the protected preview path", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "not-a-boolean",
+			},
+		});
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining(
+				"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accepts only true or false",
+			),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses preview --wait --sha over HTTPS when protected OIDC probing is unavailable and record verification is not used", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
+			},
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+		});
+		expect(sent).toEqual([]);
+	});
+
 	it("verifies preview by the deployment record when no preview origin is set, probing nothing", async () => {
 		const probed: string[] = [];
 		const http: HttpTransport = async (request) => {
@@ -1427,7 +1548,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const clock = steppingClock();
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
-			env,
+			env: { ...env, HOBO_CI_RELAY_PREVIEW_URL: "" },
 			hoboHome: home,
 			probe: healthyRelay().http,
 			...clock,

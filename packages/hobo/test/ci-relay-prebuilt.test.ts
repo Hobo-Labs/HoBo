@@ -200,7 +200,7 @@ function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 			});
 			vercel.state.deployments.push({
 				uid: "dpl_staged",
-				url: "https://hobo-ci-staged.vercel.app",
+				url: "https://hobo-ci-7f8x2k3p9-hobo-labs.vercel.app",
 				readyState: "READY",
 				target: "production",
 				created: 1_794_600_000_000,
@@ -208,7 +208,7 @@ function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 			});
 			return {
 				code: 0,
-				stdout: "https://hobo-ci-staged.vercel.app\n",
+				stdout: "https://hobo-ci-7f8x2k3p9-hobo-labs.vercel.app\n",
 				stderr: "",
 			};
 		}
@@ -267,6 +267,7 @@ async function deploy(
 		readonly probe?: HttpTransport;
 		readonly sleep?: (ms: number) => Promise<void>;
 		readonly now?: () => number;
+		readonly credentialFetch?: typeof fetch;
 	},
 ) {
 	const cli = createHoboCli({
@@ -283,6 +284,9 @@ async function deploy(
 				ownerEntries: () => ownerStoreEntries(OWNER_STORE),
 				vercelFetch: options.fetch,
 				vercelBuild: options.build,
+				...(options.credentialFetch !== undefined
+					? { credentialFetch: options.credentialFetch }
+					: undefined),
 				checkoutHead: async () => options.head ?? SHA,
 				hoboHome: options.hoboHome,
 				probeHttp: options.probe ?? relayAt(SHA).http,
@@ -712,5 +716,292 @@ describe("hobo ci deploy --build prebuilt: review guards", () => {
 			),
 		});
 		expect(vercel.state.sent.some((s) => s.includes("/rollback/"))).toBe(false);
+	});
+});
+
+describe("hobo ci deploy --build prebuilt: staged production recovery", () => {
+	const STAGED_ENV = {
+		...PRODUCTION_ENV,
+		HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+		HOBO_CI_RELAY_PUBLIC_URL: PRODUCTION_ORIGIN,
+		HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
+		ACTIONS_ID_TOKEN_REQUEST_URL:
+			"https://token.actions.example.test/token?api-version=2.0",
+		ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+	};
+	const credentialFetch: typeof fetch = async () =>
+		new Response(
+			JSON.stringify({
+				value: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0In0.c2ln",
+			}),
+			{ status: 200, headers: { "content-type": "application/json" } },
+		);
+	const liveUnhealthy: HttpTransport = async (request) => {
+		const live = request.url.startsWith(PRODUCTION_ORIGIN);
+		return {
+			status: live ? 503 : 200,
+			headers: { "content-type": "application/json" },
+			body: request.url.endsWith("/healthz")
+				? JSON.stringify({ ok: !live, commit: SHA })
+				: JSON.stringify({ ready: !live }),
+		};
+	};
+
+	function withFault(
+		vercel: ReturnType<typeof prebuiltVercel>,
+		fault: "promote-error" | "promote-refused" | "read-missing" | "read-error",
+	): VercelFetch {
+		let promoted = false;
+		let faulted = false;
+		return async (url, init) => {
+			const path = new URL(url).pathname;
+			if (
+				init.method === "POST" &&
+				path === `/v10/projects/${PROJECT_ID}/promote/dpl_staged`
+			) {
+				promoted = true;
+				const answer =
+					fault === "promote-refused"
+						? undefined
+						: await vercel.fetch(url, init);
+				if (answer !== undefined && fault !== "promote-error") return answer;
+				vercel.state.sent.push(`${init.method} ${path}`);
+				return {
+					ok: false,
+					status: 500,
+					async text() {
+						return JSON.stringify({
+							error: { code: "internal", message: "promote failed" },
+						});
+					},
+					async json() {
+						return {};
+					},
+				};
+			}
+			if (
+				promoted &&
+				!faulted &&
+				(fault === "read-missing" || fault === "read-error") &&
+				init.method === "GET" &&
+				path === `/v9/projects/${PROJECT_ID}`
+			) {
+				faulted = true;
+				vercel.state.sent.push(`${init.method} ${path} (${fault})`);
+				const body =
+					fault === "read-missing"
+						? { id: PROJECT_ID, name: "hobo-ci", targets: {} }
+						: { error: { code: "internal", message: "read failed" } };
+				const status = fault === "read-missing" ? 200 : 500;
+				return {
+					ok: status === 200,
+					status,
+					async text() {
+						return JSON.stringify(body);
+					},
+					async json() {
+						return body;
+					},
+				};
+			}
+			return vercel.fetch(url, init);
+		};
+	}
+
+	async function production(
+		home: string,
+		clock: ReturnType<typeof steppingClock>,
+		vercel: ReturnType<typeof prebuiltVercel>,
+		options: { fetch?: VercelFetch; probe?: HttpTransport } = {},
+	) {
+		return deploy([...PINNED, "--target", "production", "--wait"], {
+			fetch: options.fetch ?? vercel.fetch,
+			build: fakeVercelBuild(vercel).run,
+			env: STAGED_ENV,
+			hoboHome: home,
+			probe: options.probe ?? relayAt(SHA).http,
+			credentialFetch,
+			...clock,
+		});
+	}
+
+	it("does not point production at the staged build until the finalizer promotes", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		let productionAtFirstPromote: string | undefined;
+		const watch: VercelFetch = async (url, init) => {
+			const path = new URL(url).pathname;
+			if (
+				init.method === "POST" &&
+				path === `/v10/projects/${PROJECT_ID}/promote/dpl_staged`
+			)
+				productionAtFirstPromote = vercel.state.production;
+			return vercel.fetch(url, init);
+		};
+		const ran = await production(home, clock, vercel, { fetch: watch });
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(productionAtFirstPromote).toBe("dpl_live");
+		expect(vercel.state.production).toBe("dpl_staged");
+	});
+
+	it("recovers when production already serves the staged build and the public relay is healthy", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		vercel.state.production = "dpl_staged";
+		const ran = await production(home, clock, vercel);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(ran.envelope).toMatchObject({ ok: true, code: "HOBO_CI_DEPLOYED" });
+		expect(ran.data.delivery).toMatchObject({
+			node: "production",
+			state: "PROMOTED",
+		});
+		expect(vercel.state.sent.some((line) => line.includes("/promote/"))).toBe(
+			false,
+		);
+	});
+
+	it("fails and restores the previous production deployment when no GitHub OIDC token can reach the staged probe", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const {
+			ACTIONS_ID_TOKEN_REQUEST_URL: _url,
+			ACTIONS_ID_TOKEN_REQUEST_TOKEN: _token,
+			...ownerSessionEnv
+		} = STAGED_ENV;
+		let credentialResponse = "";
+		const trackedCredentialFetch: typeof fetch = async (input, init) => {
+			const answer = await credentialFetch(input, init);
+			credentialResponse = await answer.clone().text();
+			return answer;
+		};
+		const ran = await deploy([...PINNED, "--target", "production", "--wait"], {
+			fetch: vercel.fetch,
+			build: fakeVercelBuild(vercel).run,
+			env: ownerSessionEnv,
+			hoboHome: home,
+			probe: relayAt(SHA).http,
+			credentialFetch: trackedCredentialFetch,
+			...clock,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_RELAY_NOT_READY",
+		});
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+		expect(vercel.state.production).toBe("dpl_live");
+		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
+		expect(credentialResponse).not.toContain("synthetic-request-token");
+		expect(JSON.stringify(ran.envelope)).not.toMatch(
+			/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
+		);
+	});
+
+	it("fails with explicit manual recovery when the staged build is already live and the public relay is unhealthy", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		vercel.state.production = "dpl_staged";
+		const ran = await production(home, clock, vercel, { probe: liveUnhealthy });
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN",
+		});
+		expect(String(ran.envelope.message)).toContain(
+			"manual recovery is required",
+		);
+		expect(String(ran.envelope.message)).toContain(
+			"no previous production deployment was recorded",
+		);
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+	});
+
+	it.each([
+		["an unreadable promotion read-back", "read-error"],
+		["a promotion read-back naming no production deployment", "read-missing"],
+		["a promotion error after Vercel promoted", "promote-error"],
+	] as const)("treats %s as possibly promoted, verifies the public relay, and rolls back on failure", async (_name, fault) => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const ran = await production(home, clock, vercel, {
+			fetch: withFault(vercel, fault),
+			probe: liveUnhealthy,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+		});
+		expect(ran.data).toMatchObject({ rollback: "completed" });
+		expect(vercel.state.sent).toContain(
+			`POST /v10/projects/${PROJECT_ID}/promote/dpl_staged`,
+		);
+		expect(vercel.state.sent).toContain(
+			`POST /v10/projects/${PROJECT_ID}/promote/dpl_live`,
+		);
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+		expect(vercel.state.production).toBe("dpl_live");
+		expect(JSON.stringify(ran.envelope)).not.toContain(TOKEN);
+	});
+
+	it("refuses without rolling back when Vercel refused the promotion and production still serves the earlier build", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const ran = await production(home, clock, vercel, {
+			fetch: withFault(vercel, "promote-refused"),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_VERCEL_REFUSED",
+		});
+		expect(vercel.state.production).toBe("dpl_live");
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+	});
+
+	it("leaves a concurrent production promotion untouched when the finalizer reports a superseded rollback", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		const supersedingProbe: HttpTransport = async (request) => {
+			const answer = await liveUnhealthy(request);
+			if (request.url.startsWith(PRODUCTION_ORIGIN))
+				vercel.state.production = "dpl_concurrent";
+			return answer;
+		};
+		const ran = await production(home, clock, vercel, {
+			probe: supersedingProbe,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+		});
+		expect(ran.data).toMatchObject({ rollback: "superseded" });
+		expect(vercel.state.sent.some((line) => line.includes("/rollback/"))).toBe(
+			false,
+		);
+		expect(vercel.state.production).toBe("dpl_concurrent");
 	});
 });

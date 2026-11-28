@@ -34,6 +34,7 @@ import { describe, expect, it } from "vitest";
 import {
 	CREDENTIAL_PATTERNS,
 	decodePercentFully,
+	GLUED_BEARER_PATTERN,
 	JSON_JWT_PATTERN,
 	JWT_DETECTOR,
 	JWT_PATTERN,
@@ -146,6 +147,10 @@ describe("every pattern on a hostile text", () => {
 			words: ["eyJ", "-eyJ", "eyJAAAAAAAA.", "eyJAAAAAAAA.AAAAAAAA."],
 		},
 		bearer: { alphabet: ALNUM, words: ["Bearer", "Bearer "] },
+		"glued bearer": {
+			alphabet: ALNUM,
+			words: ["bearer", "bearer ", "xBearer", "bearer\t"],
+		},
 		"authorization header": {
 			alphabet: ALNUM,
 			words: [
@@ -265,6 +270,14 @@ describe("every pattern on a hostile text", () => {
 				},
 				patternSpec(detector, spec),
 			);
+		},
+		GROWTH_TIMEOUT_MS,
+	);
+
+	it(
+		"the glued-bearer pattern grows linearly on every class and pair of classes",
+		() => {
+			assertPatternSweepLinear(GLUED_BEARER_PATTERN, searchAsRedactor);
 		},
 		GROWTH_TIMEOUT_MS,
 	);

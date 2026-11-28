@@ -113,3 +113,9 @@ describe("round 6's leaks", () => {
 		expect(redactProviderText(text, 400)).toBe(out);
 	});
 });
+
+describe("glued bearer percent-encoding", () => {
+	it("redacts a glued bearer token with percent-encoded bytes", () => {
+		expect(redactProviderText("fooBearer abc%2FSECRET")).toBe("foo[redacted]");
+	});
+});

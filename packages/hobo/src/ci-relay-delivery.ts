@@ -58,7 +58,9 @@ import {
 	FreightManifestRecordSchema,
 	FreightOrigin,
 	type FreightRecord,
-	type PromotionId,
+	HookKind,
+	HookPoint,
+	HookRecordSchema,
 	type PromotionRecord,
 	PromotionRecordSchema,
 	PromotionState,
@@ -83,7 +85,13 @@ import {
 	defaultCdFactories,
 	HOBO_CI_COMPONENTS,
 	parseCdComposeConfig,
+	unconfiguredSuites,
 } from "@hobo/cd/compose";
+import {
+	createHookRunner,
+	createPromotionService,
+	promotionIdFor,
+} from "@hobo/cd/promotion";
 import { createInProcessTransport } from "@hobo/cd/reconcile";
 import {
 	createRegistryFromProviders,
@@ -226,6 +234,12 @@ export type RelayDeliveryInput = Readonly<{
 	 * deployment; the promotion stays in flight in the journal.
 	 */
 	wait?: boolean;
+	finalizePromotion?: (
+		delivery: Readonly<{
+			report: RelayDeliveryReport;
+			handover: Readonly<Record<string, string>>;
+		}>,
+	) => Promise<RelayRealizationFailure | undefined>;
 	emitProgress?: (message: string) => void;
 }>;
 
@@ -260,6 +274,7 @@ export type RelayDeliveryOutcome =
 const DEFAULT_LIMIT_MS = 20 * 60_000;
 const DEFAULT_INTERVAL_MS = 10_000;
 const DEFAULT_FEED_WAIT_MS = 5_000;
+const RELAY_FINALIZATION_SUITE = "relay:finalize-promotion";
 
 const DISCARDING_TELEMETRY: TelemetrySink = Object.freeze({
 	spans: async () => {},
@@ -799,10 +814,120 @@ async function deliverWith(
 		...joined.map((yard) => relayYardRegistryProvider(yard, true)),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
-	const suites = input.suites;
+	const finalizePromotion = input.finalizePromotion;
+	let finalizedSetId: string | undefined;
+	let finalizationFailure: RelayRealizationFailure | undefined;
+	let suiteFallback: VerifyPort = unconfiguredSuites();
+	const handoverFor = async (set: SetRecord | undefined, camp: CampId) => {
+		if (!set) return {};
+		const observed = await cd.desired.status(camp);
+		if (observed?.setId === set.setId) return observed.handover;
+		return realizer?.deployed(set.setId) ?? {};
+	};
+	const suites: VerifyPort = {
+		async run(request, ctx) {
+			if (request.suite !== RELAY_FINALIZATION_SUITE)
+				return (input.suites ?? suiteFallback).run(request, ctx);
+			if (finalizePromotion === undefined)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.unavailable,
+							"The relay finalization suite has no finalizer configured",
+							"Run staged production through hobo ci deploy with its finalizer.",
+						),
+					],
+				};
+			if (request.campId !== campId || request.freightId !== freight.freightId)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.unavailable,
+							"The relay finalization suite ran for another promotion",
+							"Run the finalizer for the Freight and Camp being delivered.",
+						),
+					],
+				};
+			const set = await cd.desired.current(request.campId);
+			if (set?.freightId !== request.freightId)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.promotionRefused,
+							`Camp ${request.campId}'s desired Set ${set?.setId ?? "(none)"} carries Freight ${set?.freightId ?? "(none)"}, not ${request.freightId}: the finalizer never runs for another promotion's candidate`,
+							"Re-run hobo ci deploy for the Freight being delivered; its own promotion drives the finalizer.",
+						),
+					],
+				};
+			const failure = await finalizePromotion({
+				report: report(promotion, set),
+				handover: await handoverFor(set, request.campId),
+			});
+			if (failure === undefined) {
+				finalizedSetId = set.setId;
+				finalizationFailure = undefined;
+				return { ok: true, value: { finalized: true } };
+			}
+			finalizedSetId = undefined;
+			finalizationFailure = failure;
+			return {
+				ok: false,
+				reasons: [
+					reason(
+						failure.code,
+						failure.message,
+						"Inspect the finalization failure before retrying delivery.",
+					),
+				],
+			};
+		},
+	};
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
-		factories: defaultCdFactories,
+		factories: {
+			...defaultCdFactories,
+			createPromotionService(deps) {
+				const runner = createHookRunner(deps);
+				return createPromotionService({
+					...deps,
+					hooks: {
+						async run(request, ctx) {
+							if (request.point !== HookPoint.AFTER_QUALIFIED)
+								return runner.run(request, ctx);
+							const hooks = request.hooks.filter(
+								(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
+							);
+							if (
+								finalizePromotion === undefined ||
+								request.subject.pipeline !== pipeline ||
+								request.subject.node !== node ||
+								request.subject.promotionId !== promotionId ||
+								request.subject.campId !== campId ||
+								request.subject.freightId !== freight.freightId
+							)
+								return runner.run({ ...request, hooks }, ctx);
+							return runner.run(
+								{
+									...request,
+									hooks: [
+										...hooks,
+										create(HookRecordSchema, {
+											kind: HookKind.SUITE,
+											point: HookPoint.AFTER_QUALIFIED,
+											ref: RELAY_FINALIZATION_SUITE,
+										}),
+									],
+								},
+								ctx,
+							);
+						},
+					},
+				});
+			},
+		},
 		adapters: {
 			...defaultCdAdapters({
 				store,
@@ -847,7 +972,9 @@ async function deliverWith(
 					subject: async () => ({ classifications: [], residency: [] }),
 				},
 			}),
-			...(suites !== undefined ? { suites: () => suites } : undefined),
+			...(input.suites !== undefined || finalizePromotion !== undefined
+				? { suites: () => suites }
+				: undefined),
 		},
 		http,
 		credentials,
@@ -877,6 +1004,7 @@ async function deliverWith(
 			? { telemetryEndpoint: config.telemetryEndpoint }
 			: { telemetry: DISCARDING_TELEMETRY }),
 	});
+	suiteFallback = unconfiguredSuites({ telemetry: cd.sink });
 	const ctx: CdContext = {
 		tenant: config.tenant,
 		principal: cdPrincipal(input.env),
@@ -901,6 +1029,28 @@ async function deliverWith(
 			};
 		records = loaded.value;
 	}
+	records = {
+		...records,
+		pipelines: records.pipelines.map((pipelineRecord) => ({
+			...pipelineRecord,
+			nodes: pipelineRecord.nodes.map((pipelineNode) => ({
+				...pipelineNode,
+				hooks: pipelineNode.hooks.filter(
+					(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
+				),
+			})),
+		})),
+	};
+	const finalizationTargets = records.pipelines
+		.filter((pipelineRecord) => pipelineRecord.name === pipeline)
+		.flatMap((pipelineRecord) => pipelineRecord.nodes)
+		.filter((pipelineNode) => pipelineNode.name === node).length;
+	if (finalizePromotion !== undefined && finalizationTargets !== 1)
+		return {
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
+			message: `The relay finalizer needs exactly one ${pipeline}/${node} pipeline node; found ${finalizationTargets}.`,
+		};
 	const refusedRecords = await applyRecords(cd, records, ctx);
 	if (refusedRecords.length > 0)
 		return {
@@ -966,12 +1116,14 @@ async function deliverWith(
 	}
 
 	const idempotencyKey = `relay:${freight.freightId}:${campId}`;
+	const promotionId = promotionIdFor(config.tenant, idempotencyKey);
 	const requested = await cd.promotions.promote(
 		{
 			// SAFETY: the ledger's own id.
 			freightId: freight.freightId as FreightId,
 			targets: [campId],
 			idempotencyKey,
+			driverOnly: finalizePromotion !== undefined,
 			pipeline,
 			node,
 			...(node === "production" ? { sourceCampId: previewCampId } : undefined),
@@ -985,8 +1137,6 @@ async function deliverWith(
 			message: `CD refused to promote ${freight.alias} to ${campId}: ${describeReasons(requested.reasons)}`,
 			report: { ...report(), reasons: reasonsOf(requested.reasons) },
 		};
-	// SAFETY: the promotion service's own id.
-	const promotionId = requested.value.promotionId as PromotionId;
 	emit(`promotion ${promotionId} of ${freight.alias} to ${campId}`);
 
 	const holderId = `hobo-ci-deploy:${process.pid}:${randomUUID()}`;
@@ -1003,7 +1153,8 @@ async function deliverWith(
 			feedTimeoutMs: input.feedWaitMs ?? DEFAULT_FEED_WAIT_MS,
 		}),
 	});
-	const limitMs = input.limitMs ?? DEFAULT_LIMIT_MS;
+	const limitMs =
+		input.limitMs === undefined ? DEFAULT_LIMIT_MS : Math.max(0, input.limitMs);
 	const intervalMs = input.intervalMs ?? DEFAULT_INTERVAL_MS;
 	const until = now() + limitMs;
 	// A clock that does not move still ends: at most one pass per interval of the limit.
@@ -1011,23 +1162,117 @@ async function deliverWith(
 	let promotion: PromotionRecord | undefined = requested.value;
 	let last: ReconcileObservationRecord | undefined;
 	let lastState: PromotionState | undefined;
+	const realizationRefusal = (
+		current: PromotionRecord | undefined,
+		set: SetRecord,
+	): RelayDeliveryOutcome | undefined => {
+		const failure = realizer?.failure(set.setId);
+		if (failure === undefined) return undefined;
+		const delivery = report(current, set);
+		return {
+			ok: false,
+			code: failure.code,
+			message: failure.message,
+			realization: failure,
+			report:
+				finalizationFailure !== undefined ||
+				failure.code === RELAY_DELIVERY_REFUSAL.promotionRefused
+					? { ...delivery, state: "FAILED" }
+					: delivery,
+		};
+	};
+	const terminalOutcome = async (
+		terminal: PromotionRecord,
+		set: SetRecord | undefined,
+		handover: Readonly<Record<string, string>>,
+	): Promise<RelayDeliveryOutcome> => {
+		if (finalizationFailure !== undefined)
+			return {
+				ok: false,
+				code: finalizationFailure.code,
+				message: finalizationFailure.message,
+				realization: finalizationFailure,
+				report: { ...report(terminal, set), state: "FAILED" },
+				handover,
+			};
+		if (terminal.state === PromotionState.PROMOTED) {
+			if (
+				finalizePromotion !== undefined &&
+				(set === undefined || finalizedSetId !== set.setId)
+			) {
+				if (set === undefined)
+					return {
+						ok: false,
+						code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+						message: `The promotion of ${freight.alias} to ${campId} ended promoted, but no desired Set exists to bind its finalizer to: the finalizer never runs without the Set it promoted.`,
+						report: report(terminal, set),
+						handover,
+					};
+				if (set.freightId !== freight.freightId)
+					return {
+						ok: false,
+						code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+						message: `The promotion of ${freight.alias} to ${campId} ended ${PromotionState[terminal.state]}, but the Camp's desired Set ${set.setId} carries Freight ${set.freightId}, not ${freight.freightId}: the finalizer never runs for another promotion's candidate.`,
+						report: report(terminal, set),
+						handover,
+					};
+				const failure = await finalizePromotion({
+					report: report(terminal, set),
+					handover,
+				});
+				if (failure !== undefined)
+					return {
+						ok: false,
+						code: failure.code,
+						message: failure.message,
+						realization: failure,
+						report: report(terminal, set),
+						handover,
+					};
+				finalizedSetId = set.setId;
+			}
+			return { ok: true, report: report(terminal, set), handover };
+		}
+		const verificationFailed = terminal.reasons.some((entry) =>
+			entry.code.toLowerCase().includes("verification"),
+		);
+		return {
+			ok: false,
+			code: verificationFailed
+				? RELAY_DELIVERY_REFUSAL.verificationFailed
+				: RELAY_DELIVERY_REFUSAL.promotionRefused,
+			message: `The promotion of ${freight.alias} to ${campId} ended ${PromotionState[terminal.state]}: ${describeReasons(terminal.reasons)}`,
+			report: report(terminal, set),
+			handover,
+		};
+	};
 	for (;;) {
-		// The same steps `hobo serve cd` ticks, for this one promotion.
-		await cd.promotions.tick(ctx);
+		if (finalizePromotion === undefined) await cd.promotions.tick(ctx);
+		else
+			await cd.promotions.tick(ctx, {
+				promotionId,
+				allowDriverOnly: true,
+			});
+		promotion = await cd.promotions.get(promotionId);
+		if (promotion && TERMINAL.has(promotion.state)) {
+			const set = await cd.desired.current(campId);
+			const refusal =
+				set === undefined ? undefined : realizationRefusal(promotion, set);
+			if (refusal !== undefined) return refusal;
+			return terminalOutcome(promotion, set, await handoverFor(set, campId));
+		}
 		const set = await cd.desired.current(campId);
 		if (set) {
 			last = await conductor.reconcileOnce(campId, ctx);
-			const failure = realizer?.failure(set.setId);
-			if (failure)
-				return {
-					ok: false,
-					code: failure.code,
-					message: failure.message,
-					realization: failure,
-					report: report(promotion, set),
-				};
+			const refusal = realizationRefusal(promotion, set);
+			if (refusal !== undefined) return refusal;
 			const outputs = realizer?.deployed(set.setId);
-			if (input.wait === false && outputs) {
+			if (
+				input.wait === false &&
+				outputs &&
+				(finalizePromotion === undefined ||
+					(finalizationFailure === undefined && finalizedSetId === set.setId))
+			) {
 				const current = await cd.promotions.get(promotionId);
 				return {
 					ok: true,
@@ -1072,22 +1317,8 @@ async function deliverWith(
 				handover,
 			};
 		}
-		if (promotion && TERMINAL.has(promotion.state)) {
-			if (promotion.state === PromotionState.PROMOTED)
-				return { ok: true, report: report(promotion, set), handover };
-			const verificationFailed = promotion.reasons.some((entry) =>
-				entry.code.includes("verification"),
-			);
-			return {
-				ok: false,
-				code: verificationFailed
-					? RELAY_DELIVERY_REFUSAL.verificationFailed
-					: RELAY_DELIVERY_REFUSAL.promotionRefused,
-				message: `The promotion of ${freight.alias} to ${campId} ended ${PromotionState[promotion.state]}: ${describeReasons(promotion.reasons)}`,
-				report: report(promotion, set),
-				handover,
-			};
-		}
+		if (promotion && TERMINAL.has(promotion.state))
+			return terminalOutcome(promotion, set, handover);
 		if (promotion && HELD.has(promotion.state))
 			return {
 				ok: false,

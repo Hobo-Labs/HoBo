@@ -59,6 +59,51 @@ describe("promotion saga (WP6)", () => {
 		if (!reused.ok)
 			expect(reused.reasons[0]?.code).toBe(PROMOTION_REASON.idempotencyReused);
 	});
+	it("advances a driver-only promotion only through its owning tick", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.freight.add("f2");
+		const request = (freightId: string, key: string) => ({
+			freightId: fid(freightId),
+			targets: [camp("dev-1")],
+			idempotencyKey: key,
+			driverOnly: true,
+		});
+		const first = await h.service.promote(request("f1", "first"), h.ctx());
+		const second = await h.service.promote(request("f2", "second"), h.ctx());
+		expect(first.ok && second.ok).toBe(true);
+		if (!first.ok || !second.ok) return;
+		expect(first.value.state).not.toBe(PromotionState.PROMOTED);
+		expect(second.value.state).not.toBe(PromotionState.PROMOTED);
+		const ordinary = await h.service.promote(
+			{ ...request("f2", "second"), driverOnly: false },
+			h.ctx(),
+		);
+		expect(ordinary.ok).toBe(false);
+		if (!ordinary.ok)
+			expect(ordinary.reasons[0]?.code).toBe(
+				PROMOTION_REASON.idempotencyReused,
+			);
+		const other = h.restart();
+		await other.tick(h.ctx());
+		expect(await other.get(second.value.promotionId)).toEqual(second.value);
+		await other.tick(h.ctx(), {
+			promotionId: second.value.promotionId,
+			allowDriverOnly: false,
+		});
+		expect(await other.get(second.value.promotionId)).toEqual(second.value);
+		await other.tick(h.ctx(), {
+			promotionId: second.value.promotionId,
+			allowDriverOnly: true,
+		});
+		expect((await other.get(second.value.promotionId))?.state).toBe(
+			PromotionState.PROMOTED,
+		);
+		expect((await other.get(first.value.promotionId))?.state).not.toBe(
+			PromotionState.PROMOTED,
+		);
+	});
+
 	it("I1 across two providers: the same Freight reaches both Camps unrebuilt and the infrastructure diff is shown", async () => {
 		const h = harness();
 		withPipeline(h);
