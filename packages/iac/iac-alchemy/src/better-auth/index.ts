@@ -98,7 +98,7 @@ export function createNodeSqliteBetterAuthDatabaseLayer(
 			const dialect = new NodeSqliteDialect(filename);
 			return { dialect, type: "sqlite" as const };
 		}),
-		() => Effect.void,
+		({ dialect }) => Effect.promise(() => dialect.close()).pipe(Effect.ignore),
 	);
 
 	return Layer.succeed(Database, {

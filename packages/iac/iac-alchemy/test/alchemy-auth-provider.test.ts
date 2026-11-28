@@ -8,6 +8,8 @@ import {
 	ProfileStore,
 	ProfileStoreLive,
 } from "alchemy/Auth";
+import { Stage } from "alchemy/Stage";
+import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -20,6 +22,7 @@ import {
 	AuthError,
 	createHoboDopplerSecrets,
 	createHoboSecretProviders,
+	createOwnerStoreConfigLayer,
 	describeHoboAuthProfile,
 	HOBO_AUTH_PROVIDER_NAME,
 	HoboAuthCredentialBroker,
@@ -364,5 +367,35 @@ describe("Alchemy AuthProvider, Profiles, and Secret Providers for HoBo Auth", (
 			}).pipe(Effect.provide(regLayer)),
 		);
 		expect(Exit.isFailure(exit)).toBe(true);
+	});
+
+	it("isolates createOwnerStoreConfigLayer so unmapped keys never fall through to outer ConfigProviders", async () => {
+		const outerLayer = ConfigProvider.layer(
+			ConfigProvider.fromUnknown({
+				AMBIENT_LEAK: "should-never-be-visible",
+				HOBO_AUTH_SECRET: "ambient-override-forbidden",
+			}),
+		);
+		const ownerLayer = createOwnerStoreConfigLayer({
+			keys: {
+				HOBO_AUTH_SECRET: "owner://HOBO_AUTH_SECRET",
+			},
+			resolveCredential: async () => "owner-store-isolated-secret-32-chars",
+		}).pipe(Layer.provide(Layer.succeed(Stage, "prod")));
+
+		const combinedLayer = ownerLayer.pipe(Layer.provide(outerLayer));
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const mapped = yield* Config.Redacted("HOBO_AUTH_SECRET");
+				const unmappedExit = yield* Effect.exit(Config.String("AMBIENT_LEAK"));
+				return {
+					mappedValue: Redacted.value(mapped),
+					unmappedFailed: Exit.isFailure(unmappedExit),
+				};
+			}).pipe(Effect.provide(combinedLayer)),
+		);
+
+		expect(result.mappedValue).toBe("owner-store-isolated-secret-32-chars");
+		expect(result.unmappedFailed).toBe(true);
 	});
 });

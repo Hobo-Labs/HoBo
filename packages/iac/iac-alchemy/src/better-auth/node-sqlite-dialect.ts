@@ -71,6 +71,7 @@ class NodeSqliteDriver implements Driver {
 	private db: DatabaseSync | undefined;
 	private connection: NodeSqliteConnection | undefined;
 	private lockChain: Promise<void> = Promise.resolve();
+	private activeRelease: (() => void) | undefined;
 
 	constructor(private readonly filename: string) {}
 
@@ -87,20 +88,30 @@ class NodeSqliteDriver implements Driver {
 	}
 
 	async acquireConnection(): Promise<DatabaseConnection> {
-		if (this.connection === undefined) {
-			await this.init();
+		const previous = this.lockChain;
+		let release: () => void = () => undefined;
+		this.lockChain = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await previous;
+		try {
+			if (this.connection === undefined) {
+				await this.init();
+			}
+			const active = this.connection;
+			if (active === undefined) {
+				throw new Error("node:sqlite connection failed to initialize");
+			}
+			this.activeRelease = release;
+			return active;
+		} catch (error) {
+			release();
+			throw error;
 		}
-		const active = this.connection;
-		if (active === undefined) {
-			throw new Error("node:sqlite connection failed to initialize");
-		}
-		return active;
 	}
 
 	async beginTransaction(connection: DatabaseConnection): Promise<void> {
-		await this.withLock(async () => {
-			await connection.executeQuery(CompiledQuery.raw("BEGIN"));
-		});
+		await connection.executeQuery(CompiledQuery.raw("BEGIN"));
 	}
 
 	async commitTransaction(connection: DatabaseConnection): Promise<void> {
@@ -111,32 +122,27 @@ class NodeSqliteDriver implements Driver {
 		await connection.executeQuery(CompiledQuery.raw("ROLLBACK"));
 	}
 
-	async releaseConnection(): Promise<void> {}
+	async releaseConnection(): Promise<void> {
+		const release = this.activeRelease;
+		this.activeRelease = undefined;
+		release?.();
+	}
 
 	async destroy(): Promise<void> {
+		const release = this.activeRelease;
+		this.activeRelease = undefined;
+		release?.();
 		if (this.db !== undefined) {
 			this.db.close();
 			this.db = undefined;
 			this.connection = undefined;
 		}
 	}
-
-	private async withLock(operation: () => Promise<void>): Promise<void> {
-		const previous = this.lockChain;
-		let release: () => void = () => undefined;
-		this.lockChain = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		await previous;
-		try {
-			await operation();
-		} finally {
-			release();
-		}
-	}
 }
 
 export class NodeSqliteDialect implements Dialect {
+	private readonly drivers = new Set<NodeSqliteDriver>();
+
 	constructor(private readonly filename: string) {}
 
 	createAdapter(): DialectAdapter {
@@ -144,7 +150,9 @@ export class NodeSqliteDialect implements Dialect {
 	}
 
 	createDriver(): Driver {
-		return new NodeSqliteDriver(this.filename);
+		const driver = new NodeSqliteDriver(this.filename);
+		this.drivers.add(driver);
+		return driver;
 	}
 
 	createIntrospector(db: Kysely<never>): DatabaseIntrospector {
@@ -153,5 +161,12 @@ export class NodeSqliteDialect implements Dialect {
 
 	createQueryCompiler(): QueryCompiler {
 		return new SqliteQueryCompiler();
+	}
+
+	async close(): Promise<void> {
+		for (const driver of this.drivers) {
+			await driver.destroy();
+		}
+		this.drivers.clear();
 	}
 }

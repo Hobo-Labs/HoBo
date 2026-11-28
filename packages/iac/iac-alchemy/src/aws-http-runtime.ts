@@ -443,7 +443,7 @@ export function createAwsBindleApplication<Requirements>(options: {
 		)
 			throw new Error("AWS application dependency is invalid");
 		const marker = dependency.annotations[0];
-		const markerFields = marker
+		const markerFields: Partial<Record<string, PropertyDescriptor>> = marker
 			? Object.getOwnPropertyDescriptors(marker.config)
 			: {};
 		const kvMarker =

@@ -11,6 +11,7 @@ import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import { Kysely, sql } from "kysely";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	BetterAuthStorageError,
@@ -24,6 +25,7 @@ import {
 	runHoboBetterAuthMigrations,
 	SecondaryStorage,
 } from "../src/better-auth/index.js";
+import { NodeSqliteDialect } from "../src/better-auth/node-sqlite-dialect.js";
 import { createOwnerStoreSecretProvider } from "../src/environments/index.js";
 
 const MeResponseSchema = Schema.Struct({
@@ -461,5 +463,40 @@ describe("Alchemy Better Auth runtime, SQLite restart durability, cross-box reus
 				expect(reason.error).toBeInstanceOf(BetterAuthStorageError);
 			}
 		}
+	});
+
+	it("serializes concurrent Kysely transactions across NodeSqliteDialect connection leases and closes cleanly", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-node-sqlite-tx-"));
+		tempDirs.push(dir);
+		const dialect = new NodeSqliteDialect(join(dir, "tx.sqlite"));
+		const db = new Kysely<Record<string, never>>({ dialect });
+
+		await sql`CREATE TABLE tx_events (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL)`.execute(
+			db,
+		);
+
+		const order: string[] = [];
+		await Promise.all([
+			db.transaction().execute(async (trx) => {
+				order.push("tx1:start");
+				await sql`INSERT INTO tx_events (label) VALUES (${"tx1"})`.execute(trx);
+				await Promise.resolve();
+				order.push("tx1:end");
+			}),
+			db.transaction().execute(async (trx) => {
+				order.push("tx2:start");
+				await sql`INSERT INTO tx_events (label) VALUES (${"tx2"})`.execute(trx);
+				await Promise.resolve();
+				order.push("tx2:end");
+			}),
+		]);
+
+		expect(order).toEqual(["tx1:start", "tx1:end", "tx2:start", "tx2:end"]);
+		const rows = await sql<{
+			label: string;
+		}>`SELECT label FROM tx_events ORDER BY id`.execute(db);
+		expect(rows.rows.map((row) => row.label)).toEqual(["tx1", "tx2"]);
+
+		await dialect.close();
 	});
 });

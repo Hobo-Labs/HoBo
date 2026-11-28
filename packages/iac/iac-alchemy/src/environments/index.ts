@@ -54,13 +54,11 @@ export interface HoboInfisicalSecretsOptions {
 	readonly recursive?: boolean;
 	readonly includeImports?: boolean;
 	readonly stageEnvironmentMap?: Readonly<Record<string, string>>;
-	readonly disableProcessEnv?: boolean;
 }
 
 export interface HoboDopplerSecretsOptions {
 	readonly project: string;
 	readonly stageConfigMap?: Readonly<Record<string, string>>;
-	readonly disableProcessEnv?: boolean;
 }
 
 export type HoboSecretProvidersSpec =
@@ -75,7 +73,6 @@ export type HoboSecretProvidersSpec =
 	| Readonly<{
 			readonly kind: "owner-store";
 			readonly options: OwnerStoreSecretProviderOptions;
-			readonly disableProcessEnv?: boolean;
 	  }>;
 
 export interface HoboBetterAuthResolvedConfig {
@@ -150,9 +147,6 @@ export function createHoboInfisicalSecrets(
 		recursive: options.recursive ?? false,
 		includeImports: options.includeImports ?? true,
 	}));
-	if (options.disableProcessEnv === false) {
-		return [infisicalEntry];
-	}
 	return [AlchemySecrets.ProcessEnv({ disabled: true }), infisicalEntry];
 }
 
@@ -163,9 +157,6 @@ export function createHoboDopplerSecrets(
 		project: options.project,
 		config: mapStageToDopplerConfig(stage, options.stageConfigMap),
 	}));
-	if (options.disableProcessEnv === false) {
-		return [dopplerEntry];
-	}
 	return [AlchemySecrets.ProcessEnv({ disabled: true }), dopplerEntry];
 }
 
@@ -223,10 +214,7 @@ export function createOwnerStoreConfigLayer(
 				}
 				resolvedEntries[configKey] = secretValue;
 			}
-			return ConfigProvider.layerAdd(
-				ConfigProvider.fromUnknown(resolvedEntries),
-				{ asPrimary: true },
-			);
+			return ConfigProvider.layer(ConfigProvider.fromUnknown(resolvedEntries));
 		}),
 	);
 }
@@ -249,9 +237,6 @@ export function createHoboSecretProviders(
 			return createHoboDopplerSecrets(spec.options);
 		case "owner-store": {
 			const ownerEntry = createOwnerStoreSecretProvider(spec.options);
-			if (spec.disableProcessEnv === false) {
-				return [ownerEntry];
-			}
 			return [AlchemySecrets.ProcessEnv({ disabled: true }), ownerEntry];
 		}
 	}
