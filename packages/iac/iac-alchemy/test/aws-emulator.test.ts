@@ -5,6 +5,7 @@ import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import { AWSEnvironment } from "@alchemy.run/aws/Environment";
 import { Bucket, BucketProvider } from "@alchemy.run/aws/S3";
+import { Secret, SecretProvider } from "@alchemy.run/aws/SecretsManager";
 import { Topic, TopicProvider } from "@alchemy.run/aws/SNS";
 import { Queue, QueueProvider } from "@alchemy.run/aws/SQS";
 import { NodeHttpClient } from "@effect/platform-node";
@@ -29,6 +30,8 @@ import {
 	awsHttpBindings,
 	createAwsBindleApplication,
 } from "../src/aws-http-runtime.js";
+import { startAwsHttpServer } from "../src/aws-http-server.js";
+import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
 import {
 	awsDynamoKvBindleMappers,
@@ -103,7 +106,7 @@ async function mappedResources(
 
 function environment(
 	endpoint: string,
-	kind: "bucket" | "queue" | "topic" | "kv" = "bucket",
+	kind: "bucket" | "queue" | "topic" | "kv" | "secret" = "bucket",
 ) {
 	return Layer.mergeAll(
 		Endpoint.of(endpoint),
@@ -136,7 +139,9 @@ function environment(
 						? "jobs"
 						: kind === "topic"
 							? "events"
-							: "sessions",
+							: kind === "secret"
+								? "credentials"
+								: "sessions",
 			fqn:
 				kind === "bucket"
 					? "objects"
@@ -144,7 +149,9 @@ function environment(
 						? "jobs"
 						: kind === "topic"
 							? "events"
-							: "sessions",
+							: kind === "secret"
+								? "credentials"
+								: "sessions",
 			instanceId: "12345678901234567890123456789012",
 			type:
 				kind === "bucket"
@@ -153,7 +160,9 @@ function environment(
 						? Queue.Type
 						: kind === "topic"
 							? Topic.Type
-							: Table.Type,
+							: kind === "secret"
+								? Secret.Type
+								: Table.Type,
 		}),
 	);
 }
@@ -330,6 +339,68 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 	});
 
 	const official = process.env.HOBO_ALCHEMY_AWS_EMULATOR === "1" ? it : it.skip;
+	official(
+		"reconciles the mapped Secrets Manager resource through the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw new Error("AWS Emulator endpoint must be HTTPS loopback");
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw new Error("AWS Emulator CA is required");
+			const ca = await readFile(caPath);
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin, "secret"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca, servername: "localhost" },
+				}),
+			);
+			const definition = bindle("shop", (b) => ({ credentials: b.secret() }));
+			// SAFETY: resource declaration only registers constructors; no AWS provider runs here.
+			const mapped = await Effect.runPromise(
+				mapBindleToAlchemy(definition, awsBindleMappers(), {
+					assessRequirements: () => ({ status: "supported" }),
+				}).pipe(
+					Effect.provideService(StackContext, {
+						name: "shop",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+			);
+			const secret = mapped.primary.credentials;
+			if (!secret || secret.Type !== Secret.Type)
+				throw new Error("secret mapping missing");
+			// SAFETY: the fixture supplies the provider lifecycle's AWS, resource and stack services.
+			const output = await Effect.runPromise(
+				Effect.gen(function* () {
+					const provider = yield* Provider.Provider<Secret>(Secret.Type);
+					return yield* provider.reconcile({
+						id: secret.LogicalId,
+						fqn: secret.FQN,
+						instanceId: "12345678901234567890123456789012",
+						session: noopSession,
+						bindings: [],
+						news: secret.Props,
+						olds: undefined,
+						output: undefined,
+					});
+				}).pipe(
+					Effect.provide(SecretProvider()),
+					Effect.provide(layer),
+				) as Effect.Effect<Secret["Attributes"], Provider.ProviderError, never>,
+			);
+			expect(output.secretArn).toContain(
+				":secretsmanager:us-east-1:000000000000:secret:",
+			);
+			expect(output.versionId).toBeUndefined();
+		},
+		30_000,
+	);
 	official(
 		"precreates the mapped S3 bucket through the official AWS Emulator",
 		async () => {
@@ -619,7 +690,41 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			const response = await app.fetch(new Request("https://app.test/"));
 			expect(response.status).toBe(200);
 			expect(await response.json()).toEqual({ value: [1, 2], body: [4, 5] });
+			const source = defineAwsHttpSource({
+				bindle: selected,
+				applicationName: "web",
+				environment: {
+					HOBO_RESOURCE_0: bucket.bucketName,
+					HOBO_RESOURCE_1: table.tableName,
+				},
+				resolveStores: () => ({ sessions: kv, objects: objectStore }),
+				verifyBinding: () => authorized,
+			});
+			const sourceResponse = await source.fetch(
+				new Request("https://app.test/"),
+			);
+			expect(sourceResponse.status).toBe(200);
+			expect(await sourceResponse.json()).toEqual({
+				value: [1, 2],
+				body: [4, 5],
+			});
+			const server = await startAwsHttpServer(source, "127.0.0.1:0");
+			try {
+				const httpResponse = await fetch(
+					`http://127.0.0.1:${server.address.port}/`,
+				);
+				expect(httpResponse.status).toBe(200);
+				expect(await httpResponse.json()).toEqual({
+					value: [1, 2],
+					body: [4, 5],
+				});
+			} finally {
+				await server.close();
+			}
 			authorized = false;
+			expect(
+				(await source.fetch(new Request("https://app.test/"))).status,
+			).toBe(503);
 			expect((await app.fetch(new Request("https://app.test/"))).status).toBe(
 				503,
 			);
