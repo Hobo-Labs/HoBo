@@ -58,7 +58,8 @@
       "HOBO_CI_TRUNK_RUNNER",
       "HOBO_CI_BOX_RUNNER",
       "HOBO_CI_MAIN_REUSE_MERGE_QUEUE"
-    ]
+    ],
+    "selfUpdate": { "enabled": true, "intervalHours": 3 }
   },
   "turboCache": { "api": "" },
   "selection": {

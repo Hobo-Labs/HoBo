@@ -198,7 +198,19 @@ export type RunnerRouting = Readonly<{
 	}>;
 	externalPools: readonly RunnerRoutingPool[];
 	retiredVariables: readonly string[];
+	selfUpdate: Readonly<{ enabled: boolean; intervalHours: number }>;
 }>;
+
+function parseSelfUpdate(
+	value: JsonValue | undefined,
+): RunnerRouting["selfUpdate"] | undefined {
+	const fields = exactly(value, ["enabled", "intervalHours"]);
+	const enabled = asBoolean(fields?.enabled);
+	const intervalHours = whole(fields?.intervalHours, 1, 168);
+	return enabled !== undefined && intervalHours !== undefined
+		? { enabled, intervalHours }
+		: undefined;
+}
 
 function parseQueue(
 	value: JsonValue | undefined,
@@ -355,6 +367,7 @@ export function parseRunnerRouting(
 			"box",
 			"externalPools",
 			"retiredVariables",
+			"selfUpdate",
 		],
 		["mergeGroup"],
 	);
@@ -370,6 +383,7 @@ export function parseRunnerRouting(
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
 	const retiredVariables = listOf(top?.retiredVariables, 32, retiredName);
+	const selfUpdate = parseSelfUpdate(top?.selfUpdate);
 	return pin &&
 		queue &&
 		labels &&
@@ -381,7 +395,8 @@ export function parseRunnerRouting(
 		verdict &&
 		box &&
 		externalPools &&
-		retiredVariables
+		retiredVariables &&
+		selfUpdate
 		? {
 				pin,
 				queue,
@@ -395,6 +410,7 @@ export function parseRunnerRouting(
 				box,
 				externalPools,
 				retiredVariables,
+				selfUpdate,
 			}
 		: undefined;
 }

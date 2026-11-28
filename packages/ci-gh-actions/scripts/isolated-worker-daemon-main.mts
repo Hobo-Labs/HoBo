@@ -8,7 +8,7 @@ import {
 	statSync,
 } from "node:fs";
 import { cpus, homedir, hostname, loadavg } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 /** Box worker: launch isolated-container leases from its own SQLite journal. */
 import { toJsonString } from "@bufbuild/protobuf";
@@ -19,7 +19,9 @@ import {
 	parseConfiguration,
 } from "@hobo/ci";
 import {
+	applyCommittedBoxProviders,
 	awaitWorkerBackgroundDrainIdle,
+	boxFleetLabels,
 	boxGitMirrorPath,
 	boxLeaseIdsOf,
 	ciEventSinkFromEnv,
@@ -51,6 +53,7 @@ import {
 	createRoutingSlipIssuer,
 	createRoutingStallWatch,
 	createRunnerPickupMemory,
+	createSelfUpdater,
 	createStoragePeaks,
 	createWorkerMemoryAdmission,
 	createWorkerStorageAdmission,
@@ -80,6 +83,7 @@ import {
 	readAvailableMemoryMb,
 	readBoxMemberSettings,
 	readBoxRoutingPolicy,
+	readCommittedBoxProviders,
 	readHandedWorkerSecrets,
 	readHostHealthSample,
 	readHostMemory,
@@ -99,6 +103,10 @@ import {
 	routingSlipLeader,
 	runnerRoutingLabels,
 	runningAsControllerRelease,
+	SELF_CHECK_ARGUMENT,
+	SELF_UPDATE_CHECK_MS,
+	SELF_UPDATE_DEFAULT_ENTRY,
+	shouldForceExitDrainOnRepeatSignal,
 	singleFlight,
 	stopIsolatedWorker,
 	storageReserveForClass,
@@ -245,7 +253,10 @@ async function output(
 	return stdout;
 }
 
-function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
+function runProcess(
+	request: DepsImageProcessRequest,
+	what: string,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(request.command, request.args, {
 			cwd: request.cwd,
@@ -257,12 +268,7 @@ function runDepsProcess(request: DepsImageProcessRequest): Promise<void> {
 		child.once("error", reject);
 		child.once("close", (code, signal) => {
 			if (code === 0) resolve();
-			else
-				reject(
-					new Error(
-						`deps image command failed (${code ?? signal ?? "unknown"})`,
-					),
-				);
+			else reject(new Error(`${what} failed (${code ?? signal ?? "unknown"})`));
 		});
 	});
 }
@@ -281,6 +287,26 @@ const daemonCommit = await exec("git", ["rev-parse", "HEAD"], {
 	.then(({ stdout }) => stdout.trim())
 	.catch(() => "")
 	.then((sha) => (/^[0-9a-f]{40}$/u.test(sha) ? sha : undefined));
+if (process.argv.includes(SELF_CHECK_ARGUMENT)) {
+	await Promise.all([
+		import("@hobo/ci/sqlite"),
+		import("@hobo/fleet-agent"),
+		import("@hobo/fleet-nats"),
+		import("@hobo/core"),
+	]);
+	readCommittedBoxProviders(
+		checkoutRoot,
+		process.env.HOBO_CI_WORKER_PROVIDER_ACCOUNT_ID ?? "",
+	);
+	console.error(
+		JSON.stringify({
+			event: "hobo_ci_self_check_passed",
+			commit: daemonCommit ?? "unknown",
+			routingPolicy: routingPolicy.source,
+		}),
+	);
+	process.exit(0);
+}
 const plan = resolveWorkerStorePlan(
 	process.env,
 	homedir(),
@@ -325,6 +351,19 @@ const webhookSecret =
 // take it from the committed policy, whatever the configuration says.
 const { slots, trunkSlots, mergeGroupLeases, prCapWithTrunk } =
 	resolveWorkerSlotConfig(routing.box);
+const fleetLabels = boxFleetLabels(routing, trunkSlots);
+const boxOffers = applyCommittedBoxProviders(
+	configuration,
+	workerAccountId,
+	readCommittedBoxProviders(checkoutRoot, workerAccountId),
+);
+for (const change of boxOffers.changed)
+	log("hobo_ci_isolated_worker_offer_committed", change);
+for (const entry of boxOffers.uncommitted)
+	log("hobo_ci_isolated_worker_offer_uncommitted", {
+		...entry,
+		conflicting: boxOffers.conflicting.includes(entry.offerId),
+	});
 for (const account of configuration.accounts)
 	for (const offer of account.offers)
 		if (
@@ -847,7 +886,9 @@ try {
 					await output("docker", ["tag", source, target], depsRoot, 30_000);
 				},
 			},
-			processes: { run: runDepsProcess },
+			processes: {
+				run: (request) => runProcess(request, "deps image command"),
+			},
 			idleForBuild: async () => {
 				try {
 					return (await store.activeLeases()).length === 0;
@@ -1049,11 +1090,11 @@ try {
 			host: fleetAgent.createHostCapacity({
 				slots,
 				workRoot,
-				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+				labels: fleetLabels,
 			}),
 			admission: {
 				slots,
-				labels: trunkSlots > 0 ? ["hobo", "hobo-trunk"] : ["hobo"],
+				labels: fleetLabels,
 				read: async () => {
 					const availableMb = readAvailableMemoryMb();
 					const freeDisk = freeDiskMbOf(workRoot);
@@ -1462,10 +1503,6 @@ try {
 	}
 	runDepsImageEnsure();
 
-	const routedLabels =
-		trunkSlots > 0
-			? [routing.labels.fleet, routing.labels.trunk]
-			: [routing.labels.fleet];
 	const memberFleet = async () => {
 		const self = fleetMember?.daemon.memberId();
 		if (!fleetMember || self === undefined) return undefined;
@@ -1490,7 +1527,7 @@ try {
 		const seen = latestRunnerJobs;
 		return evaluateRoutingSlip({
 			nowMs,
-			labels: routedLabels,
+			labels: fleetLabels,
 			idle,
 			freeSlots: Math.max(0, slots - liveLaunchSlotsInUse),
 			draining,
@@ -1585,7 +1622,7 @@ try {
 		let holds = slipHolds.get(repository);
 		if (!holds) {
 			holds = createRoutingHolds({
-				labels: routedLabels,
+				labels: fleetLabels,
 				enterMs: routing.verdict.enterMs,
 				exitMs: routing.verdict.exitMs,
 			});
@@ -1670,11 +1707,81 @@ try {
 		: undefined;
 	slipStateTimer?.unref();
 
+	const entryPath = relative(checkoutRoot, process.argv[1] ?? "");
+	const selfUpdater = createSelfUpdater({
+		settings: routing.selfUpdate,
+		checkoutRoot,
+		currentCommit: daemonCommit,
+		worktreesRoot: join(
+			process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+			"hobo-ci",
+			"self-update",
+		),
+		entry:
+			entryPath === "" || entryPath.startsWith("..")
+				? SELF_UPDATE_DEFAULT_ENTRY
+				: entryPath,
+		args: process.argv.slice(2),
+		execPath: process.execPath,
+		execArgv: process.execArgv,
+		env: process.env,
+		git: async (args, cwd) =>
+			(
+				await exec("git", [...args], {
+					cwd,
+					env: process.env,
+					timeout: 10 * 60_000,
+					maxBuffer: 16 * 1024 * 1024,
+				})
+			).stdout,
+		run: (command, args, cwd, env) =>
+			runProcess(
+				{ command, args: [...args], cwd, env: { ...env } },
+				`${command} ${args[0] ?? ""}`.trim(),
+			),
+		idle: async () =>
+			!draining &&
+			liveLaunchSlotsInUse === 0 &&
+			!depsImageWorkRunning &&
+			warmContainersStarting === 0 &&
+			gcInFlight === undefined &&
+			(await store.activeLeases()).length === 0,
+		stop: () =>
+			new Promise<void>((resolve) => {
+				void shutdown("self-update", {
+					mode: "handoff",
+					finish: async () => resolve(),
+				});
+			}),
+		execve: process.execve?.bind(process),
+		exit: (code) => process.exit(code),
+		log,
+	});
+	const selfUpdateTimer = setInterval(
+		() =>
+			void selfUpdater.tick().catch((error) =>
+				log("hobo_ci_self_update_check_failed", {
+					message: error instanceof Error ? error.message : "unknown",
+				}),
+			),
+		SELF_UPDATE_CHECK_MS,
+	);
+	selfUpdateTimer.unref();
+
 	let shutdownOnce: Promise<void> | undefined;
 	let runningWorkerContainers = 0;
 
-	async function shutdown(signal: string) {
+	async function shutdown(
+		signal: string,
+		override?: {
+			mode: typeof stopMode;
+			finish: (code: number) => Promise<void>;
+		},
+	) {
 		if (shutdownOnce) return shutdownOnce;
+		const mode = override?.mode ?? stopMode;
+		const finish =
+			override?.finish ?? (async (code: number) => process.exit(code));
 		shutdownOnce = (async () => {
 			draining = true;
 			workerDrainStartedAtMs = Date.now();
@@ -1693,6 +1800,7 @@ try {
 			// No more slips: the last one expires on its own (ADR-0181).
 			if (slipTimer) clearInterval(slipTimer);
 			if (slipStateTimer) clearInterval(slipStateTimer);
+			clearInterval(selfUpdateTimer);
 			const backgroundKinds = (): (
 				| "tick"
 				| "inbox"
@@ -1764,14 +1872,14 @@ try {
 			};
 			const inFlight = async () => drainJobInFlight;
 			await reconcileDrain();
-			if (stopMode === "drain")
+			if (mode === "drain")
 				log("hobo_ci_isolated_worker_drain_started", {
 					inFlight: await inFlight(),
 					timeoutMs: drainTimeoutMs,
 				});
 			let reported = -1;
 			const result = await stopIsolatedWorker({
-				mode: stopMode,
+				mode,
 				inFlight,
 				reconcile: reconcileDrain,
 				pollMs: Math.min(intervalMs, 5_000),
@@ -1799,21 +1907,21 @@ try {
 					remaining: result.remaining,
 				});
 			}
-			if (stopMode === "drain") await retiredSweep.drain();
+			if (mode === "drain") await retiredSweep.drain();
 			await closeStore();
 			await Promise.race([
 				fleetMember?.daemon.agent.stop().catch(() => undefined),
 				new Promise((resolve) => setTimeout(resolve, 2000).unref()),
 			]);
 			await closeTrace();
-			process.exit(result.mode === "handoff" || result.drained ? 0 : 1);
+			await finish(result.mode === "handoff" || result.drained ? 0 : 1);
 		})().catch(async (error) => {
 			await closeStore().catch(() => undefined);
 			log("hobo_ci_isolated_worker_shutdown_failed", {
 				message: error instanceof Error ? error.message : "unknown",
 			});
 			await closeTrace();
-			process.exit(1);
+			await finish(1);
 		});
 		return shutdownOnce;
 	}
@@ -1839,9 +1947,6 @@ try {
 					} catch {
 						/* keep last runningWorkerContainers */
 					}
-					const { shouldForceExitDrainOnRepeatSignal } = await import(
-						"../src/isolated-worker/daemon-shutdown.js"
-					);
 					if (
 						await shouldForceExitDrainOnRepeatSignal({
 							signalCount: shutdownSignalCount,

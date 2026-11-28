@@ -31,6 +31,11 @@
 			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
 		},
 		{
+			"from": "packages/ci-gh-actions/test/self-update.test.ts",
+			"needs": ["@hobo/ci#build"],
+			"why": "runs the box daemon's --self-check entry, which imports @hobo/ci and @hobo/ci-gh-actions from their dist; the string \"packages/ci\" it holds is one of the daemon's own paths a self-update diffs, not an import"
+		},
+		{
 			"from": "packages/cli/test/generated-runtime-execution.test.ts",
 			"needs": [
 				"@hobo/core#build",

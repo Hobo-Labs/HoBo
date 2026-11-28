@@ -57,7 +57,7 @@ A job that was given a runner and then failed in **Set up job** with no log, min
 ## What host health is not
 
 - Not an admission gate: memory and storage admission still decide whether a job launches on the box.
-- Not a rescue for queued jobs: the unhealthy signal reaches the [route table](/HoBo/ci/route-table/), which no workflow reads yet.
+- Not a rescue for queued jobs: critical storage reaches the box relay's [routing slip](/HoBo/ci/route-table/), which only the next run's route job reads.
 - Not tuned: the thresholds are defaults, not fitted to a particular box.
 - Not retroactive: a box worker built before this change does not sample at all.
 
