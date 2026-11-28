@@ -73,6 +73,32 @@ function transport(body: string) {
 	});
 }
 
+function portForwardListeningBody(
+	options: {
+		stream?: "stdout" | "stderr";
+		line?: string;
+		prefix?: string;
+	} = {},
+): string {
+	const stream = options.stream ?? "stdout";
+	const writer =
+		stream === "stderr" ? "process.stderr.write" : "process.stdout.write";
+	const line =
+		options.line ?? "'Forwarding from 127.0.0.1:' + localPort + ' -> 8080\\n'";
+	const prefix = options.prefix ?? "";
+	return `
+		if (argv[0] === "port-forward") {
+			${prefix}const mapping = argv[argv.length - 1];
+			const localPort = Number(mapping.split(":")[0]);
+			const http = require("node:http");
+			http.createServer().listen(localPort, "127.0.0.1", () => {
+				${writer}(${line});
+				setInterval(() => {}, 1000);
+			});
+		} else { process.exit(0); }
+	`;
+}
+
 describe("waiting for a rollout", () => {
 	it("reports ready when rollout status succeeds first time", async () => {
 		const api = transport("process.exit(0);");
@@ -164,9 +190,9 @@ describe("waiting for a rollout", () => {
 		});
 		// The stderr is the only description of *why*. A bare "timeout" would
 		// make ImagePullBackOff and a crash-looping container look identical.
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"ImagePullBackOff",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("ImagePullBackOff"),
+		});
 	});
 
 	it("falls back to a generic message when the CLI said nothing", async () => {
@@ -183,9 +209,9 @@ describe("waiting for a rollout", () => {
 				timeoutMs: 700,
 			},
 		});
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"timeout waiting for ready",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("timeout waiting for ready"),
+		});
 	});
 
 	it("defaults the namespace when none is given", async () => {
@@ -204,12 +230,7 @@ describe("waiting for a rollout", () => {
 
 describe("port-forwarding", () => {
 	it("reports the forwarded port once kubectl says it is forwarding", async () => {
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(portForwardListeningBody());
 		const result = await api.handle({
 			method: "POST",
 			path: "/kubectl/port-forward",
@@ -225,12 +246,11 @@ describe("port-forwarding", () => {
 	it("matches the readiness line case-insensitively", async () => {
 		// The exact casing of kubectl's line is not part of any contract, so the
 		// match must not be brittle against a client-version change.
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				process.stdout.write("forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(
+			portForwardListeningBody({
+				line: "'forwarding from 127.0.0.1:' + localPort + ' -> 8080\\n'",
+			}),
+		);
 		expect(
 			(
 				await api.handle({
@@ -247,10 +267,32 @@ describe("port-forwarding", () => {
 	it("reads the readiness line from stderr too", async () => {
 		// kubectl has printed this on either stream across versions; the
 		// transport watches both.
+		const api = transport(portForwardListeningBody({ stream: "stderr" }));
+		expect(
+			(
+				await api.handle({
+					method: "POST",
+					path: "/kubectl/port-forward",
+					body: { service: "web" },
+				})
+			).status,
+		).toBe(200);
+	});
+
+	it("waits for the loopback socket even when kubectl prints the readiness line early", async () => {
 		const api = transport(`
 			if (argv[0] === "port-forward") {
-				process.stderr.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
+				const mapping = argv[argv.length - 1];
+				const localPort = Number(mapping.split(":")[0]);
+				process.stdout.write(
+					"Forwarding from 127.0.0.1:" + localPort + " -> 8080\\n",
+				);
+				const http = require("node:http");
+				setTimeout(() => {
+					http.createServer().listen(localPort, "127.0.0.1", () => {
+						setInterval(() => {}, 1000);
+					});
+				}, 200);
 			} else { process.exit(0); }
 		`);
 		expect(
@@ -299,9 +341,9 @@ describe("port-forwarding", () => {
 				service: "missing",
 			},
 		});
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"not found",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("not found"),
+		});
 	});
 
 	it("reports a 503 even when the child exits zero without forwarding", async () => {
@@ -323,13 +365,12 @@ describe("port-forwarding", () => {
 	});
 
 	it("defaults the target port when none is given", async () => {
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				if (!argv.join(" ").includes(":8080")) { process.exit(1); }
-				process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(
+			portForwardListeningBody({
+				prefix:
+					'if (!argv.join(" ").includes(":8080")) { process.exit(1); }\n\t\t\t',
+			}),
+		);
 		// 8080 is the default a Bindle's web role listens on; forwarding to the
 		// wrong port would connect to nothing.
 		expect(
@@ -344,13 +385,11 @@ describe("port-forwarding", () => {
 	});
 
 	it("addresses the service, not a pod", async () => {
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				if (!argv.includes("svc/web")) { process.exit(1); }
-				process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(
+			portForwardListeningBody({
+				prefix: 'if (!argv.includes("svc/web")) { process.exit(1); }\n\t\t\t',
+			}),
+		);
 		// Forwarding to a pod pins traffic to one replica and breaks the moment
 		// it is rescheduled.
 		expect(
@@ -365,13 +404,12 @@ describe("port-forwarding", () => {
 	});
 
 	it("passes the namespace through", async () => {
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				if (!(argv.includes("-n") && argv.includes("prod"))) { process.exit(1); }
-				process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(
+			portForwardListeningBody({
+				prefix:
+					'if (!(argv.includes("-n") && argv.includes("prod"))) { process.exit(1); }\n\t\t\t',
+			}),
+		);
 		expect(
 			(
 				await api.handle({
@@ -387,12 +425,7 @@ describe("port-forwarding", () => {
 	});
 
 	it("picks a free local port rather than a fixed one", async () => {
-		const api = transport(`
-			if (argv[0] === "port-forward") {
-				process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-				setInterval(() => {}, 1000);
-			} else { process.exit(0); }
-		`);
+		const api = transport(portForwardListeningBody());
 		const first = await api.handle({
 			method: "POST",
 			path: "/kubectl/port-forward",
@@ -414,12 +447,7 @@ describe("port-forwarding", () => {
 
 describe("tearing a forward down", () => {
 	/** A kubectl that forwards successfully and stays alive until signalled. */
-	const forwarding = `
-		if (argv[0] === "port-forward") {
-			process.stdout.write("Forwarding from 127.0.0.1:1234 -> 8080\\n");
-			setInterval(() => {}, 1000);
-		} else { process.exit(0); }
-	`;
+	const forwarding = portForwardListeningBody();
 
 	it("kills the forwarding child when its resources are deleted", async () => {
 		const api = transport(forwarding);
@@ -483,8 +511,8 @@ describe("tearing a forward down", () => {
 			body: { service: "ghost", path: "/" },
 		});
 		expect(result.status).toBe(503);
-		expect(String((result.body as { error?: string }).error)).toContain(
-			"no active port-forward",
-		);
+		expect(result.body).toMatchObject({
+			error: expect.stringContaining("no active port-forward"),
+		});
 	});
 });

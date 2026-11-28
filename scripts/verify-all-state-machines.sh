@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
+FORMAL_SKILL_TIMEOUT_SEC="${FORMAL_SKILL_TIMEOUT_SEC:-1500}"
+
 repo_dir="$(git rev-parse --show-toplevel)"
 cd "$repo_dir" || exit 2
 
@@ -121,7 +123,8 @@ fi
 
 run_skill() {
 	local skill="$1" name="${1##*/}" started="$SECONDS" status=0
-	bash scripts/verify-state-machine.sh "$skill" >"$scratch_dir/$name.log" 2>&1 || status=$?
+	timeout --kill-after=60s --signal=TERM "$FORMAL_SKILL_TIMEOUT_SEC" \
+		bash scripts/verify-state-machine.sh "$skill" >"$scratch_dir/$name.log" 2>&1 || status=$?
 	printf '%s %s\n' "$status" "$((SECONDS - started))" >"$scratch_dir/$name.result"
 }
 

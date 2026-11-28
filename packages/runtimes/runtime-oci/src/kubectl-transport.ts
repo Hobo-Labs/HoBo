@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import {
 	isJsonString,
 	type JsonObject,
@@ -84,6 +85,20 @@ function freeLoopbackPort(): Promise<number> {
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function loopbackAccepts(localPort: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const socket = connect({ host: "127.0.0.1", port: localPort });
+		const finish = (ok: boolean) => {
+			socket.removeAllListeners();
+			socket.destroy();
+			resolve(ok);
+		};
+		socket.once("connect", () => finish(true));
+		socket.once("error", () => finish(false));
+		socket.setTimeout(250, () => finish(false));
+	});
 }
 
 /**
@@ -317,7 +332,10 @@ export function createProcessKubectlTransport(
 							},
 						};
 					}
-					if (/Forwarding from\s+127\.0\.0\.1:/i.test(log)) {
+					if (
+						/Forwarding from\s+127\.0\.0\.1:/i.test(log) &&
+						(await loopbackAccepts(localPort))
+					) {
 						ready = true;
 						break;
 					}

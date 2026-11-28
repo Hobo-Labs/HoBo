@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
+FORMAL_MODEL_TIMEOUT_SEC="${FORMAL_MODEL_TIMEOUT_SEC:-600}"
+
 skill_dir="$(cd "${1:?pass a verification skill directory}" && pwd)"
 repo_dir="$(git -C "$skill_dir" rev-parse --show-toplevel)"
 scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/hobo-state-check.XXXXXX")"
@@ -54,7 +56,14 @@ for model_file in "${models[@]}"; do
 	fi
 	cp "$model_file" "$config_file" "$scratch_dir/"
 	printf '\nModel check: %s\n' "$model"
-	(cd "$scratch_dir" && java -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
-		-workers 1 -fp 0 -lncheck final -config "$model.cfg" "$model.tla") || result=1
+	if ! (
+		cd "$scratch_dir" &&
+			timeout --kill-after=30s --signal=TERM "$FORMAL_MODEL_TIMEOUT_SEC" \
+				java -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
+				-workers 1 -fp 0 -lncheck final -config "$model.cfg" "$model.tla"
+	); then
+		result=1
+		printf 'Model check timed out or failed: %s\n' "$model" >&2
+	fi
 done
 exit "$result"

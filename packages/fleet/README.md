@@ -19,6 +19,10 @@ cache fleet uses it.
 
 Operating it: [the fleet runbooks](../../docs/maintenance/fleet/index.md).
 
+The package manifest lists `vitest`, `fast-check`, and `@types/node` under
+`devDependencies`; `pnpm install --frozen-lockfile` at the repo root must stay
+in sync with that list so Fabric can install on pull requests.
+
 ## Entry points
 
 | Subpath | Holds |

@@ -75,6 +75,9 @@ describe("merge-group required gate", () => {
 			verification,
 			/verify:state-machines -- "--jobs=\$\(nproc\)"/u,
 		);
+		assert.match(verification, /prefetch-formal-verification-tools\.mts/u);
+		assert.match(verification, /FORMAL_MODEL_TIMEOUT_SEC: 600/u);
+		assert.match(verification, /FORMAL_SKILL_TIMEOUT_SEC: 900/u);
 		assert.match(
 			verification,
 			/--concurrency=\$\{HOBO_TURBO_BUILD_CONCURRENCY:-100%\}/u,

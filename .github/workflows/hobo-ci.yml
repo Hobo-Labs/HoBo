@@ -1285,8 +1285,14 @@ jobs:
           --filter=@hobo/ci --filter=@hobo/cd --filter=@hobo/identity
           --filter=@hobo/storage-sqlite --filter=@hobo/runtime
           --concurrency=${HOBO_TURBO_BUILD_CONCURRENCY:-100%} --output-logs=new-only
+      - name: Prefetch formal verification tools
+        timeout-minutes: 10
+        run: node --import tsx scripts/ci/prefetch-formal-verification-tools.mts
       - name: Check state machines
         timeout-minutes: 20
+        env:
+          FORMAL_MODEL_TIMEOUT_SEC: 600
+          FORMAL_SKILL_TIMEOUT_SEC: 900
         run: pnpm run verify:state-machines -- "--jobs=$(nproc)"
 
   pr-gate:
