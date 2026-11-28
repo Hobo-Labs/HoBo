@@ -23,6 +23,8 @@ const semanticDigest = `sha256:${"b".repeat(64)}`;
 type WorkerReply = null | { status: number; body: string };
 type WorkerRequest =
 	| { kind: "advance"; delta: number }
+	| { kind: "arm-commit-barrier" }
+	| { kind: "release-commit-barrier" }
 	| { kind: "block-receipt"; reason: "revocation" | "capacity" | "unavailable" }
 	| {
 			kind: "fetch";
@@ -39,6 +41,7 @@ type Worker = {
 	child: ChildProcess;
 	exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 	call: (message: WorkerRequest) => Promise<WorkerReply>;
+	onCommitReached: (listener: () => void) => void;
 	pending: Map<number, Pending>;
 };
 
@@ -53,6 +56,7 @@ async function startWorker(
 	});
 	const pending = new Map<number, Pending>();
 	let serial = 0;
+	let commitReached = () => {};
 	let ready = () => {};
 	let failed = (_error: Error) => {};
 	const started = new Promise<void>((resolve, reject) => {
@@ -86,6 +90,10 @@ async function startWorker(
 			error?: string;
 			result?: unknown;
 		};
+		if (message.kind === "commit-reached") {
+			commitReached();
+			return;
+		}
 		if (message.kind === "ready") {
 			ready();
 			return;
@@ -145,6 +153,9 @@ async function startWorker(
 		child,
 		exited,
 		pending,
+		onCommitReached: (listener) => {
+			commitReached = listener;
+		},
 		call: (message) =>
 			new Promise((resolve, reject) => {
 				const id = ++serial;
@@ -230,6 +241,8 @@ export async function createProcessBusConformanceHost(
 		  }
 		| undefined;
 	const releases: Array<() => void> = [];
+	const activeFetches = new Set<Promise<WorkerReply>>();
+	let commitRelease: (() => Promise<void>) | undefined;
 	const grants: Array<ReturnType<typeof createRivetDurableTopicMetadataGrant>> =
 		[];
 	const unavailable = async (): Promise<never> => {
@@ -242,6 +255,8 @@ export async function createProcessBusConformanceHost(
 			epoch++;
 			for (const grant of grants.splice(0)) grant.revoke();
 			transition = (async () => {
+				if (commitRelease !== undefined) await commitRelease();
+				await Promise.allSettled(activeFetches);
 				await stopWorker(worker);
 				if (closed) throw new Error("fixture closed during restart");
 				worker = await startWorker(directory, clock, options.afterRestartReady);
@@ -262,6 +277,8 @@ export async function createProcessBusConformanceHost(
 			for (const grant of grants.splice(0)) grant.revoke();
 			closing = (async () => {
 				try {
+					if (commitRelease !== undefined) await commitRelease();
+					await Promise.allSettled(activeFetches);
 					if (transition !== undefined) await transition.catch(() => {});
 				} finally {
 					try {
@@ -293,7 +310,11 @@ export async function createProcessBusConformanceHost(
 		},
 		switchAuthority: unavailable,
 		async holdConcurrentMutations() {
-			if (concurrentBarrier !== undefined || barrier !== undefined)
+			if (
+				concurrentBarrier !== undefined ||
+				barrier !== undefined ||
+				commitRelease !== undefined
+			)
 				return unavailable();
 			let reached = () => {};
 			const reachedPromise = new Promise<void>((resolve) => {
@@ -309,11 +330,41 @@ export async function createProcessBusConformanceHost(
 		},
 		async holdNextMutation(point) {
 			if (
-				point !== "before-dispatch" ||
 				barrier !== undefined ||
-				concurrentBarrier !== undefined
+				concurrentBarrier !== undefined ||
+				commitRelease !== undefined
 			)
 				return unavailable();
+			if (point === "before-commit") {
+				const captured = worker;
+				let reached = () => {};
+				const reachedPromise = new Promise<void>((resolve) => {
+					reached = resolve;
+				});
+				captured.onCommitReached(reached);
+				let releasePromise: Promise<void> | undefined;
+				commitRelease = () => {
+					releasePromise ??= captured
+						.call({ kind: "release-commit-barrier" })
+						.then((response) => {
+							if (response !== null)
+								throw new Error("invalid commit barrier response");
+							commitRelease = undefined;
+						});
+					return releasePromise;
+				};
+				try {
+					if ((await captured.call({ kind: "arm-commit-barrier" })) !== null)
+						throw new Error("invalid commit barrier response");
+				} catch (error) {
+					commitRelease = undefined;
+					throw error;
+				}
+				const release = commitRelease;
+				if (release === undefined)
+					throw new Error("commit barrier unavailable");
+				return { reached: reachedPromise, release };
+			}
 			let reached = () => {};
 			const reachedPromise = new Promise<void>((resolve) => {
 				reached = resolve;
@@ -358,13 +409,20 @@ export async function createProcessBusConformanceHost(
 				}
 				if (typeof init.body !== "string")
 					throw new Error("invalid request body");
-				const response = await worker.call({
+				const pending = worker.call({
 					kind: "fetch",
 					tenant,
 					path,
 					headers: Object.fromEntries(new Headers(init.headers).entries()),
 					body: init.body,
 				});
+				activeFetches.add(pending);
+				let response: WorkerReply;
+				try {
+					response = await pending;
+				} finally {
+					activeFetches.delete(pending);
+				}
 				if (response === null) throw new Error("invalid worker response");
 				if (drop !== undefined && path !== "/events") {
 					const mode = drop;

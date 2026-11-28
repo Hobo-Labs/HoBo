@@ -9,7 +9,11 @@ import { createRivetDurableTopicBusActor } from "../../src/durable-topic-actor.j
 import { createRivetDurableTopicMetadataGrant } from "../../src/durable-topic-client.js";
 import type { RivetMessagingConformanceHost } from "./durable-topic-conformance.js";
 
-function sqlite(path: string, onReceiptRead: () => void) {
+function sqlite(
+	path: string,
+	onReceiptRead: () => void,
+	beforeCommit: () => Promise<void>,
+) {
 	const sql = new DatabaseSync(path);
 	let tail = Promise.resolve();
 	const execute = async (query: string, ...args: SQLInputValue[]) => {
@@ -31,6 +35,7 @@ function sqlite(path: string, onReceiptRead: () => void) {
 		try {
 			// SAFETY: this fixture exposes the transaction's execute operation only.
 			const result = await run({ execute } as RawAccess);
+			await beforeCommit();
 			sql.exec("COMMIT");
 			return result;
 		} catch (error) {
@@ -98,6 +103,16 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 	let barrier:
 		| { reached: () => void; wait: Promise<void>; release: () => void }
 		| undefined;
+	let commitBarrier:
+		| { reached: () => void; wait: Promise<void>; release: () => void }
+		| undefined;
+	const beforeCommit = async () => {
+		const held = commitBarrier;
+		if (held === undefined) return;
+		commitBarrier = undefined;
+		held.reached();
+		await held.wait;
+	};
 	const outstanding: Array<() => void> = [];
 	const stores = new Map<string, Promise<ReturnType<typeof sqlite>>>();
 	const active = new Set<Promise<Response>>();
@@ -168,7 +183,7 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 		switchAuthority: unavailable,
 		holdConcurrentMutations: unavailable,
 		holdNextMutation: async (point) => {
-			if (point !== "before-dispatch" || barrier !== undefined)
+			if (barrier !== undefined || commitBarrier !== undefined)
 				return unavailable();
 			let reached = () => {};
 			const reachedPromise = new Promise<void>((resolve) => {
@@ -178,7 +193,8 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 			const wait = new Promise<void>((resolve) => {
 				release = resolve;
 			});
-			barrier = { reached, wait, release };
+			if (point === "before-commit") commitBarrier = { reached, wait, release };
+			else barrier = { reached, wait, release };
 			outstanding.push(release);
 			return { reached: reachedPromise, release: async () => release() };
 		},
@@ -197,6 +213,7 @@ export async function createSqliteBusConformanceHostWithStorage(options: {
 							? ":memory:"
 							: join(options.directory, `${tenant}.sqlite`),
 						onReceiptRead,
+						beforeCommit,
 					);
 					try {
 						await migrateDurableTopicJournal(created.db);

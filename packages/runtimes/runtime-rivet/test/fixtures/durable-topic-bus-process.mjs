@@ -10,12 +10,27 @@ const host = await createSqliteBusConformanceHostWithStorage({
 	clock,
 });
 const ports = new Map();
+let commitBarrier;
 process.on("message", async (message) => {
 	if (!message || typeof message.id !== "number") return;
 	try {
 		let result;
 		if (message.kind === "advance") {
 			await host.controls.advanceMs(message.delta);
+			result = null;
+		} else if (message.kind === "arm-commit-barrier") {
+			if (commitBarrier) throw new Error("commit barrier already armed");
+			commitBarrier = await host.controls.holdNextMutation("before-commit");
+			void commitBarrier.reached
+				.then(() => {
+					if (process.connected) process.send?.({ kind: "commit-reached" });
+				})
+				.catch(() => {});
+			result = null;
+		} else if (message.kind === "release-commit-barrier") {
+			if (!commitBarrier) throw new Error("commit barrier is not armed");
+			await commitBarrier.release();
+			commitBarrier = undefined;
 			result = null;
 		} else if (message.kind === "block-receipt") {
 			await host.controls.blockNextReceiptLookup(message.reason);
