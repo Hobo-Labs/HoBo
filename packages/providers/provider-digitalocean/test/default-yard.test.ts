@@ -7,20 +7,10 @@ import {
 	digitaloceanYardSpec,
 } from "../src/index.js";
 
-/**
- * Every published capability profile, derived from `@hobo/core`'s catalog
- * rather than restated here.
- *
- * This used to be a hand-written list, and it drifted the moment a factory was
- * pointed at a more specific profile — the test failed for the list's reason,
- * not the catalog's. Deriving it means a profile the core vocabulary adds is
- * automatically legal, and a profile it does not define still fails.
- */
 const REAL_PROFILES: readonly string[] = Object.values(capability).flatMap(
 	(family) => Object.values(family),
 );
 
-/** Entries declared for one slot, or an empty list when the slot is absent. */
 function slotEntries(slot: CapabilitySlot) {
 	return DIGITALOCEAN_DEFAULT_BINDINGS[slot] ?? [];
 }
@@ -46,12 +36,6 @@ describe("the DigitalOcean Yard is an allocatable catalog", () => {
 		}
 	});
 
-	/**
-	 * The catalog states what DigitalOcean *can* allocate, so a capability it
-	 * serves several ways lists all of them. Collapsing `web` to one entry would
-	 * make this module the selector — the decision ADR-0157 reserves for
-	 * resolution time.
-	 */
 	it("declares every way DigitalOcean can host a web capability", () => {
 		expect(slotEntries("web").map((entry) => entry.productId)).toEqual(
 			expect.arrayContaining([
@@ -63,12 +47,6 @@ describe("the DigitalOcean Yard is an allocatable catalog", () => {
 		);
 	});
 
-	/**
-	 * A Droplet hosts a worker as readily as it serves a public origin, and a
-	 * Managed Caching cluster is Valkey. Both are rows this catalog originally
-	 * missed — the first by omission, the second by naming a parent profile —
-	 * so they are pinned rather than left to drift back.
-	 */
 	it("reaches one product through every capability it satisfies", () => {
 		const rows = digitaloceanYardSpec().bindings.filter(
 			(row) => row.productId === "digitalocean.droplet/v1",
@@ -83,8 +61,6 @@ describe("the DigitalOcean Yard is an allocatable catalog", () => {
 		const valkey = slotEntries("kv").find(
 			(entry) => entry.productId === "digitalocean.managed-valkey/v1",
 		);
-		// kv.valkey refines kv.redis-compatible refines kv.key-value, so the
-		// specific name still answers a request for either ancestor.
 		expect(valkey?.profile).toBe("kv.valkey/v1");
 	});
 
@@ -94,11 +70,6 @@ describe("the DigitalOcean Yard is an allocatable catalog", () => {
 		}
 	});
 
-	/**
-	 * A queue row would be a portability lie: DigitalOcean sells no first-party
-	 * queue, so an author asking for one must see an empty slot rather than a
-	 * product that cannot be allocated.
-	 */
 	it("leaves queue, topic and secretRef empty rather than inventing a near-miss", () => {
 		for (const slot of ["queue", "topic", "secretRef", "webhook"] as const) {
 			expect(slotEntries(slot)).toEqual([]);

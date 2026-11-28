@@ -16,7 +16,6 @@ import {
 } from "./types.js";
 import { asJsonObject, isJsonNumber, isJsonString, isJsonObject, type JsonValue, type JsonObject, type JsonBag } from "../json.js";
 
-
 const ANNEX_CATEGORIES = new Set<AnnexCategory>([
   "error-mapping",
   "cancellation",

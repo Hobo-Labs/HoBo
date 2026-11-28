@@ -1,4 +1,3 @@
-/** Shared actor leases and a schema-wide protected-stream policy. */
 // public-contract: persisted migration identity used to verify schema history.
 export const name = "actor_fences";
 

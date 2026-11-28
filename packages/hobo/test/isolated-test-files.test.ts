@@ -19,7 +19,6 @@ function testFiles(dir: string): string[] {
 }
 
 describe("isolated test files", () => {
-	// This file's samples below match the pattern on purpose.
 	const files = testFiles(join(packageDir, "test"))
 		.filter((file) => file !== "test/isolated-test-files.test.ts")
 		.sort();

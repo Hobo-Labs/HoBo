@@ -1,10 +1,3 @@
-/**
- * Executable consumer side of the two PACT boundaries: the adapters are
- * driven against the exact request/response shapes recorded in
- * contracts/pacts/*.pact.json, so a drift between adapter and pact fails
- * here before any provider verification.
- */
-
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,7 +123,6 @@ describe("pact: balancer-to-github-billing", () => {
 			throw new Error("enhanced billing pact is missing usageItems objects");
 		}
 		const folded = foldUsageItems(body.usageItems);
-		// Only the actions/minutes item counts; the packages item is ignored.
 		expect(folded).toStrictEqual({ spendUsd: 13.2, unitsUsed: 2200 });
 	});
 
@@ -193,7 +185,6 @@ describe("pact: balancer-to-actions-variables", () => {
 
 	it("creates the variable via POST when the PATCH target is missing", async () => {
 		const pact = await loadPact("balancer-to-actions-variables.pact.json");
-		// Serve only the POST interaction so the PATCH 404s like a missing variable.
 		const postOnly = pact.interactions.filter(
 			(interaction) => interaction.request.method === "POST",
 		);

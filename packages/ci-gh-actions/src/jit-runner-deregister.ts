@@ -2,7 +2,6 @@ import type { GithubTransport } from "./github.js";
 
 export type GithubRunnerDeregisterOutcome = "removed" | "absent" | "refused";
 
-/** Remove this host's JIT runner registration without touching the workflow run. */
 export async function deregisterGithubRunner(
 	github: GithubTransport,
 	installationId: number,

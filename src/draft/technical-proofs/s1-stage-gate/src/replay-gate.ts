@@ -8,7 +8,6 @@ import {
 import { readPersistedEventLog } from "./offline-gate.js";
 import { type JsonObject } from "./json.js";
 
-
 export { ReplayLiveMismatchError };
 
 export type ReplayGateResult = {

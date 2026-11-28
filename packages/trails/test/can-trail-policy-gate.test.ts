@@ -1,12 +1,3 @@
-// The can-trail policy gate is a conjunction and it fails closed.
-//
-// Three signals can deny a trail: `policyAllows: false`, `residencyConflict:
-// true`, and a `policyVerdict` computed over the custody path. A supplied
-// verdict used to *supersede* the two booleans, so a passing verdict erased an
-// explicit denial, and a verdict that was not the record it claimed to be
-// threw a `TypeError` out of a gate. Only the stricter direction — a negative
-// verdict overriding permissive booleans — was tested, which is why the
-// lenient one went unnoticed.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -54,11 +45,6 @@ const PASSING: CanTrailPolicyVerdict = {
 	custodyDigest: DIGEST,
 };
 
-/**
- * A verdict as it arrives from outside the type system: evidence that crossed
- * a process boundary as JSON. `JSON.parse` is the honest way to get a value
- * the compiler believes and the runtime does not.
- */
 function verdictFromJson(text: string): CanTrailPolicyVerdict {
 	return JSON.parse(text);
 }
@@ -132,9 +118,6 @@ describe("can-trail combines its policy signals instead of letting one supersede
 		}
 	});
 
-	// Every combination of the three signals, judged against an oracle that is
-	// nothing more than the rule stated twice: a code is present exactly when
-	// some signal raises it.
 	const VERDICTS: readonly Readonly<{
 		name: string;
 		verdict: CanTrailPolicyVerdict | undefined;

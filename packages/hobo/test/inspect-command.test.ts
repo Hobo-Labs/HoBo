@@ -11,11 +11,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
-// `hobo inspect` folds the DeploymentView projection from the durable event log.
-// The key test drives a real `hobo up` first, then inspects the SAME runtime and
-// asserts the rebuilt-from-zero view reflects what up wrote — the log is
-// authoritative. Also covers the no-history and no-runtime cases.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -78,7 +73,6 @@ describe("createInspectCommand", () => {
 			);
 			expect(inspect.code).not.toBe("HOBO_CLI_STUB");
 			expect(inspect.ok).toBe(true);
-			// The view rebuilt from zero agrees with what up wrote.
 			expect(inspect.status).toBe("deployed");
 			expect(inspect.data.found).toBe(true);
 			expect(inspect.data.deploymentStatus).toBe("deployed");
@@ -112,7 +106,6 @@ describe("createInspectCommand", () => {
 			const nodeIds = inspect.data.graph.nodes.map(
 				(node: { id: string }) => node.id,
 			);
-			// Nodes: the bindle, its resources, and the yard they land on.
 			expect(nodeIds).toContain(`bindle:${inspect.data.deploymentId}`);
 			expect(nodeIds).toContain("resource:service");
 			expect(nodeIds).toContain("resource:sessions");
@@ -122,7 +115,6 @@ describe("createInspectCommand", () => {
 				),
 			).toBe(true);
 
-			// Edges: the service->sessions binding and one placement per resource.
 			// SAFETY: assertion required at this I/O or test boundary.
 			const edges = inspect.data.graph.edges as Array<{
 				from: string;
@@ -143,7 +135,6 @@ describe("createInspectCommand", () => {
 				).length,
 			).toBeGreaterThanOrEqual(2);
 
-			// Provisioned lifecycle folded onto the resource nodes.
 			// SAFETY: assertion required at this I/O or test boundary.
 			for (const node of inspect.data.graph.nodes as Array<{
 				kind: string;

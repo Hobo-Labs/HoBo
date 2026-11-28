@@ -1,18 +1,3 @@
-/**
- * Regression guard for the boundary checker's import scan.
- *
- * The scan is a regex over source text, which means it cannot tell a real
- * `import … from "@hobo/x"` from one *quoted inside a string* — and a
- * remediation message that tells a human what to type is exactly that. One such
- * message in `@hobo/identity` ("import { createLocalStationOpenBaoSecretsPort }
- * from \"@hobo/adapter-openbao\"") was enough to invent an edge that made the
- * checker report a dependency cycle between two packages where only one
- * direction exists.
- *
- * The assertions below are about that class of mistake rather than about the
- * current graph: the real edge must still be found, the phantom reverse edge
- * must not be, and the checker must exit clean.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -56,12 +41,10 @@ describe("check-package-boundaries", () => {
 				(edge) => edge.from_path === from && edge.to_path === to,
 			);
 
-		// The real dependency, declared in package.json and imported in source.
 		assert.ok(
 			has("packages/adapters/adapter-openbao", "packages/identity"),
 			"the real adapter-openbao -> identity edge went missing",
 		);
-		// The phantom one, which exists only as text inside an error message.
 		assert.ok(
 			!has("packages/identity", "packages/adapters/adapter-openbao"),
 			"a quoted import in a remediation message was counted as a dependency",
@@ -72,7 +55,6 @@ describe("check-package-boundaries", () => {
 
 	it("still finds ordinary imports, so the fix did not blind the scan", () => {
 		const { report } = run();
-		// Single-line, multi-line and re-export forms all appear in these.
 		for (const [from, to] of [
 			["packages/yards", "packages/core"],
 			["packages/camps", "packages/bindles"],
@@ -89,18 +71,6 @@ describe("check-package-boundaries", () => {
 	});
 });
 
-/**
- * The dev-only harness exemption, on the real workspace rather than a fixture.
- *
- * `packages/packs/pack-framework` is a layer-2 adapter that lists
- * `@hobo/contract-harness` under `devDependencies` and imports it only from its
- * test suite. Under the strict layering rules that edge is a violation; it is
- * clean solely because the declared-dependency collector marks it `dev` and
- * `isDevOnlyTestHarnessEdge` exempts it. Nothing tested that end to end, so the
- * exemption could have been deleted, or the marker could have stopped being
- * set, with the only symptom being a gate that stayed green for a different
- * reason.
- */
 describe("dev-only contract-harness edge", () => {
 	it("is discovered, and exempted rather than absent", () => {
 		const { status, report } = run();

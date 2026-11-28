@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonNumber, isJsonBoolean, isJsonObject, cloneAsJson, type JsonValue, type JsonObject, type JsonBag } from "./json.js";
 
-
 export const POLICY_IR_SCHEMA_VERSION = "hobo.policy-ir/v1" as const;
 export const POLICY_DECIDED_EVENT_TYPE = "policy.Decided" as const;
 

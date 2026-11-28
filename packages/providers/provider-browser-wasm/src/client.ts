@@ -1,10 +1,3 @@
-/**
- * The host-origin client: two GETs, each parsed on the way back.
- *
- * Every method returns a refined record from `src/manifest.ts`, never a
- * response. The only code in this package that knows what the host origin's
- * documents look like is that parser and the paths below.
- */
 import { BrowserWasmProviderError, redactHostText } from "./errors.js";
 import {
 	type ComponentArtifact,
@@ -28,7 +21,6 @@ import {
 
 export type HostAssetClientOptions = {
 	readonly transport: HostAssetTransport;
-	/** The origin the host document was served from. */
 	readonly origin: string;
 	readonly policy?: TransportPolicy;
 	readonly digest?: DigestPort;
@@ -43,14 +35,9 @@ export interface HostAssetClient {
 	readonly origin: string;
 	fetchHostCapabilities(): Promise<HostCapabilities>;
 	fetchGuestManifest(guestId: string): Promise<GuestManifest>;
-	/** Fetch and verify the bundle the manifest describes. */
 	fetchComponent(manifest: GuestManifest): Promise<FetchedComponent>;
 }
 
-/**
- * Map a host-origin failure onto a HoBo code, preferring the origin's own
- * fault envelope over the HTTP status when it parses.
- */
 export function errorForHostResponse(
 	response: TransportResponse,
 	context: { readonly what: string },
@@ -89,7 +76,6 @@ export function errorForHostResponse(
 		);
 	}
 	if (response.status >= 500) {
-		// A read is always safe to repeat; nothing here mutates the origin.
 		return new BrowserWasmProviderError(
 			"BUNDLE_UNAVAILABLE",
 			`the host origin returned ${response.status} for ${context.what}`,

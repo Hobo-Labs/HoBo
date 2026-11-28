@@ -11,11 +11,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// `hobo claim` binds an anonymous deployment to an account by appending a
-// `deployment.Claimed` fact — rebinding ownership on the authoritative log while
-// carrying every provisioned fact forward. These deploy for real, then claim the
-// SAME runtime and assert the rebind + state preservation.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -75,14 +70,12 @@ describe("createClaimCommand", () => {
 			expect(claim.ok).toBe(true);
 			expect(claim.status).toBe("claimed");
 			expect(claim.data.owner).toEqual({ kind: "user", id: "acme" });
-			// The rebind preserves every provisioned fact: still deployed, same 2 resources.
 			expect(claim.data.deploymentStatus).toBe("deployed");
 			expect(Object.keys(claim.data.resources).sort()).toEqual([
 				"service",
 				"sessions",
 			]);
 
-			// inspect now reflects the new owner (folded from the same log).
 			const inspect = envelope(
 				(await cli.run(["inspect", "--json"], { cwd })).stdout,
 			);

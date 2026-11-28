@@ -24,13 +24,6 @@ export function createAdapterRegistry(): AdapterRegistry {
 	};
 }
 
-/**
- * Registry of suite descriptions, keyed by suite id.
- *
- * Listing is sorted rather than insertion-ordered: a catalog digest that
- * changed because two suites were registered in a different order would make a
- * receipt lie about what changed.
- */
 export function createConformanceSuiteRegistry(
 	descriptors: readonly ConformanceSuiteDescriptor[] = [],
 ): ConformanceSuiteRegistry {

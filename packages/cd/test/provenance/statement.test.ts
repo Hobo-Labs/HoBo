@@ -1,5 +1,3 @@
-// The statement adapter over @hobo/registry parseProvenanceStatement: SLSA v1
-// puts the builder at predicate.runDetails.builder.id.
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../src/artifacts/json.js";
 import { parseStatement } from "../../src/provenance/statement.js";

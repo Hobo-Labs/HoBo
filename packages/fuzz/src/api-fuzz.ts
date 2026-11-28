@@ -1,8 +1,3 @@
-/**
- * In-process control-plane request oracle. Schemathesis/RESTler wrap the
- * same fail-closed rules against an ephemeral server; this stays in-memory.
- */
-
 import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import type { ControlModel } from "./model.js";

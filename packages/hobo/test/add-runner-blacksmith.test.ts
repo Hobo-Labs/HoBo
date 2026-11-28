@@ -6,10 +6,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// HOBO-719: `hobo add runner-blacksmith` registers the Blacksmith fast-runner
-// execution-host adapter alongside runner-github so the Dispatcher can
-// cost-route the same job shape across both (ADR-0071).
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();

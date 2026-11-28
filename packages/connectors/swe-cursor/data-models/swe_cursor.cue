@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Cursor SWE adapter wire records. One constraint
-// per protobuf message in swe_cursor.proto.
 
 #CursorLaunchRecord: {
 	command: "cursor-agent-acp"

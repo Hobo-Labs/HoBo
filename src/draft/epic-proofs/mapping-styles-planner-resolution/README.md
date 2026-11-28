@@ -57,3 +57,5 @@ Independent POC promoting resolution fixtures from `control-plane-planner-matchi
 ## Cascade reconciliation (83d9b5c92)
 
 The `topology-objects-contract` technical proof refresh is absorbed without changing mapping-style resolution evidence.
+
+The `SAFETY:` type-assertion notes restored from main in `camp-mapping-sugar-compiler`, `capability-negotiation-contract`, `control-plane-event-schema-contract`, `provider-options-pattern-contract`, `resource-definition-driver-contract`, `topology-objects-contract` are absorbed without changing this rollup's evidence.

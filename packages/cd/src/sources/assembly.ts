@@ -1,17 +1,3 @@
-// Assembly rules (D3): turn newly discovered artifacts into Freight manifests,
-// one per qualifying combination. Pure and order-independent for a given
-// history: no clock, no I/O.
-//
-// - INDEPENDENT: each new artifact with the latest artifact of every other
-//   subscription (none yet → no Freight until one exists).
-// - SAME_VERSION / SAME_COMMIT: one artifact per subscription sharing the
-//   version / commit; a key is assembled once all subscriptions have it.
-//
-// The declaration hash is the SOURCE_TREE member's digest when the source has
-// a declaration subscription; otherwise the digest of the source definition
-// (bindle + subscriptions), so a source without a declaration still yields a
-// stable, content-derived declaration. A HOBO_RAIL source yields subject RAIL:
-// bindle = Rail id, declaration hash = Rail digest, no artifacts (D24).
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	ArtifactKind,
@@ -40,9 +26,7 @@ export type Assembled = Readonly<{
 
 export type AssemblyInput = Readonly<{
 	source: FreightSourceRecord;
-	/** Previously discovered (and not skipped) artifacts, oldest first. */
 	history: readonly DiscoveredArtifactRecord[];
-	/** Newly discovered artifacts eligible for Freight, oldest first. */
 	fresh: readonly DiscoveredArtifactRecord[];
 }>;
 
@@ -51,7 +35,6 @@ export type Deferred = Readonly<{
 	waitingFor: readonly string[];
 }>;
 
-/** Digest of the source definition used when no subscription supplies the declaration. */
 export function definitionDigest(source: FreightSourceRecord): string {
 	return sha256Digest(
 		canonical({

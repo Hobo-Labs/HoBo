@@ -1,8 +1,5 @@
 import { spawnSync } from "node:child_process";
 
-// Keep in sync with .github/actions/hobo-checkout/git-mirror-usability.mts and packages/ci-gh-actions/src/isolated-worker/git-mirror-usability.ts
-
-/** Refusal reason when a bare mirror is not a full clone for CI checkout. */
 export const INCOMPLETE_MIRROR_REASON =
 	"mirror is a partial or promisor clone (blob:none)";
 
@@ -24,7 +21,6 @@ function readBoolConfig(gitDir: string, key: string): boolean {
 	return result.status === 0 && result.stdout.trim() === "true";
 }
 
-/** Bare mirrors used as upload-pack must not be promisor / blob:none partial clones. */
 export function isCompleteGitMirror(gitDir: string): boolean {
 	if (readBoolConfig(gitDir, "remote.origin.promisor")) return false;
 	const partial = readConfig(gitDir, "extensions.partialclonefilter");

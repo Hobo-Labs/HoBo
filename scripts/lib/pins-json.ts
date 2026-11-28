@@ -1,10 +1,3 @@
-/**
- * The JSON readers behind the pins manifest parser (`pins.ts`): a value's kind
- * read from its tag, and the refusals every manifest field shares, each a
- * PINS_MALFORMED error naming where in the manifest it is.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { PinsError } from "./pins-error.ts";
 
 export type Json =
@@ -18,8 +11,6 @@ export interface JsonObject {
 	readonly [key: string]: Json;
 }
 
-// The repo bans `typeof` for narrowing (anti-slop/no-runtime-typeof); a JSON
-// value's kind is read from its tag instead, as in packages/cli/src/json.ts.
 const tagOf = Object.prototype.toString;
 
 export function isObject(value: Json | undefined): value is JsonObject {

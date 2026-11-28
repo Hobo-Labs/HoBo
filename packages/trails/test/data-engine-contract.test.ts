@@ -1,6 +1,3 @@
-// ADR-0177 in Trails: the runbook engine imports no engine, judges live
-// stores on digest evidence, and gates on a policy verdict computed over the
-// custody path instead of a caller-supplied boolean.
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -87,8 +84,6 @@ describe("Trails stays engine-neutral", () => {
 			targetPath: path.join(dir, "target.db"),
 		});
 		cleanups.push(() => dual.close());
-		// These assignments are the proof: they compile only while the engine
-		// package's ports keep the shapes Trails declares.
 		const asDual: DataDualPort = dual;
 		const asLive: LiveDataDualPort = dual;
 		const schema = createSqliteSchemaApplyPort({
@@ -190,7 +185,6 @@ describe("can-trail gates on a computed verdict", () => {
 			policy,
 			now: NOW,
 		});
-		// The old inputs would have passed this: both ends are in the EU.
 		const result = evaluateCanTrail({
 			trail: dataTrail(),
 			policyAllows: true,
@@ -320,7 +314,6 @@ describe("the migration executor over a real SQLite store", () => {
 				ok: phase !== "contract",
 				findings:
 					phase === "contract" ? [{ code: "CUSTODY_RETENTION_EXPIRED" }] : [],
-				// The two places an in-place migration keeps data.
 				roles: ["source", "rollback-snapshot"],
 			}),
 		});
@@ -362,7 +355,6 @@ describe("the migration executor over a real SQLite store", () => {
 			(fact) => fact.type === MIGRATION_EVENTS.RolledBack,
 		);
 		assert.equal(rolled?.data.erasuresReplayed, 2);
-		// The restored store has the original schema: the expand is gone too.
 		assert.equal(
 			port.verify(
 				"SELECT 1 FROM pragma_table_info('checkout') WHERE name = 'requester_ref'",

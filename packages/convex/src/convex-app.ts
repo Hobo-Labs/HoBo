@@ -1,13 +1,8 @@
-/**
- * Minimal Convex webApp marker for `b.web(convexApp(root))`.
- * Swaghaus: https://github.com/JamesCowling/swaghaus
- */
 import type { ProviderAnnotation } from "@hobo/bindles";
 import { COMPONENT_METADATA } from "@hobo/runtime";
 import { isJsonString, type JsonValue } from "./json.js";
 
 export const CONVEX_WEBAPP_METADATA = Symbol.for("hobo.webapp.convex");
-/** Shared meta symbol — Bindle detects any `{ framework, root }` webApp. */
 export const WEBAPP_META = Symbol.for("hobo.webapp.meta");
 // public-contract: Bindle provider annotations use this stable option name.
 export const WEBAPP_OPTION = "webapp" as const;
@@ -23,7 +18,6 @@ const METADATA_SYMBOL =
 	// SAFETY: `(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");` is required at this I/O or test boundary.
 	(Symbol as { metadata?: symbol }).metadata ?? Symbol.for("Symbol.metadata");
 
-/** DeclaredComponent for Bindle — only stamps `root` (repo-relative Convex app dir). */
 export function convexApp(root: string): new () => object {
 	const trimmed = isJsonString(root) ? root.trim() : "";
 	if (!trimmed)

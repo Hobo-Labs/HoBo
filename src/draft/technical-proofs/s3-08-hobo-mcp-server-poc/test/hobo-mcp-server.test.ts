@@ -14,7 +14,6 @@ import {
 } from "../src/hobo-mcp-server.js";
 import { isJsonNumber } from "../src/json.js";
 
-
 const identity = { kind: "agent", id: "agent:ops", tenantId: "tenant:acme" };
 
 describe("HOBO-634 @hobo/mcp gateway server POC", () => {
@@ -165,9 +164,6 @@ describe("HOBO-634 @hobo/mcp gateway server POC", () => {
   it("adversarial: deploy denied when SVID lacks tool capability", async () => {
     const server = createHoboMcpGatewayServer({
       svidAssertion: "fixture",
-      // Pin the auth clock before the SVID expiry so the scope check (not an
-      // expiry check) is what fails; otherwise this rots once wall-clock
-      // passes expiresAt, matching the fixed clock the fixture gateway uses.
       now: () => new Date("2026-07-01T12:00:00.000Z"),
       verifySvid: async () => ({
         ok: true,

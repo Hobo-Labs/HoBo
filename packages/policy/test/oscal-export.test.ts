@@ -1,5 +1,3 @@
-// OSCAL-JSON boundary emitter (docs/standards/oscal.md posture): OSCAL-shaped
-// plain JSON, deterministic, zero OSCAL schema dependency.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -24,7 +22,6 @@ test("component-definition: deterministic — emitting twice yields deepEqual do
 	const second = emitOscalComponentDefinition(NIST_800_53_SEED_PACK, options);
 	assert.deepEqual(first, second);
 	assert.match(first["component-definition"].uuid, UUID_PATTERN);
-	// A different title is a different document identity.
 	const other = emitOscalComponentDefinition(NIST_800_53_SEED_PACK, {
 		componentTitle: "Other component",
 	});
@@ -65,7 +62,6 @@ test("component-definition: one implemented-requirement per control, lowercased 
 		{ name: "hobo-evidence", value: "event-stream:policy.Decided" },
 		{ name: "hobo-evidence", value: "gate:gatekeeper.Decided" },
 	]);
-	// Unique requirement uuids across controls.
 	assert.equal(
 		new Set(requirements.map((entry) => entry.uuid)).size,
 		requirements.length,
@@ -98,7 +94,6 @@ test("assessment evidence: missing controls are not-satisfied with refs in remar
 		cc63?.target.remarks ?? "",
 		/artifact:connection-revocation-audit/u,
 	);
-	// Deterministic here too.
 	assert.deepEqual(doc, emitOscalAssessmentEvidence(report, SOC2_SEED_PACK));
 });
 

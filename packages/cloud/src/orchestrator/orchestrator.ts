@@ -48,14 +48,6 @@ import {
 	reconcileResource,
 } from "./resource-actor.js";
 
-// The Orchestrator (control-plane.md "Choreography over orchestration"): given a
-// DeploymentPlan DAG it activates ResourceActors; each self-activates when all its
-// dependencies' `resource.Provisioned` facts are present (edge-triggered by
-// events, level-triggered by this resync loop). When every actor reaches
-// Provisioned it drives `deployment.Deployed`. There is no central step-by-step
-// coordinator — ordering is the dependency DAG, realized by choreography. A
-// no-go failure hands off to choreographed compensation (compensation.ts).
-
 export interface OrchestratorDeps {
 	store: EventStore;
 	actorHost: ActorHost;
@@ -68,13 +60,7 @@ export interface OrchestratorContext {
 	tenant: string;
 	actor: PrincipalRef;
 	correlationId?: string;
-	// Resources whose apply-failure crosses the no-go threshold (seeded in tests).
 	noGoThresholdResources?: ReadonlySet<string>;
-	/**
-	 * `incremental` (default) keeps resources the log provisioned but the plan
-	 * no longer declares; `complete` destroys them after the declared ones
-	 * converge (Bicep's deployment modes).
-	 */
 	mode?: DeploymentMode;
 }
 
@@ -91,13 +77,9 @@ export interface OrchestratorResult {
 	destroyed: string[];
 	events: EventEnvelope[];
 	compensation?: CompensationResult;
-	/** The what-if this run started from: what it set out to change. */
 	changes: DeploymentChangeSet;
-	/** Undeclared resources `complete` mode destroyed, dependents first. */
 	pruned: string[];
-	/** Undeclared resources `complete` mode could not destroy (no recorded plan). */
 	unprunable: string[];
-	/** Provider changes refused until the prior resource's effects are reconciled. */
 	blockedProviderMoves?: readonly BlockedProviderMove[];
 
 	pendingOperations?: readonly PendingResourceOperation[];
@@ -155,9 +137,6 @@ function depsProvisioned(
 	});
 }
 
-// Run the choreography to convergence: reconcile any resource whose deps are all
-// Provisioned, re-folding the durable log each pass (level-triggered). Safe to
-// re-invoke against a partially-written stream — that is the crash-resume path.
 export async function runOrchestrator(
 	deps: OrchestratorDeps,
 	plan: DeploymentPlan,
@@ -193,8 +172,6 @@ export async function runOrchestrator(
 	const readHistory = () =>
 		readDeploymentHistory(deps.store, deploymentId, ctx.tenant);
 	let initialEvents = await readHistory();
-	// This run's epoch: facts after the last Deployed/RolledBack. Earlier
-	// failures belong to an `up` that already ended.
 	const epochStart = currentEpochStart(initialEvents);
 	const changes = planDeploymentChanges(plan, initialEvents, mode);
 	const planHash = deploymentPlanHash(plan);
@@ -462,9 +439,6 @@ export async function runOrchestrator(
 		}
 		if (initialPending !== undefined) return initialPending;
 	}
-	// Provisioning is recorded before dispatch, so even a failed or interrupted
-	// call may have created state. A new provider cannot take over that resource
-	// without a fenced handover. Unknown ownership must fail closed too.
 	const recorded = recordedResources(initialEvents);
 	const blockedProviderMoves = plan.resources.flatMap((resource) => {
 		const blocked = blockedProviderMove(recorded.get(resource.name), resource);
@@ -487,8 +461,6 @@ export async function runOrchestrator(
 	const resources = new Map(
 		plan.resources.map((resource) => [resource.name, resource]),
 	);
-	// Each resource is applied at most once per run: a retryable failure is
-	// reported as `waiting`, not retried in a hot loop.
 	const attempted = new Set<string>();
 	let lateBlocked: BlockedProviderMove | undefined;
 
@@ -512,7 +484,6 @@ export async function runOrchestrator(
 			};
 		}
 
-		// A no-go failure in this epoch short-circuits to compensation.
 		const failed = events.find(
 			(e) =>
 				e.seq > epochStart &&
@@ -529,7 +500,6 @@ export async function runOrchestrator(
 
 		for (const resource of plan.resources) {
 			const snapshot = snapshots.get(resource.name);
-			// Desired state reached (same spec hash): the controller no-op.
 			if (snapshot && isConverged(snapshot, resource)) continue;
 			if (snapshot?.state === "Destroying") continue;
 			if (attempted.has(resource.name)) continue;
@@ -552,7 +522,6 @@ export async function runOrchestrator(
 					reason: outcome.reason,
 				};
 			}
-			// Re-fold from the log on the next while-iteration (level-triggered).
 			break;
 		}
 
@@ -576,13 +545,7 @@ export async function runOrchestrator(
 			blockedProviderMoves: [lateBlocked],
 		};
 
-	// Compensation path: a no-go failure triggers deployment.RolledBack + reverse
-	// dependency-order destroys.
 	if (triggeringFailure) {
-		// Compensation deletes resources. An update to an already deployed estate
-		// cannot safely use that create-time rollback: it would destroy resources
-		// that existed before this epoch. Leave the failure durable for an operator
-		// rather than claiming the previous state was restored.
 		const beforeEpoch = initialEvents.filter(
 			(event) => event.seq <= epochStart,
 		);
@@ -636,8 +599,6 @@ export async function runOrchestrator(
 		};
 	}
 
-	// Complete mode: once every declared resource converged, destroy what the
-	// log provisioned but the plan no longer declares, dependents first.
 	const pruned: string[] = [...recoveredPruned];
 	let unprunable: string[] = [];
 	let pruneTransition: DeploymentTransitionData | undefined =
@@ -677,9 +638,6 @@ export async function runOrchestrator(
 			events = started.events;
 			pruneTransition = started.state.transition;
 		}
-		// A live declared resource may still reference an undeclared one. An
-		// orphan without a recorded plan may depend on any other orphan, so
-		// preserve all known orphans until its dependencies can be recovered.
 		const blocked = new Set(
 			plan.resources.flatMap((resource) => resource.deps),
 		);
@@ -778,16 +736,11 @@ export async function runOrchestrator(
 	states = resourceStates(events, plan, deploymentId);
 	const finalPending = await pendingResult(events, pruned, unprunable);
 	if (finalPending !== undefined) return finalPending;
-	// All actors Provisioned → drive deployment.Deployed (choreography terminal).
 	const allProvisioned = declaredConverged() && unprunable.length === 0;
-	// Deployed is recorded once per change: an idempotent re-run that changed
-	// nothing appends nothing.
 	if (allProvisioned && changedSinceLastDeployed(events)) {
 		const lastSeq =
 			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
-		// The deployment stream is fenced (owner_epoch set by the first leased
-		// write); the terminal fact continues under the current owner epoch.
 		const fenceToken = currentFenceToken(deps.store, stream);
 		await emit(
 			deps.store,

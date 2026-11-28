@@ -11,9 +11,6 @@ import {
 
 afterEach(() => closeStores());
 
-// S3-01 — a scripted agent drives plan then up through the MCP server, reaching
-// deployment.Deployed by reusing the CLI dispatch seam + an injected YardRuntime.
-
 describe("scripted agent drives plan -> up through the MCP server", () => {
 	it("reaches deployment.Deployed over the shared @hobo/cli dispatch path", async () => {
 		await withProject(HELLO_BINDLE, async (cwd) => {
@@ -48,7 +45,6 @@ describe("scripted agent drives plan -> up through the MCP server", () => {
 			);
 			expect(provisioned.length).toBe(3);
 
-			// Every authorized call left an audited allow decision.
 			const decisions = server.getAuditEvents();
 			expect(decisions.filter((e) => e.data.effect === "allow").length).toBe(2);
 			expect(decisions.every((e) => e.retention.neverCompact === true)).toBe(

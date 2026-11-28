@@ -498,7 +498,7 @@
     {
       "name": "serve",
       "role": "control plane",
-      "summary": "Local control-plane HTTP+SSE for the Yard game UI",
+      "summary": "Serve the local control-plane HTTP and SSE API",
       "cli": "hobo serve",
       "mcpTool": "serve",
       "capability": {

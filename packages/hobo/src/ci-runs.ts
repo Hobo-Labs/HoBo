@@ -244,7 +244,6 @@ function failed(conclusion: string | null): boolean {
 	].includes(conclusion ?? "");
 }
 
-/** GitHub owns Actions run history, logs and retry state; the relay owns runner leases. */
 export async function runCiRuns(input: {
 	command: string;
 	repository: string;
@@ -512,8 +511,6 @@ export async function runCiRuns(input: {
 		};
 		const wait = switchOption(options, "wait");
 		const deadline = now() + 600000;
-		// Retry only read requests. A failed rerun response may already have
-		// committed at GitHub and must never be submitted a second time here.
 		const retryRead = async <T>(
 			readValue: () => Promise<T>,
 			newAttempt = false,
@@ -560,8 +557,6 @@ export async function runCiRuns(input: {
 			await github.post(`${runPath}/rerun`);
 			if (wait) {
 				targetAttempt = previousAttempt + 1;
-				// Pin the newly requested attempt. Another operator may retry the
-				// same run later; that must not replace the result we are waiting for.
 				viewAttempt = targetAttempt;
 				let observedAttempt = await retryRead(readAttempt);
 				while (observedAttempt < targetAttempt) {

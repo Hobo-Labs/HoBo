@@ -1,0 +1,65 @@
+{
+  "generated": [
+    "typed ctx.bindings clients",
+    "typed hooks",
+    "typed workflow and step signatures",
+    "typed provider .with options",
+    "typed api function tree",
+    "protobuf descriptors",
+    "zod validators"
+  ],
+  "rawEscapes": [
+    {
+      "name": "legacyRows",
+      "portability": "flagged",
+      "resource": "db",
+      "type": "unknown"
+    }
+  ],
+  "schema": "hobo.codegen/v1",
+  "sourceDigest": "5942dd2a8edab14840a162914d58e63c06eb00d19218316c12c764ac3e726bb7",
+  "sources": {
+    "allowScopes": {
+      "db": [
+        "read",
+        "write",
+        "query"
+      ],
+      "uploads": [
+        "read"
+      ]
+    },
+    "bindleGraph": {
+      "api": [
+        "api.tickets.create",
+        "api.tickets.list"
+      ],
+      "components": [
+        "api"
+      ]
+    },
+    "wit": {
+      "interfaces": [
+        "hobo:data",
+        "hobo:workflow",
+        "wasi:blobstore"
+      ],
+      "records": [
+        "CloseTicketInput",
+        "CloseTicketResult",
+        "Ticket",
+        "TicketDraft",
+        "TicketEmailInput",
+        "TicketEmailResult"
+      ]
+    },
+    "zodSchemas": [
+      "CloseTicketInput",
+      "CloseTicketResult",
+      "Ticket",
+      "TicketDraft",
+      "TicketEmailInput",
+      "TicketEmailResult"
+    ]
+  }
+}

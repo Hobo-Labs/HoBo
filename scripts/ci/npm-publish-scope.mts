@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * Apply release/npm-scope-map.json to a staged package manifest (publish boundary only).
- * Does not rewrite workspace source manifests.
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -12,11 +8,6 @@ const mapPath = join(root, "release", "npm-scope-map.json");
 type ScopeMap = {
 	publicScope: string;
 	packages: Record<string, string>;
-	/**
-	 * The source repository every published manifest names. npmjs verifies a
-	 * provenance bundle against it: the statement's workflow repository must
-	 * match `repository.url` in the tarball's package.json.
-	 */
 	repository?: string;
 };
 
@@ -109,7 +100,6 @@ function remapDeps(
 	return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Returns a publish-ready manifest object (caller writes to staging dir). */
 export function applyScopeToManifest(
 	manifest: PackageJson,
 	map: ScopeMap = loadNpmScopeMap(),

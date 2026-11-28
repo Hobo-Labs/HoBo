@@ -85,7 +85,6 @@ describe("embedded broker-runtime", () => {
 			await loadBindleDefinition(helloBindleDir),
 			"(await loadBindleDefinition(helloBindleDir))",
 		);
-		// Synthesize a forbidden cloud provider pin on the Bindle.
 		const pinned = {
 			...definition,
 			resources: {
@@ -143,7 +142,6 @@ describe("embedded broker-runtime", () => {
 		};
 		expect(envelope.ok).toBe(true);
 		expect(envelope.code).toBe("HOBO_OK");
-		// Composed CLI may take event-sourced yard lane or broker-runtime path.
 		if (envelope.data.bindleName !== undefined) {
 			expect(envelope.data.bindleName).toBe("hello-bindle");
 		}

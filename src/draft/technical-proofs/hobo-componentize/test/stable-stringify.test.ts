@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { stableStringify } from "../src/json.js";
 
-// Regression: the two private copies of stableStringify diverged — the
-// sources.ts copy was a bare JSON.stringify (insertion-order dependent) and
-// the oci.ts copy checked isJsonObject before Array.isArray, so objects
-// nested inside arrays were never key-sorted (the array branch was dead
-// code). Digests derived from either copy were only accidentally stable.
 describe("stableStringify", () => {
   it("is independent of object key insertion order", () => {
     expect(stableStringify({ b: 1, a: 2 })).toBe(

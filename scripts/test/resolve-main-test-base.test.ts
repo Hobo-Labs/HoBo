@@ -9,13 +9,6 @@ import {
 	resolveMainTestBase,
 } from "../ci/resolve-main-test-base.mts";
 
-/**
- * `resolveMainTestBase` asks git in the working directory whether a commit
- * exists. The repository's own history is not an input the test controls: a
- * CI checkout with `fetch-depth: 2` has no `HEAD~2`, so the answer changed
- * with the machine. These tests run in a throwaway repository of four commits
- * (oldest first) with the user's git configuration switched off.
- */
 const GIT_ENV: NodeJS.ProcessEnv = {
 	...process.env,
 	GIT_CONFIG_GLOBAL: "/dev/null",
@@ -38,7 +31,6 @@ function git(cwd: string, args: readonly string[]): string {
 let repo = "";
 let commits: readonly string[] = [];
 
-/** Runs `check` with the throwaway repository as the working directory. */
 function inRepo<T>(check: () => T): T {
 	const home = process.cwd();
 	process.chdir(repo);

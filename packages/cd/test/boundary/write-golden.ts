@@ -1,6 +1,3 @@
-// Regenerate the CDEvents golden file after an intentional spec or projection
-// change: `node --import tsx test/boundary/write-golden.ts` from packages/cd.
-// Review the diff; the golden test pins it byte for byte.
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

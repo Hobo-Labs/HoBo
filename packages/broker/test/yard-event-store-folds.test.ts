@@ -141,7 +141,6 @@ describe("yard event-store folds + provider resolvers", () => {
 				expectedYardId: "yard:gen-1",
 			}),
 		]);
-		// First reservation wins the lease.
 		expect(state.generationByIdempotency["sha256:same"]).toBe("a1");
 		expect(state.generationAttempts.a1?.status).toBe("reserved");
 	});
@@ -201,7 +200,6 @@ describe("yard event-store folds + provider resolvers", () => {
 		"expiry-after-claim",
 	])("funds Azure generation before provider effects: %s", async (mode) => {
 		const catalog = createLocalHostCatalog();
-		// Extend catalog with azure wildcard so residual placement can succeed after gen.
 		const azureCatalog = {
 			catalogHash: catalog.catalogHash,
 			definitions: () => [

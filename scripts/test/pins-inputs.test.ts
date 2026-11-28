@@ -1,9 +1,3 @@
-/**
- * What an operator or the environment hands the pin code is read exactly:
- * two repository URLs are the same only when git would treat them so (the
- * scheme and host fold case, the path does not), and a URL that names the
- * pin's own repository is not announced or rewritten as a move.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,7 +24,6 @@ afterEach(async () => {
 const OLD = Buffer.from("old build\n");
 const NEW = Buffer.from("new build, longer\n");
 
-/** A one-target pin of `mirror` at v1.0.0, and v2.0.0 published by the same server. */
 async function released(): Promise<{
 	root: string;
 	srv: FileServer;

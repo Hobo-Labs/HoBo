@@ -1,7 +1,6 @@
 import type { PactRequest, PactResponse, ProviderStub } from "../../src/index.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "../../src/json.js";
 
-
 export interface CoreContractSurface {
   readonly schemaVersion: "hobo.core/v1";
   readonly eventMappings: { readonly cloudEventSpecversion: "1.0" };

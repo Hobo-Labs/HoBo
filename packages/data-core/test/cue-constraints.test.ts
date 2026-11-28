@@ -1,9 +1,3 @@
-// The CUE constraints, exercised against real records. A schema that parses
-// has only been shown to be well-formed; these cases show it accepts what the
-// parsers accept and refuses what they refuse.
-//
-// Needs the pinned `cue` binary (on PATH, or the repo's .tools cache). Without
-// it the cases are skipped rather than passed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -96,7 +90,6 @@ function rejects(definition: string, record: JsonObject): void {
 
 const NOW = "2026-11-10T00:00:00.000Z";
 
-/** A record as it would cross a wire: through JSON, and nothing else. */
 function plain<T>(value: T): JsonObject {
 	const parsed = parseJsonText(JSON.stringify(value));
 	assert.ok(isJsonObject(parsed));
@@ -226,7 +219,6 @@ describe.skipIf(cue === undefined)(
 				lossless: true,
 				targetFenced: false,
 			});
-			// A checkpoint names its fence by digest.
 			const applied = {
 				migrationId: "m",
 				phase: "fence-and-flip",
@@ -240,12 +232,10 @@ describe.skipIf(cue === undefined)(
 				...applied,
 				checkpoint: { fenceToken: "fence:orders::1" },
 			});
-			// What a router compares-and-sets on: an identity, never the token.
 			const move = { migrationId: "m", head: 14, direction: "to-target" };
 			accepts("#AuthorityMoveRef", move);
 			rejects("#AuthorityMoveRef", { ...move, head: 0 });
 			rejects("#AuthorityMoveRef", { ...move, fenceToken: "fence:orders::1" });
-			// The destination log of a stream handoff is a role of its own.
 			accepts("#CustodyPoint", {
 				id: "log-us",
 				role: "target-event-log",
@@ -303,8 +293,6 @@ describe.skipIf(cue === undefined)(
 					clock: () => NOW,
 					policy: () =>
 						evaluateCustodyPath({
-							// One point per role: the run holds on a path that
-							// leaves out a copy it creates.
 							path: parseCustodyPath({
 								points: CUSTODY_ROLES.map((role) => ({
 									id: role,
@@ -338,7 +326,6 @@ describe.skipIf(cue === undefined)(
 			};
 			const planned = dataOf(MIGRATION_EVENTS.Planned);
 			accepts("#MigrationPlannedEventData", planned);
-			// A native plan names its profile; a hub plan has none to name.
 			const { profile: _profile, ...unnamed } = planned;
 			rejects("#MigrationPlannedEventData", unnamed);
 			rejects("#MigrationPlannedEventData", { ...planned, realization: "hub" });
@@ -384,7 +371,6 @@ describe.skipIf(cue === undefined)(
 			);
 			assert.equal(filtered.outcome, "unknown");
 			accepts("#EngineConformanceReport", filtered);
-			// One case run on its own cannot be presented as conformance.
 			rejects("#EngineConformanceReport", { ...filtered, outcome: "pass" });
 			accepts("#EngineConformanceReport", {
 				...whole,

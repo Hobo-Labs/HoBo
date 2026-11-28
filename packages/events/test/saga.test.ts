@@ -11,8 +11,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineSaga } from "../src/index.js";
 import { CTX, freshStore } from "./helpers.js";
 
-// --- Two aggregates: order and payment (the cross-aggregate boundary) ---------
-
 interface OrderState {
 	status: "none" | "placed" | "cancelled";
 	totalCents: number;
@@ -63,7 +61,6 @@ const payments = defineAggregate<
 	evolve: (state, event) =>
 		event.type === "payment.Charged" ? { charged: true } : state,
 	decide: (_state, command, emitter) => {
-		// Seeded failure: a charge over the limit is declined (an invariant error).
 		if (command.amountCents > CHARGE_LIMIT)
 			throw new AggregateInvariantError("payment declined: over limit");
 		emitter.emit("payment.Charged", {
@@ -73,7 +70,6 @@ const payments = defineAggregate<
 	},
 });
 
-// A projection to prove the flow round-trips into a queryable read model.
 // SAFETY: projection event keys select the declared payload shapes.
 const orderView = defineProjection<{ orderId: string; status: string }>({
 	name: "orders",
@@ -89,8 +85,6 @@ const orderView = defineProjection<{ orderId: string; status: string }>({
 		}),
 	},
 });
-
-// --- The saga: on order.Placed -> charge payment; compensate by cancelling ----
 
 // SAFETY: the saga trigger contract supplies orderId and totalCents on order.Placed.
 const checkout = defineSaga({
@@ -192,7 +186,7 @@ describe("cross-aggregate checkout saga", () => {
 		expect(outcome.status).toBe("compensated");
 		const factTypes = outcome.facts.map((f) => f.type);
 		expect(factTypes).toContain("saga.Compensated");
-		expect(factTypes).toContain("saga.StepEmitted"); // the compensating cancel
+		expect(factTypes).toContain("saga.StepEmitted");
 		const compensated = outcome.facts.find(
 			(f) => f.type === "saga.Compensated",
 		);
@@ -201,7 +195,6 @@ describe("cross-aggregate checkout saga", () => {
 			reason: "payment declined: over limit",
 		});
 
-		// Payment never charged; the order was rolled back via compensation.
 		const payment = await payments.load(s, "payment:2002");
 		expect(payment.state.charged).toBe(false);
 

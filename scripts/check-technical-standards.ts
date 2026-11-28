@@ -227,17 +227,6 @@ if (newJavaScriptFiles.length > 0) {
 	);
 }
 
-/**
- * True when the marker appears on the declaration line or anywhere in the
- * comment block immediately above it.
- *
- * This used to read exactly one preceding line, which meant a marker written
- * inside a multi-line comment — the natural place to put a sentence explaining
- * *why* a constant is the contract — did not count, and the check reported a
- * missing marker that was plainly there. Two agents lost a round trip to it in
- * one day. The rule the comment above already states is "on or above the
- * declaration"; this makes the code say the same thing.
- */
 function hasMarkerAbove(
 	lines: readonly string[],
 	index: number,
@@ -257,17 +246,11 @@ function hasMarkerAbove(
 	return false;
 }
 
-// Minimal public surface (technical-standards.md): no new exported
-// string-literal constants in package sources — schema identity and enum
-// vocabularies come from generated code. Constants that ARE the contract
 // carry a // public-contract: <why> marker on or above the declaration.
 const literalConstOffenders: string[] = [];
 for (const file of changedFiles(["A", "M"])) {
 	if (
 		!/^packages\/.+\/src\//.test(file) ||
-		// `_generated`, and suffixed siblings like `_generated-art`, are written
-		// by generators that stamp "do not hand-edit" — a marker added here
-		// would be dropped the next time the generator runs.
 		/(^|\/)_generated[\w-]*(\/|$)/.test(file) ||
 		!file.endsWith(".ts") ||
 		!existsSync(file)
@@ -297,14 +280,6 @@ if (literalConstOffenders.length > 0) {
 	);
 }
 
-// One build graph (turbo), not two. A package script must never build another
-// workspace package: `turbo run build` already guarantees dependencies through
-// `dependsOn: ["^build"]`, so a `pnpm --filter <dep> build` inside a package's
-// `build`/`prebuild`/`pretest` is a second, *uncached* build graph running
-// underneath the cached one. A full sweep used to pay ~150 cold `tsc`
-// invocations that way. Packages that need their own output before tests run
-// go through `scripts/ensure-built.mts`, which no-ops inside turbo and
-// delegates to turbo outside it.
 const OUT_OF_BAND_HOOKS = ["build", "prebuild", "pretest"] as const;
 const outOfBandBuilds: string[] = [];
 for (const file of run("git", ["ls-files", "**/package.json"])

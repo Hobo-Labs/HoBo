@@ -3,9 +3,6 @@ import type {
 	PactResponse,
 	ProviderStub,
 } from "@hobo/contract-harness";
-// The package's json helpers live in src/, not beside this consumer — the
-// anti-slop sweep (#1242) rewrote this import to the by-convention "./json.js"
-// and left the whole contract suite failing at module resolution ever since.
 import {
 	isJsonObject,
 	isJsonString,

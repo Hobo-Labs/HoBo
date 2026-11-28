@@ -1,6 +1,3 @@
-// Typed failure modes of the CD service host and its read API (WP12, plan
-// 0024). Every code has the HTTP status the read API answers with and a
-// remediation an operator can act on. Delivery-feed codes stay with the feed.
 import { create } from "@bufbuild/protobuf";
 import {
 	PersistenceUnavailableError,
@@ -101,7 +98,6 @@ export function serviceRefusal(
 	return { ok: false, reasons: [serviceReason(code, message, subject)] };
 }
 
-/** HTTP status of a refusal: the first reason's known code, else 400. */
 export function statusOf(refusal: Refusal): number {
 	const code = refusal.reasons[0]?.code ?? "";
 	return Object.hasOwn(SERVICE_FAILURES, code)
@@ -115,7 +111,6 @@ export function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** True when an error means the journal itself is unavailable. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: JavaScript catch values are untrusted; only instanceof against the core store errors is checked.
 export function isStoreFailure(error: unknown): boolean {
 	return (

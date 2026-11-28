@@ -19,7 +19,6 @@ export const OSCAL_VERSION = "1.1.2";
 
 export type OscalExportKind = "component-definition" | "assessment-results";
 
-/** Wire summary of one boundary export (see OscalExportSummaryRecord). */
 export interface OscalExportSummary {
 	readonly kind: OscalExportKind;
 	readonly framework: string;
@@ -96,10 +95,6 @@ export interface OscalAssessmentResultsDocument {
 	};
 }
 
-/**
- * Deterministic UUID: sha256 of a stable seed, first 32 hex chars formatted
- * 8-4-4-4-12. Same inputs, same document — no Math.random, no Date.now.
- */
 function deterministicUuid(seed: string): string {
 	const hex = createHash("sha256").update(seed, "utf8").digest("hex");
 	return [
@@ -139,11 +134,6 @@ export interface OscalComponentDefinitionOptions {
 	readonly componentDescription?: string;
 }
 
-/**
- * Emit an OSCAL component-definition–shaped document: one component, one
- * control-implementation per pack, one implemented-requirement per control
- * with `hobo-status` / `hobo-evidence` props carrying the honest join.
- */
 export function emitOscalComponentDefinition(
 	pack: ControlEvidencePack,
 	options: OscalComponentDefinitionOptions,
@@ -253,7 +243,6 @@ export function emitOscalAssessmentEvidence(
 	});
 }
 
-/** Wire summary of an export (mirrors OscalExportSummaryRecord proto/CUE). */
 export function summarizeOscalExport(
 	kind: OscalExportKind,
 	pack: ControlEvidencePack,

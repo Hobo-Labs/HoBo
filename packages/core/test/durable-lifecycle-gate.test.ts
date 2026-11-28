@@ -77,7 +77,6 @@ function fixture() {
 					if (leases.get(key) !== token) throw new Error("stale lease");
 				},
 				async release() {
-					// A lost release leaves the lease held until it expires.
 					if (releaseFailures > 0) {
 						releaseFailures--;
 						throw new Error("release lost");
@@ -167,11 +166,9 @@ function fixture() {
 		failNextRelease() {
 			releaseFailures++;
 		},
-		/** Simulates lease expiry at the shared authority. */
 		expireLease(key: string) {
 			leases.delete(key);
 		},
-		/** Another holder keeps the lease for `ms` before releasing it. */
 		holdLease(key: string, ms: number) {
 			if (leases.has(key)) throw new Error("busy");
 			const token = ++fence;

@@ -31,7 +31,6 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 		expect(handle.result).toBe("results:outage");
 		expect(toolCalls).toBe(1);
 
-		// The tool call is a journaled step (so the agent is replayable).
 		const journal = await engine.journal(handle.runId);
 		const toolStep = journal.find(
 			(event) =>
@@ -46,7 +45,6 @@ describe("agent(): durable tool-invoking actor under a deny-by-default ctx", () 
 		const engine = createWorkflowEngine();
 		const support = agent<string, JsonValue>({
 			name: "support",
-			// No token:openai capability declared.
 			async run(ctx, _input) {
 				return ctx.token({ provider: "openai", scope: "chat" });
 			},

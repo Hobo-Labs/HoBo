@@ -1,13 +1,3 @@
-// Server-sent events codec for the delivery feed (WHATWG HTML §9.2). Pure.
-//
-//   frame      `id: <position>\nevent: frame\ndata: <DeliveryFeedFrame JSON>\n\n`
-//   heartbeat  `: heartbeat\n\n` (a comment; carries no id)
-//   end        `event: end\ndata: {"reason":"caught-up"|"long-poll"|"limit"}\n\n`
-//
-// A response without a trailing `end` event was cut off; the client resumes
-// with `Last-Event-ID` set to the last frame id it received, so nothing is
-// skipped and nothing is repeated.
-
 // public-contract: SSE event names of the delivery feed.
 export const FEED_SSE_EVENTS = Object.freeze({
 	frame: "frame",
@@ -36,11 +26,9 @@ export function encodeEnd(reason: FeedEndReason): string {
 	return `event: ${FEED_SSE_EVENTS.end}\ndata: ${JSON.stringify({ reason })}\n\n`;
 }
 
-/** Parse complete SSE messages; a trailing partial message is dropped (it was cut off). */
 export function decodeSse(text: string): readonly SseMessage[] {
 	const out: SseMessage[] = [];
 	const blocks = text.replace(/\r\n?/gu, "\n").split("\n\n");
-	// The last block is complete only if the text ended with a blank line.
 	blocks.pop();
 	for (const block of blocks) {
 		let id: string | undefined;

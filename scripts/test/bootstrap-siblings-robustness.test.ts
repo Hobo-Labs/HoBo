@@ -1,8 +1,3 @@
-/**
- * Things in the way that a fetch must not trust or crash on: a link or a
- * directory where a verified file belongs, an unexpected system error, and a
- * directory that is not a git checkout at all.
- */
 import assert from "node:assert/strict";
 import {
 	existsSync,

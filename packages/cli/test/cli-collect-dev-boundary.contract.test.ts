@@ -29,11 +29,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject, JsonValue } from "../src/json.js";
 
-// Consumer pact for the CLI <-> local-dev-loop boundary: the collect (@hobo/bindles
-// run-to-collect) and dev (runtime-local Camp) verbs share this seam. The
-// recorded expectations pin the collect manifest hash and the offline dev serve
-// so drift in either boundary is caught here.
-
 const pactPath = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",

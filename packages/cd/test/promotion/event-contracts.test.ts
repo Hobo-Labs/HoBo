@@ -1,4 +1,3 @@
-// Golden upcaster corpus for the env.* promotion events (append-only).
 import { readFileSync } from "node:fs";
 import {
 	createCorpusBaseline,

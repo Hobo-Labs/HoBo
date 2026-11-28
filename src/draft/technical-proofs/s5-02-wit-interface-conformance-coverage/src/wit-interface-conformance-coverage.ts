@@ -7,7 +7,6 @@ import {
 } from "../../conformance-port-suite-contract/src/conformance-port-suite.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const COVERAGE_REPORT_SCHEMA = "hobo.conformance.wit-coverage-report/v1";
 export const PUBLISH_GATE_SCHEMA = "hobo.conformance.registry-publish-gate/v1";
 export const RECERTIFICATION_SCHEMA = "hobo.conformance.provider-recertification/v1";

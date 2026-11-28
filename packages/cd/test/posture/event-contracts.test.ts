@@ -1,4 +1,3 @@
-// Golden upcaster corpus for the policy/posture events (append-only).
 import { readFileSync } from "node:fs";
 import { runCanDeployUpcasterGate, validateEventBody } from "@hobo/events";
 import { describe, expect, it } from "vitest";

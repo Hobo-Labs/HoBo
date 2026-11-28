@@ -148,11 +148,6 @@ function cueDefinitionName(schemaPath: string): string {
 
 const CUE_PACKAGE_CLAUSE = /^package\s+(\w+)\s*$/m;
 
-/**
- * The files CUE unifies with each schema: those in the folder that declare the
- * same package, so a definition in a sibling file is a legitimate reference. A
- * file with no package clause, or the only file of its package, is vetted alone.
- */
 async function unifiedSchemas(
 	schemas: readonly string[],
 ): Promise<ReadonlyMap<string, readonly string[]>> {
@@ -216,8 +211,6 @@ export async function vetCueConstraints(
 	for (const absolute of pkg.cueSchemas) {
 		const schemaPath = absolute.slice(pkg.dataModelsDir.length + 1);
 		const schemaArgs = unified.get(absolute) ?? [absolute];
-		// Flat corpora retain their package-wide meaning. Scoped corpora add
-		// checks only for their owning schema; they cannot mask flat fixtures.
 		for (const fixtureRoot of [
 			"fixtures",
 			join("fixtures", basename(schemaPath, ".cue")),

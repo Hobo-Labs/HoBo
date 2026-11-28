@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Codex SWE adapter wire records. One constraint
-// per protobuf message in swe_codex.proto.
 
 #CodexLaunchRecord: {
 	command: "codex-acp"

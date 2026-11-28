@@ -12,14 +12,6 @@ import {
 } from "./errors.js";
 import { DISPATCHER_DECLARATION_SCHEMA, RUNNER_SCHEMA } from "./schema.js";
 
-// `dispatcher()` WRAPS @hobo/dispatcher: runner declarations lower onto
-// `DispatchProviderInput` records and the declaration carries the engine's own
-// parsed registry (`createDispatcherRegistry`), so `decideDispatch` consumes an
-// SDK-authored fleet directly and records `dispatch.Decided` as usual. The
-// engine's ranking objective is credit-first cost minimization
-// ("maximize-credits"); the SDK accepts the walkthrough's "min-cost" spelling
-// and pins the engine objective alongside it.
-
 export type RunnerKind = "self-hosted" | "github" | "depot" | "blacksmith";
 
 // domain-view: authored CI-runner declaration; wire form is RunnerDeclaration in data-models/sdk.proto.
@@ -28,7 +20,6 @@ export interface RunnerDeclaration {
 	readonly kind: RunnerKind;
 	readonly providerId: string;
 	readonly category: "runner";
-	/** Optional outbound relay; omitted for direct local self-hosted execution. */
 	readonly behind?: "relay";
 	readonly listUnitCost: number;
 	readonly switchingCost: number;
@@ -53,10 +44,8 @@ export interface DispatcherOptions {
 export interface DispatcherDeclaration {
 	readonly schema: string;
 	readonly objective: DispatcherObjective;
-	/** The objective spelling @hobo/dispatcher's decideDispatch accepts. */
 	readonly engineObjective: "maximize-credits";
 	readonly runners: readonly RunnerDeclaration[];
-	/** Parsed candidate registry from @hobo/dispatcher — feed it to decideDispatch. */
 	readonly registry: DispatcherRegistry;
 }
 

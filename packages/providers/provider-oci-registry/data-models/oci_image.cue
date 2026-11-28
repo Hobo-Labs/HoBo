@@ -1,4 +1,3 @@
-// CUE constraints for oci_image.proto (oci-registry.image/v1).
 package provider_oci_registry
 
 import "list"
@@ -37,7 +36,6 @@ import "list"
 	ready:              manifestPresent && tagsConverged
 	operationConfirmed: ready
 	operationTerminal:  ready
-	// A registry image is never reported absent by reconcile or read.
 	absenceConfirmed: false
 	lifecycleStatus:  "ready" | "pending"
 	if ready {lifecycleStatus: "ready"}

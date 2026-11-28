@@ -1,15 +1,3 @@
-/**
- * The rebalance actor. It consumes one RebalanceRequested command, reads
- * current routed-variable state, folds usage snapshots and hard-block
- * evidence into the CreditLedgerView projection, asks the pure dispatcher
- * for `dispatch.Decided` records, appends the resulting events to the
- * event store the caller supplies, and (in apply mode) drives the
- * execution adapter to patch Actions variables. The returned RebalancePlan
- * is the snapshot a read store keeps for "what is routing where right now".
- * The actor never mutates the read model directly — callers project the
- * appended events.
- */
-
 import { create, toJson } from "@bufbuild/protobuf";
 
 import {
@@ -45,7 +33,6 @@ export interface VariablesWriter extends VariablesReader {
 	set(name: string, value: string): Promise<void>;
 }
 
-/** One event-store append; family names come from docs/design/event-families.md. */
 export interface LedgerEvent {
 	family: string;
 	payload: JsonObject;
@@ -56,16 +43,13 @@ export type VariableState = { [name: string]: string | undefined };
 export interface RebalanceDeps {
 	variables: VariablesWriter;
 	usageSources: readonly UsageSource[];
-	/** Reactive backstop evidence (failed-run scan); optional. */
 	failureSignals?: () => Promise<readonly HardBlockSignal[]>;
 }
 
 export interface RebalanceOptions {
-	/** Untrusted registry document; crosses the parse boundary here. */
 	registryDocument: JsonValue;
 	mode: "plan" | "apply";
 	requestedBy: string;
-	/** Pinned ledger sequence token recorded on every decision. */
 	seq: string;
 	pins?: readonly string[];
 	flipUpPct?: number | undefined;

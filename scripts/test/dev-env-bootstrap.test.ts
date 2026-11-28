@@ -1,6 +1,3 @@
-/**
- * Dev environment bootstrap contract: mise.toml, bootstrap script, and optional Docker smoke.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {

@@ -1,11 +1,3 @@
-// Promoted proof semantics (AGENTS.md § Draft-proof promotion policy). Each
-// describe block carries the semantics of one frozen draft proof into the
-// production rollout path; the proofs themselves are not edited.
-//
-//   deployment-strategy-saga-templates-contract
-//   stuck-rollout-convergence-contract
-//   domain-cutover-saga-contract
-//   hobo-delivery-port
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

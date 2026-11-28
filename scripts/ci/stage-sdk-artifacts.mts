@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** Stage npm pack tarballs for allowlisted SDK packages into an artifact directory. */
 import { spawn, spawnSync } from "node:child_process";
 import {
 	cpSync,
@@ -37,7 +36,6 @@ const root = join(import.meta.dirname, "..", "..");
 
 export { SDK_PACKAGES };
 
-/** Turbo argv for the SDK allowlist build (honors `HOBO_TURBO_CONCURRENCY`). */
 export function releaseSdkTurboBuildArgv(
 	env: NodeJS.ProcessEnv = process.env,
 ): string[] {
@@ -52,7 +50,6 @@ export function releaseSdkTurboBuildArgv(
 	];
 }
 
-/** Turbo-build every allowlisted SDK package before `npm pack` staging. */
 export function buildReleaseSdkPackages(
 	env: NodeJS.ProcessEnv = process.env,
 ): void {
@@ -77,7 +74,6 @@ type WorkspaceManifest = {
 	scripts?: Record<string, string>;
 };
 
-/** Install order for SDK tarballs (MANIFEST.json pack order, not lexical). */
 export function orderedSdkTarballPaths(artifactsDir: string): string[] {
 	const manifestPath = join(artifactsDir, "MANIFEST.json");
 	if (!existsSync(manifestPath)) {
@@ -115,9 +111,7 @@ function findPackageDir(name: string): string {
 			// SAFETY: only `name` is read to locate the workspace directory.
 			const manifest = raw as { name?: string };
 			if (manifest.name === name) return join(root, "packages", rel);
-		} catch {
-			/* skip */
-		}
+		} catch {}
 	}
 	throw new Error(`package dir not found for ${name}`);
 }

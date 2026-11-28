@@ -1,19 +1,10 @@
 import { createHash } from "node:crypto";
 
-/**
- * Deterministic seeding for the replay corpus (S1-16). Recording the corpus
- * from `examples/hello-bindle` must be reproducible byte-for-byte, so both the
- * Clock and the ULID generator are seeded — no wall-clock, no ambient entropy.
- */
-
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A monotonic clock that starts at a fixed instant and advances in fixed steps. */
 export interface SeededClock {
 	nowMs(): number;
-	/** ISO-8601 timestamp for the current instant. */
 	nowIso(): string;
-	/** Advance the clock by one step and return the new instant in ms. */
 	tick(): number;
 }
 
@@ -32,7 +23,6 @@ export function createSeededClock(
 	};
 }
 
-/** A ULID generator seeded from a string; ids are stable and lexically sortable. */
 export interface SeededUlid {
 	next(atMs: number): string;
 }

@@ -8,12 +8,7 @@ import {
 
 import type { ManifestHash } from "../manifest/index.js";
 
-// The two facts run-to-collect appends per collection run. `bindle.ResourcesCollected`
-// (seq 1) records what the components declared while running in collection mode;
-// `bindle.ManifestProduced` (seq 2) records the deterministic manifest IR hash an
-// actor folded from them. Ids are content-addressed so two runs of the same
-// Bindle emit byte-identical events (determinism gate).
-
+// public-contract: stable exported contract literal
 export const COLLECTION_EVENT_SOURCE = "hobo.collector" as const;
 
 export type CollectionEventType =

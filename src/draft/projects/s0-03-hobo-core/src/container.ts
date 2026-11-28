@@ -1,7 +1,6 @@
 import { createPortDescriptor, portKey } from "./ports.js";
 import { cloneAsJson, type JsonValue } from "./json.js";
 
-
 export interface Container {
   register<T>(descriptor: JsonValue, implementation: T): void;
   resolve<T>(descriptor: JsonValue): T;

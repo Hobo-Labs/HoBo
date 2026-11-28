@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "../json.js";
 
-
 const RUN_EVENT_TYPES = new Set([
   "run.Started",
   "run.StepScheduled",

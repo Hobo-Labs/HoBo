@@ -19,12 +19,6 @@ import {
 	SweTaskSchema,
 } from "./_generated/swe_task_pb.js";
 
-// Shared SWE-task session shape every vendor adapter runs (HOBO-722..726).
-// Vendor packages pass their connector id and keep launch/transcript local.
-// Record shapes are the generated protobuf types (data-models/swe_task.proto);
-// this module adds only the guardrail defaults, boundary parsing, and the
-// report projections over audit facts.
-
 /** public-contract: SWE-task report document schema id. */
 export const SWE_TASK_REPORT_SCHEMA = "hobo.swe-task-report/v1";
 /** public-contract: sandbox access-report document schema id. */
@@ -37,7 +31,6 @@ export type {
 } from "./_generated/swe_task_pb.js";
 export { SandboxAccessReportSchema, SweTaskReportSchema, SweTaskSchema };
 
-/** Default SWE-task guardrails: workspace R/W + tests auto; deploy/destroy/token/admin gated. */
 export function sweTaskPolicy(agentId: string): AgentGuardrailPolicy {
 	return parseAgentGuardrailPolicy({
 		agentId,
@@ -56,9 +49,7 @@ export function sweTaskPolicy(agentId: string): AgentGuardrailPolicy {
 const IN_SCOPE_PREFIXES = ["workspace:", "tests:", "logs:"];
 
 export interface SweTaskRunInput {
-	/** Vendor connector id, e.g. `swe-claude`. */
 	readonly connector: string;
-	/** Parsed at the boundary via `create(SweTaskSchema, …)`. */
 	readonly task: SweTask;
 	readonly agent: AcpAgentFactory;
 	readonly principal: AgentPrincipal;
@@ -67,8 +58,6 @@ export interface SweTaskRunInput {
 	readonly onFact?: (fact: AcpSessionFact) => void;
 }
 
-// Non-wire type: composes the generated report messages with the live ACP
-// session facts of one run, which are runtime objects and not serializable.
 // parallel-type-allowed: deliberate non-wire composition; the proto SweTaskRunResult carries only fact_kinds, not live AcpSessionFact objects.
 export interface SweTaskRunResult {
 	readonly report: SweTaskReport;
@@ -76,7 +65,6 @@ export interface SweTaskRunResult {
 	readonly facts: readonly AcpSessionFact[];
 }
 
-/** Run one governed SWE task; reports are projections over audit facts. */
 export async function runSweTask(
 	input: SweTaskRunInput,
 ): Promise<SweTaskRunResult> {

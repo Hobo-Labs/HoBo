@@ -1,10 +1,3 @@
-// A gate that reads an instant through `Date.parse` reads one with no offset
-// as local time: the same custody path expired on a host in Tokyo and passed
-// on one in Los Angeles, and the same evidence was fresh on one and stale on
-// the other. These run the gates in real processes under three zones.
-//
-// A child process, because setting `process.env.TZ` inside a vitest worker
-// thread changes the variable and not the zone.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -45,7 +38,6 @@ describe("selector and custody instants do not depend on the process time zone",
 			reports.map((report) => report.zone),
 			[...ZONES],
 		);
-		// Local midnight of one civil date is a different instant in each.
 		assert.equal(
 			new Set(reports.map((report) => report.localMidnight)).size,
 			ZONES.length,

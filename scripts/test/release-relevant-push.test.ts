@@ -63,7 +63,7 @@ describe("main train release scope", () => {
 		const { dir, git, commit } = repo();
 		commit("README.md");
 		git("tag", "-a", "v0.0.0-alpha.5", "-m", "release");
-		commit("site/index.html"); // its run was cancelled by the next push
+		commit("site/index.html");
 		const head = commit(".github/ISSUE_TEMPLATE/notes.md");
 		expect(releaseScopeBetween(dir, `${head}^`, head).run).toBe(false);
 		const scope = releaseScopeSinceLastRelease(dir, head);

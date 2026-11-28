@@ -60,7 +60,6 @@ test("a wrong category fails its metric and drops the overall score", async () =
 });
 
 test("the pass threshold is configurable", async () => {
-	// 2/3 metrics pass → overall ≈ 0.67: fails the 0.8 default, passes at 0.5.
 	const strict = await grader().grade(
 		trajectory("t3", "site is down", "access", 0.2),
 	);

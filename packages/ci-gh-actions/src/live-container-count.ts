@@ -8,7 +8,6 @@ const LIVE_BOX_CONTAINER_STATES = new Set([
 	"uncertain",
 ]);
 
-/** Box/K8s leases that already hold a launch slot (reserved-only does not). */
 export function countLiveBoxContainers(leases: readonly Lease[]): number {
 	return leases.filter(
 		(lease) =>
@@ -18,7 +17,6 @@ export function countLiveBoxContainers(leases: readonly Lease[]): number {
 	).length;
 }
 
-/** Worker launch slots not consumed by a live box container. */
 export function localWorkerFreeSlots(
 	launchSlots: number,
 	leases: readonly Lease[],

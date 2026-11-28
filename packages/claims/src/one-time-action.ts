@@ -1,11 +1,3 @@
-/**
- * One-time sensitive action store.
- *
- * A provider claim URL is bearer authority. Anyone holding it can take the
- * infrastructure, so it is stored encrypted, bound to the session that created
- * it, single-use where the provider allows, and never placed in an event, a
- * public read model, a log line, or a trace.
- */
 import { timingSafeEqual } from "node:crypto";
 
 import { ClaimError, type Instant } from "./types.js";
@@ -18,7 +10,6 @@ export type OneTimeActionRef = {
 
 export type PutOneTimeActionInput = {
 	readonly id: string;
-	/** The bearer value. Encrypted before it reaches storage. */
 	readonly value: string;
 	readonly tenantId: string;
 	readonly projectId: string;
@@ -42,7 +33,6 @@ export type RedeemedOneTimeAction = {
 	readonly value: string;
 };
 
-/** Encryption is delegated so the store never owns key management. */
 export type ActionCipher = {
 	seal(plaintext: string): string;
 	open(sealed: string): string;
@@ -65,7 +55,6 @@ export type OneTimeActionStore = {
 	redeem(input: RedeemOneTimeActionInput): Promise<RedeemedOneTimeAction>;
 	revoke(id: string): Promise<void>;
 	expire(now: Instant): Promise<number>;
-	/** Redemptions are audited without ever recording the bearer value. */
 	audit(): readonly OneTimeActionAudit[];
 };
 
@@ -84,19 +73,12 @@ function constantTimeEquals(a: string, b: string): boolean {
 	const left = Buffer.from(a, "utf8");
 	const right = Buffer.from(b, "utf8");
 	if (left.length !== right.length) {
-		// Still burn a comparison so length alone is not a fast path.
 		timingSafeEqual(left, left);
 		return false;
 	}
 	return timingSafeEqual(left, right);
 }
 
-/**
- * In-memory implementation backed by an injected cipher.
- *
- * Durable deployments swap the map for the event-store-backed table; the scope,
- * expiry, replay, and audit rules are identical and are what the tests pin.
- */
 export function createOneTimeActionStore(
 	cipher: ActionCipher,
 ): OneTimeActionStore {
@@ -133,8 +115,6 @@ export function createOneTimeActionStore(
 			const stored = actions.get(input.id);
 			if (stored === undefined) {
 				auditLog.push({ id: input.id, outcome: "denied", at: input.now });
-				// Same error whether it never existed or belonged to someone else:
-				// existence must not leak across tenants.
 				throw new ClaimError(
 					"ONE_TIME_ACTION_EXPIRED",
 					"one-time action is not available",

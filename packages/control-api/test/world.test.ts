@@ -51,7 +51,6 @@ async function json(
 	};
 }
 
-/** Minimal ExportTraceServiceRequest (mirrors the yard-world mapper fixture). */
 function traceFixture() {
 	return {
 		resourceSpans: [
@@ -127,7 +126,6 @@ describe("@hobo/control-api world read model", () => {
 		expect(Object.keys(dataA.world.characters).length).toBeGreaterThanOrEqual(
 			10,
 		);
-		// Same seed → identical world content.
 		expect(dataA.world).toEqual(dataB.world);
 	});
 
@@ -141,7 +139,7 @@ describe("@hobo/control-api world read model", () => {
 		expect(ingest.body.ok).toBe(true);
 		// SAFETY: the ingest response contract contains an accepted count.
 		const accepted = (ingest.body.data as { accepted: number }).accepted;
-		expect(accepted).toBeGreaterThanOrEqual(2); // span-started + span-ended
+		expect(accepted).toBeGreaterThanOrEqual(2);
 
 		const snap = await json(server.url, "/v1/world/snapshot");
 		// SAFETY: the world snapshot endpoint returns the declared WorldEnvelope.
@@ -203,9 +201,6 @@ describe("@hobo/control-api world read model", () => {
 });
 
 describe("OTLP ingest is not a cross-origin write primitive", () => {
-	// Ingest materializes stations, camps and characters that render as real,
-	// unbadged telemetry. A browser can POST cross-origin without preflight when
-	// the content type is "simple", so these guards are load-bearing.
 	it("refuses a browser Origin", async () => {
 		const server = await createControlApiServer({
 			hoboHome: tempHome(),

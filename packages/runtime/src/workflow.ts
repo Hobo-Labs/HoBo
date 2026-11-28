@@ -1,10 +1,3 @@
-// `workflow` / `step` — durable, replayable orchestration (sdk-api.md §Layer 4,
-// lowering onto `hobo:runtime/workflow`). Each `ctx.step` result is journaled as
-// `run.StepCompleted`, so after a host restart the engine replays the journal:
-// completed steps are read back (never re-run) and execution resumes from the
-// tip. The journal it writes is the same `run.*` shape the existing replay
-// engine (`./replay`) verifies, so a completed run is replay-equivalent.
-
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -63,7 +56,6 @@ import {
 	terminalCompletedHandleResult,
 } from "./workflow-value.js";
 
-/** Durability primitives are always granted; effect capabilities are declared. */
 const DURABILITY_CAPABILITIES: readonly Capability[] = [
 	"step",
 	"sleep",
@@ -91,7 +83,6 @@ export interface DefineWorkflowInput<A, R> {
 	run(ctx: WorkflowContext, args: A): Promise<R> | R;
 }
 
-/** Define a durable workflow. */
 export function defineWorkflow<A, R>(
 	input: DefineWorkflowInput<A, R>,
 ): WorkflowDefinition<A, R> {
@@ -110,7 +101,6 @@ export function defineWorkflow<A, R>(
 	});
 }
 
-/** Sugar spelling: `workflow(name, (ctx, args) => …)`. */
 export function workflow<A, R>(
 	name: string,
 	run: (ctx: WorkflowContext, args: A) => Promise<R> | R,
@@ -144,15 +134,12 @@ export interface WorkflowEngine {
 		args: A,
 		options?: { runId?: string },
 	): Promise<WorkflowRunHandle<R>>;
-	/** Resume after a host restart: replays the journal, continues from the tip. */
 	resume<A, R>(
 		def: WorkflowDefinition<A, R>,
 		runId: string,
 		args: A,
 	): Promise<WorkflowRunHandle<R>>;
-	/** Read the journaled `run.*` events for a run. */
 	journal(runId: string): Promise<{ type: string; data: JsonValue }[]>;
-	/** Adapt to the existing replay engine (`replayRun`) for replay verification. */
 	toReplayDefinition<A, R>(
 		def: WorkflowDefinition<A, R>,
 	): ReplayWorkflowDefinition<R | null, A>;
@@ -1393,8 +1380,6 @@ export function createWorkflowEngine(
 					error: failure,
 				};
 			}
-			// Any other throw models an infrastructure crash: the journal keeps the
-			// steps completed so far, and a later `resume` picks up from the tip.
 			throw error;
 		}
 	}

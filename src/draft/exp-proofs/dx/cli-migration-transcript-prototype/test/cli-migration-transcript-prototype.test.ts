@@ -14,7 +14,6 @@ import {
 } from "../src/cli-migration-transcript-prototype.ts";
 import { type JsonValue } from "../src/json.js";
 
-
 test("HOBO-575 transcript prototype covers every required migration story beat", () => {
   const prototype = parseCliMigrationTranscriptPrototype(CLI_MIGRATION_TRANSCRIPT_PROTOTYPE);
 

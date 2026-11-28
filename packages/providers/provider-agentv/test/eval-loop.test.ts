@@ -11,12 +11,6 @@ import { test } from "vitest";
 import { createAgentVLiveEvalGrader } from "../src/index.js";
 import { trajectory } from "./helpers.js";
 
-// The IMPL-003 live-eval loop, offline and deterministic: stored trajectories
-// are graded by agentV assertions (no agent re-run, no LLM), the per-metric
-// scores aggregate into the gate's EvalResult, and the three-lens promotion
-// gate decides — exactly the Microsoft-Trace-style feedback path the design
-// names (capture → live-eval reward → optimize → gated promotion).
-
 const RUBRIC_REF = "rubric://support/classifier@1.0.0";
 
 const grader = createAgentVLiveEvalGrader({

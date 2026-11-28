@@ -1,8 +1,3 @@
-/**
- * `hobo feature` — OpenFeature-native flag observe / local set / eval.
- * Subcommands: list | eval | set | kill | status
- */
-
 import type { CommandModule } from "@hobo/cli";
 import {
 	createContractAssertedHarnessFixtures,
@@ -142,7 +137,6 @@ export function createFeatureCommand(
 					},
 					environment: (isJsonString(f.env) && f.env) || "local-dev",
 				});
-				// Evaluate against the active store (injected or fixture), never a stale client.
 				const detail = store.evaluateBoolean(key, ctx, false);
 				emitProgress(
 					`eval ${key}=${detail.value} variant=${detail.variant} reason=${detail.reason}`,

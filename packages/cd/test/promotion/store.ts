@@ -1,7 +1,3 @@
-// In-memory DurableEventStore for the WP6 tests, with the conformance-suite
-// semantics the saga relies on: per-stream expected-seq CAS, per-stream
-// idempotency-key dedup checked before the CAS, global positions, and
-// `readAll` filtered by type, tenant and position. Test-only.
 import type {
 	AppendOptions,
 	AppendResult,

@@ -58,7 +58,6 @@ async function bound(kind: PipelineBackend["kind"]) {
 			runner: typeof native.context.runner,
 		): typeof native.context.runner {
 			return async (request) => {
-				// The pinned SDK overlays tracked checkout files before every chained runner.
 				await writeFile(join(workspace, "seed.txt"), "source seed\n");
 				await writeFile(join(workspace, "tracked-delete.txt"), "delete me\n");
 				const result = await runner(request);

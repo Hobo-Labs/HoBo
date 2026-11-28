@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.collector.v1;
 
-// Usage-permission manifest records for S1-17 (HOBO-607 draft POC).
 
 enum AllowProvenance {
   ALLOW_PROVENANCE_UNSPECIFIED = 0;

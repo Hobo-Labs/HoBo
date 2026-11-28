@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Kubernetes-substrate IaC adapter wire records. One
-// constraint per protobuf message/enum in iac_crossplane.proto.
 
 #IacChangeOp: "IAC_CHANGE_OP_UNSPECIFIED" | "IAC_CHANGE_OP_CREATE" | "IAC_CHANGE_OP_UPDATE" | "IAC_CHANGE_OP_DELETE"
 

@@ -1,8 +1,3 @@
-/**
- * Node.js node:sqlite DatabaseSync adapter.
- * Production callers should use this only behind a serialized storage worker.
- */
-
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -17,7 +12,6 @@ import { isJsonBigInt, isJsonNumber, isJsonString } from "./json.js";
 
 export interface NodeSqliteDriverOptions {
 	readonly path: string;
-	/** Disable extension loading (default true). */
 	readonly disableExtensions?: boolean;
 }
 

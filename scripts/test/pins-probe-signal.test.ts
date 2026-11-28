@@ -1,13 +1,3 @@
-/**
- * The throwaway repository the server is asked from (`.probe-*` under the
- * cache root) never outlives the run that made it: SIGINT, SIGTERM and SIGHUP
- * during the probe remove it and end the probe's git, and one a harder kill
- * left is swept, older than an hour, by the next probe (a git-only run, with
- * no asset to download, included). The sweep never follows a link.
- *
- * A `git` on PATH holds the probe's fetch (and only that) until it is
- * signalled, and records its pid: the test signals once the hold has begun.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -39,7 +29,6 @@ const REAL_GIT = execFileSync("sh", ["-c", "command -v git"], {
 	encoding: "utf8",
 }).trim();
 
-/** A directory holding a `git` that stalls a fetch run inside a probe repository. */
 function holdingGit(dir: string): string {
 	const bin = join(dir, "bin");
 	mkdirSync(bin);
@@ -58,7 +47,6 @@ function probes(work: string): string[] {
 		: [];
 }
 
-/** Gone, or a zombie nobody has reaped yet: either way it is not running. */
 function running(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
@@ -77,7 +65,6 @@ describe("a signal during the probe leaves no probe repository", () => {
 		it(`${signal} removes it and ends the probe's git`, async () => {
 			const dir = scratch("probe-signal");
 			const remote = makeRemote(dir);
-			// Pinned at a commit that is not the tip, so the server is asked.
 			const work = makeWork(dir, remote, 1);
 			assert.equal(runBootstrap(work, []).status, 0);
 			const mark = join(dir, "probe-git.pid");
@@ -139,7 +126,6 @@ describe("a probe repository a killed run left", () => {
 	});
 });
 
-/** A `git` that keeps creating entries in the probe repository until it is stopped. */
 function writingGit(dir: string): string {
 	const bin = join(dir, "busy-bin");
 	mkdirSync(bin);
@@ -178,7 +164,6 @@ describe("a signal while the probe's git is writing into the repository", () => 
 			);
 			run.child.kill("SIGINT");
 			const ended = await run.done;
-			// A git the run failed to stop would write forever: end it here first.
 			const stopped = await waitUntil(
 				"the probe's git to end",
 				() => (running(pid) ? undefined : true),
@@ -195,7 +180,6 @@ describe("a signal while the probe's git is writing into the repository", () => 
 			);
 			assert.equal(stopped, true, `round ${round}: the run stopped its git`);
 		}
-		// What a race left is swept once it is old.
 		const cache = join(work, ".cache/siblings");
 		const hours = new Date(Date.now() - 2 * 3_600_000);
 		for (const name of probes(work))

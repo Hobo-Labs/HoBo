@@ -57,8 +57,6 @@ describe("package surface", () => {
 			readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 		) as { name: string; dependencies: Record<string, string> };
 		expect(manifest.name).toBe(HOBO_PROVIDER_GITHUB_PACKAGE);
-		// HTTP only through @hobo/core HttpTransport: no SDK. The protobuf
-		// runtime backs only the generated data-model descriptors.
 		expect(Object.keys(manifest.dependencies).sort()).toEqual([
 			"@bufbuild/protobuf",
 			"@hobo/core",
@@ -94,7 +92,6 @@ describe("protobuf wire view", () => {
 		);
 		expect(outputs.treeSha).toBe(outcome?.outputs.treeSha);
 		expect(outputs.lifecycleStatus).toBe("building");
-		// An output key the proto does not declare is a wire break.
 		expect(() =>
 			fromJson(GithubPagesSiteOutputsSchema, { ...outcome?.outputs, extra: 1 }),
 		).toThrow();

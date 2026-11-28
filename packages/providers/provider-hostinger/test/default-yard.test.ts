@@ -7,20 +7,10 @@ import {
 	hostingerYardSpec,
 } from "../src/index.js";
 
-/**
- * Every published capability profile, derived from `@hobo/core`'s catalog
- * rather than restated here.
- *
- * This used to be a hand-written list, and it drifted the moment a factory was
- * pointed at a more specific profile — the test failed for the list's reason,
- * not the catalog's. Deriving it means a profile the core vocabulary adds is
- * automatically legal, and a profile it does not define still fails.
- */
 const REAL_PROFILES: readonly string[] = Object.values(capability).flatMap(
 	(family) => Object.values(family),
 );
 
-/** Entries declared for one slot, or an empty list when the slot is absent. */
 function slotEntries(slot: CapabilitySlot) {
 	return HOSTINGER_DEFAULT_BINDINGS[slot] ?? [];
 }
@@ -44,11 +34,6 @@ describe("the Hostinger Yard is an allocatable catalog", () => {
 		}
 	});
 
-	/**
-	 * The load-bearing honesty test. A `bucket` row would say Hostinger can
-	 * allocate object storage; it cannot. An empty slot is a gap an author can
-	 * see.
-	 */
 	it("leaves the slots Hostinger sells nothing for empty", () => {
 		for (const slot of [
 			"bucket",
@@ -122,11 +107,6 @@ describe("hostingerYardSpec emits raw, canonical rows", () => {
 		expect(hostingerYardSpec().bindings).toHaveLength(declared);
 	});
 
-	/**
-	 * `vps()` and `vpsWorker()` emit the same productId under different
-	 * profiles. Rows key on `(profile, productId, connectivityId)`, so both
-	 * survive — a dedup on productId alone would silently drop one.
-	 */
 	it("keeps one product reached through two profiles as two rows", () => {
 		const rows = hostingerYardSpec().bindings.filter(
 			(row) => row.productId === "hostinger.vps/v1",

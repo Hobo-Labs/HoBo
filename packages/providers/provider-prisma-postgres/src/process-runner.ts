@@ -3,7 +3,6 @@ import type { ProcessRunner } from "./cli.js";
 import { DEFAULT_MAX_OUTPUT_BYTES } from "./cli.js";
 import { PrismaProviderError } from "./errors.js";
 
-/** Real CLI/migration runner: explicit environment, no shell, bounded streams and lifetime. */
 export function createNodeProcessRunner(
 	options: { readonly maxOutputBytes?: number } = {},
 ): ProcessRunner {
@@ -44,9 +43,7 @@ export function createNodeProcessRunner(
 					try {
 						if (process.platform === "win32") child.kill("SIGKILL");
 						else process.kill(-child.pid, "SIGKILL");
-					} catch {
-						/* The process may have exited before its close event. */
-					}
+					} catch {}
 				}
 				function fail(message: string) {
 					if (done) return;

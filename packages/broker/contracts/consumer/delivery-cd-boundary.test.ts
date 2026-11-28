@@ -11,10 +11,6 @@ import {
 import { parseDeliveryPolicy } from "../../src/policies.js";
 import type { PolicyHash, ResolutionReceipt } from "../../src/types.js";
 
-// Consumer side of the broker → @hobo/cd promotion boundary (D14). The broker
-// never applies anything: it hands an accepted receipt to CD's promotion
-// request and records the ticket CD returns. The pact pins the request the
-// broker sends and the two responses it must handle.
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const pact = JSON.parse(
 	readFileSync(

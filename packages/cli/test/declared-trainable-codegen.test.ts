@@ -29,14 +29,6 @@ import { defaultCodegenLayout } from "../src/codegen/types.js";
 import { createHoboCli } from "../src/index.js";
 import { slow } from "./support/slow.js";
 
-// Plan 2 Syntax 0 through `hobo stub` (ADR-0128): an ambient
-// `@trainable declare class` is erased at compile time, so codegen scans it
-// and writes ts-autocode-grounding's `defineGrounding(...)` registrations for
-// it, which `@hobo/runtime` answers as `training.define`. Every method ref
-// below is derived by the scanner from the class and method names; none is
-// passed to the runtime by hand. The temp project lives inside the package so
-// vitest's transform pipeline can import the generated TypeScript.
-
 const AMBIENT = `
 @trainable
 export declare class Greeter {
@@ -49,7 +41,6 @@ export declare class Greeter {
 }
 `;
 
-// A decorated class with a body registers itself at run time; codegen leaves it alone.
 const DECORATED = `
 @trainable
 export class Todos {
@@ -60,7 +51,6 @@ export class Todos {
 }
 `;
 
-// One file, both kinds: only the ambient class gets registrations.
 const MIXED = `
 @trainable
 export declare class Inbox {
@@ -75,7 +65,6 @@ export class Outbox {
 }
 `;
 
-// Overloads in a decorated class are its own business; it registers itself.
 const DECORATED_OVERLOADS = `
 @trainable
 export class Router {
@@ -87,7 +76,6 @@ export class Router {
 }
 `;
 
-// Overloads in an ambient class would write two `export const now`.
 const AMBIENT_OVERLOADS = `
 @trainable
 export declare class Clock {
@@ -98,19 +86,9 @@ export declare class Clock {
 
 const CLASS_BODY = '{\n  greet(): string {\n    return "hi";\n  }\n}';
 
-// A bare "use training" function, for the tests of how trainables.ts imports it.
 const SCORE =
 	'export function score(input: string): string {\n  "use training";\n  return input;\n}\n';
 
-/**
- * Where ECMAScript's NamedEvaluation gives an anonymous class expression a
- * name, `Greeter` each time: a decorated `@trainable` class there registers
- * `Greeter.<method>`, as its own name would. TypeScript's emit (5.9 and 6.0)
- * names it so in every row but the last. esbuild (0.28.1) names a subset: it
- * leaves the class anonymous for a computed class field key and a parameter
- * default, and it alone names the last row (the spec leaves a parenthesized
- * assignment target anonymous). Codegen takes the name either compiler gives.
- */
 const NAMED_EVALUATIONS: readonly (readonly [
 	string,
 	(cls: string) => string,
@@ -189,7 +167,6 @@ const NAMED_EVALUATIONS: readonly (readonly [
 	],
 ];
 
-/** Where an anonymous class expression gets no binding's name (`cls.name` is ""). */
 const UNNAMED_PLACES: readonly (readonly [string, (cls: string) => string])[] =
 	[
 		["after a comma", (cls) => `export const Greeter = (0, ${cls});\n`],
@@ -208,11 +185,6 @@ const UNNAMED_PLACES: readonly (readonly [string, (cls: string) => string])[] =
 		],
 	];
 
-/**
- * A decorated class inside another marked class: it registers too, once the
- * code around it runs (a static field when the outer class is defined, a
- * method's body when the method is called), so its name is checked as well.
- */
 const NESTED_IN_MARKED: readonly (readonly [string, string])[] = [
 	[
 		"a static field of a @component class",
@@ -243,14 +215,11 @@ describe("the marker prefilter", () => {
 			"@tr\\u0061inable",
 			"@\\u0063omponent",
 			"@\\u{0063}omponent()",
-			// Whitespace to TypeScript's scanner that JavaScript's \s is not.
 			"@\u200Btrainable",
 			"@\u0085trainable",
-			// A line comment ends at any of TypeScript's line terminators.
 			"@// note\rtrainable",
 			"@// note\u2028trainable",
 			"@// note\u2029trainable",
-			// The scanner skips a merge conflict marker as trivia.
 			"@\n<<<<<<< ours\ntrainable",
 			"@\n||||||| base\n=======\n>>>>>>> theirs\ntrainable",
 			"@\n=======\nx\n>>>>>>> theirs\ntrainable",
@@ -262,11 +231,8 @@ describe("the marker prefilter", () => {
 	});
 
 	it("takes what TypeScript's scanner takes for whitespace and a line terminator, and nothing else", () => {
-		// One assertion over every mismatch: 131k `expect` calls cost ~3.5 s of the
-		// ~3.8 s this case took, and a failure still names each code point.
 		const mismatches: string[] = [];
 		for (let code = 0; code <= 0xffff; code++) {
-			// A lone surrogate is no character; a second @ starts a decorator of its own.
 			if ((code >= 0xd800 && code <= 0xdfff) || code === 0x40) continue;
 			const char = String.fromCharCode(code);
 			if (
@@ -286,10 +252,6 @@ describe("the marker prefilter", () => {
 	it(
 		"reads a file in time linear in its length",
 		() => {
-			// Each `@` here starts trivia that runs on to a point many other `@`s
-			// share (the end of the text, the end of one long line, one long
-			// escape), so a reader that walks it again from every `@` is quadratic:
-			// a backtracking prefilter took 44 s on the conflict-marker text.
 			const cases: readonly (readonly [string, string])[] = [
 				["conflict markers with no end", "@\n||||||| x\n".repeat(32_000)],
 				["unterminated block comments", "@/*".repeat(125_000)],
@@ -319,7 +281,6 @@ describe("the marker prefilter", () => {
 			"@trainable_x",
 			"@\\u0074rainableX",
 			"@(trainable)",
-			// Not merge conflict markers: no space after <<<<<<<, or not at a line's start.
 			"@\n<<<<<<<ours\ntrainable",
 			"@ <<<<<<< ours\ntrainable",
 		]) {
@@ -387,8 +348,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("compiles with declaration emit under the repository's base tsconfig", async () => {
-		// declaration: true is tsconfig.base.json's default; every export's
-		// inferred type must be nameable from @hobo/runtime's root.
 		await runCodegen({ projectRoot, check: false });
 		const base = fileURLToPath(
 			new URL("../../../tsconfig.base.json", import.meta.url),
@@ -479,7 +438,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 		expect(fact?.intent).toBe("Greet a person by name");
 		expect(fact?.baseline).toBe("stub");
 
-		// Signature-only: nothing to serve until a training artifact is applied.
 		await expect(mod.greeterGreet("Ada")).rejects.toThrow(
 			/no contract examples or applied demos/,
 		);
@@ -559,7 +517,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses an ambient class that shares its name with a decorated class", async () => {
-		// src/todos.ts holds the decorated Todos.
 		await writeFile(
 			join(projectRoot, "src/todos-declared.ts"),
 			"@trainable\nexport declare class Todos {\n  list(): string[];\n}\n",
@@ -576,11 +533,9 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("rebases a relative runtime module onto the declared module's directory", async () => {
-		// declared/<Class>.ts sits one directory below trainables.ts.
 		for (const [runtimeModule, fromDeclared] of [
 			["./runtime.js", "../runtime.js"],
 			["../lib/runtime.js", "../../lib/runtime.js"],
-			// A directory's own index, bare.
 			[".", ".."],
 			["..", "../.."],
 			["@acme/runtime", "@acme/runtime"],
@@ -608,7 +563,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses an ambient class named like a decorated class whose marker follows a comment ended by a lone CR", async () => {
-		// TypeScript ends a line comment at CR, U+2028 and U+2029 as well as LF.
 		await writeFile(
 			join(projectRoot, "src/greeter-impl.ts"),
 			'@// x\rtrainable\nexport class Greeter {\n  greet(): string {\n    return "hi";\n  }\n}\n',
@@ -633,7 +587,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	it.each(
 		NAMED_EVALUATIONS,
 	)("names a class expression by its own name when it has one, also where %s would name it", async (_where, place) => {
-		// Registers Hello.greet, not Greeter.greet: no clash with the ambient Greeter.
 		await writeFile(
 			join(projectRoot, "src/greeter-impl.ts"),
 			place(`@trainable class Hello ${CLASS_BODY}`),
@@ -709,8 +662,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 			expect(await readFile(trainables, "utf8"), jsx).toContain(
 				`import { score } from "../${emitted}";`,
 			);
-			// TypeScript's own answers: the file tsc emits for the source, and
-			// the file the generated import resolves to.
 			const parsed = ts.getParsedCommandLineOfConfigFile(config, undefined, {
 				...ts.sys,
 				onUnRecoverableConfigFileDiagnostic: () => undefined,
@@ -763,8 +714,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("reads jsx past options the cli's TypeScript does not know or accept", async () => {
-		// The cli parses with its own TypeScript, which can be older than the
-		// project's: TypeScript 6 accepts target and lib es2025, 5.9 does not.
 		const trainables = join(projectRoot, "src/_generated/trainables.ts");
 		await writeFile(join(projectRoot, "src/score.tsx"), SCORE);
 		for (const options of [
@@ -822,7 +771,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 			/TS1005 '}' expected/,
 		],
 	])("refuses a tsconfig with %s", async (_case, config, base, problem) => {
-		// base: the text of ./base.json, or null to make it a directory.
 		await writeFile(join(projectRoot, "tsconfig.json"), config);
 		if (base === null) await mkdir(join(projectRoot, "base.json"));
 		else if (base !== undefined) {
@@ -848,7 +796,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses two ambient classes whose names differ only in case", async () => {
-		// declared/Foo.ts and declared/FOO.ts are one file on macOS and Windows.
 		await writeFile(
 			join(projectRoot, "src/foo-a.ts"),
 			"@trainable\nexport declare class Foo {\n  a(): string;\n}\n",
@@ -880,7 +827,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses an export name the trainables module already binds", async () => {
-		// Trainable.Stubs -> trainableStubs (the manifest); $.training -> training (the import).
 		for (const [className, method, exportName] of [
 			["Trainable", "Stubs", "trainableStubs"],
 			["$", "training", "training"],
@@ -926,7 +872,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses two exports that camelCase alike once it drops _ and $", async () => {
-		// camelCase splits on anything but ASCII letters and digits: A_b.run and AB.run are both aBRun.
 		await writeFile(
 			join(projectRoot, "src/a-b.ts"),
 			"@trainable\nexport declare class A_b {\n  run(): string;\n}\n",
@@ -966,7 +911,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses a class name that is not a plain ASCII identifier", async () => {
-		// camelCase would drop the letters: Ünï.run -> nRun.
 		await writeFile(
 			join(projectRoot, "src/unicode.ts"),
 			"@trainable\nexport declare class Ünï {\n  run(): string;\n}\n",
@@ -977,7 +921,6 @@ describe("ambient @trainable classes in hobo stub", () => {
 	});
 
 	it("refuses an ambient operation whose export name a bindle step already takes", async () => {
-		// The fixture's bindle has the step incident.classify (export incidentClassify).
 		await writeFile(
 			join(projectRoot, "src/incident.ts"),
 			"@trainable\nexport declare class Incident {\n  classify(id: string): string;\n}\n",

@@ -1,18 +1,3 @@
-// Budget signal plane: turns the static spend-cap check (planes.ts /
-// metering.ts) into a stream. The same `meter.UsageRecorded` facts the metered
-// billing plane folds are folded here into per-tenant budget state, and
-// threshold transitions emit `budget.ThresholdCrossed` / `budget.Recovered`
-// facts a routing control loop can subscribe to (the "decide" trigger the
-// FinOps control-plane design defers — only the threshold evaluator is lifted,
-// not the Pareto pipeline).
-//
-// Exactly-once under journal replay, twice over:
-// - the fold derives state ONLY from usage/credit facts, and skips emitting
-//   any signal whose deterministic `signalKey` already appears in the input
-//   stream (a re-fold over a journal that contains previously appended
-//   signals emits nothing new);
-// - `budgetSignalEventInputs` carries the signalKey as `meta.idempotencyKey`,
-//   so even a blind re-append is deduped by the SQLite journal (ADR-0135).
 import { createHash } from "node:crypto";
 import {
 	type BudgetScopeIdentity,
@@ -25,20 +10,14 @@ import { METER_USAGE_RECORDED_EVENT } from "./metering.js";
 export const BUDGET_EVENTS = Object.freeze({
 	ThresholdCrossed: "budget.ThresholdCrossed",
 	Recovered: "budget.Recovered",
-	// Operator-appended fact that restores headroom (grant, top-up, correction).
 	CreditApplied: "budget.CreditApplied",
 	StateReset: "budget.StateReset",
 } as const);
 
 export interface BudgetSignalPolicy {
-	/** Hard budget in USD; zero is already crossed at initialization. */
 	budgetUsd: number;
-	/** Threshold fractions of budgetUsd in (0, 1]; default [1]. */
 	thresholds?: readonly number[];
-	/** Scope: only facts with this data.tenantId are folded (absent = all). */
 	tenantId?: string;
-	/** V2 scope. Usage/credit facts must carry matching budgetId and periodId.
-	 * Omission is the legacy lifetime/tenant stream, without rollover semantics. */
 	identity?: BudgetScopeIdentity;
 }
 
@@ -49,7 +28,6 @@ export interface BudgetSignalState {
 	creditUsd: number;
 	netSpentUsd: number;
 	sampleCount: number;
-	/** thresholdFraction -> currently crossed */
 	crossed: Record<string, boolean>;
 }
 
@@ -59,7 +37,6 @@ export interface BudgetSignalData {
 	thresholdUsd: number;
 	budgetUsd: number;
 	netSpentUsd: number;
-	/** 1-based count of crossings/recoveries for this threshold — identity. */
 	cycle: number;
 	signalKey: string;
 	identity?: BudgetScopeIdentity;
@@ -85,9 +62,6 @@ export interface BudgetSignalFold {
 	signals: BudgetSignal[];
 }
 
-// Deterministic fold: same stream + same policy -> same state and the same
-// signal facts (stable signalKey identity), so projections rebuilt from zero
-// converge instead of re-firing.
 export function foldBudgetSignals(
 	events: Iterable<FactLike>,
 	policy: BudgetSignalPolicy,
@@ -150,9 +124,6 @@ export function foldBudgetSignals(
 	);
 	const signals: BudgetSignal[] = [];
 
-	// Pre-scan for already-recorded signal identities BEFORE folding: appended
-	// signals sit after the usage facts in global order, and dedupe must not
-	// depend on where in the stream they landed.
 	const buffered = Array.isArray(events) ? events : [...events];
 	const seenKeys = new Set<string>();
 	for (const event of buffered) {
@@ -177,8 +148,6 @@ export function foldBudgetSignals(
 			if (isJsonString(key) && key.length > 0) seenKeys.add(key);
 		}
 	}
-	// Reset is an explicit V2 fact, so subscribers can retire the old period or
-	// revision before consuming its independently numbered threshold transitions.
 	if (identity)
 		for (const threshold of thresholds) {
 			const key = signalKey(threshold, "reset", 0);
@@ -276,9 +245,6 @@ export function foldBudgetSignals(
 	return { state, signals };
 }
 
-// EventInput-shaped (core eventstore) rows for appending fold output to a
-// journal; the signalKey rides as meta.idempotencyKey so the journal dedupes
-// a re-append of the same signal.
 export function budgetSignalEventInputs(signals: readonly BudgetSignal[]): {
 	type: string;
 	data: BudgetSignalData;

@@ -13,10 +13,6 @@ import {
 describe("guest bundle asset guard", () => {
 	it("refuses an encoded separator that survives URL parsing", () => {
 		const policy = defaultTransportPolicy("https://app.example");
-		// The literal `/..` check beside this one never saw these forms. A
-		// guest bundle is code that runs with every capability this host grants
-		// its guests, so the route prefix is what keeps it to host-served
-		// assets — and an encoded separator walks straight out of it.
 		for (const url of [
 			"https://app.example/_hobo/%2f%2e%2e%2fetc/passwd",
 			"https://app.example/_hobo/..%5csecrets",

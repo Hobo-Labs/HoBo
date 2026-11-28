@@ -1,11 +1,3 @@
-/**
- * Verify this package against its own consumer-driven boundary contract.
- *
- * The provider is a child process, so the contract is over argv, environment,
- * exit code, and the stdout document. Checking it here is what keeps
- * `contracts/create-db-cli-boundary.contract.json` from drifting into
- * decoration.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -156,8 +148,6 @@ describe("create-db process boundary contract", () => {
 	});
 
 	it("covers every interaction the contract declares", () => {
-		// A contract nobody executes is documentation. Anyone adding an
-		// interaction has to add a test with it, and this is what says so.
 		const exercised = new Set([
 			"create a temporary database and ask for the machine-readable document",
 			"create in a documented region, as one fused argv element",

@@ -1,7 +1,3 @@
-/**
- * Child of pins-hygiene.test.ts: makes a scratch directory with a file in it,
- * prints its path and exits normally, so the test can look at what is left.
- */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 

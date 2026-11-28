@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BROKER_ARTIFACT_SCHEMAS = {
   "contract-manifest": "hobo.meta-cloud-broker.contract-manifest/v1",
   "broker-environment": "hobo.meta-cloud-broker.environment/v1",

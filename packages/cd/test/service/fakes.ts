@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread -- SAFETY: test doubles implement only the port members the service and read API call, so they are cast to the full port once; ids they mint are branded here. */
-// Test doubles for the CD service host (WP12). Each fake implements only the
-// members of the frozen ports that the service or the read API call; the rest
-// throw so an unexpected dependency is loud.
 import { create } from "@bufbuild/protobuf";
 import type {
 	DurableEventStore,
@@ -52,9 +49,7 @@ export const principal: PrincipalRef = {
 export const asCamp = (id: string) => id as CampId;
 export const asReconciler = (id: string) => id as ReconcilerId;
 
-// ── Journal ────────────────────────────────────────────────────────────────
 export type FakeStore = DurableEventStore & {
-	/** Simulate store loss (every call throws PersistenceUnavailableError). */
 	lose(): void;
 	restore(): void;
 	push(streamId: string, type: string, data: unknown): EventPosition;
@@ -123,7 +118,6 @@ export function fakeStore(): FakeStore {
 	return store as unknown as FakeStore;
 }
 
-// ── Telemetry ──────────────────────────────────────────────────────────────
 export type RecordingSink = TelemetrySink & {
 	readonly points: OtelMetricPoint[];
 	readonly recorded: OtelSpan[];
@@ -143,13 +137,10 @@ export function recordingSink(): RecordingSink {
 	return Object.assign(sink, { points, recorded }) as unknown as RecordingSink;
 }
 
-// ── Reconcilers ────────────────────────────────────────────────────────────
 export type FakeReconciler = CampReconciler & {
 	readonly leases: Set<string>;
 	runs: number;
-	/** Make the next run reject (crash) instead of waiting for abort. */
 	crashNext(error: Error): void;
-	/** Never return from run, even when aborted (a wedged reconciler). */
 	wedge(): void;
 };
 
@@ -193,7 +184,6 @@ export function fakeReconciler(
 	return r as unknown as FakeReconciler;
 }
 
-// ── Facade ─────────────────────────────────────────────────────────────────
 export type FacadeState = {
 	pipelines: PipelineRecord[];
 	available: Record<string, FreightAvailabilityRecord[]>;
@@ -214,9 +204,7 @@ export type FacadeState = {
 export type FakeFacade = ContinuousDelivery & {
 	readonly calls: string[];
 	readonly state: FacadeState;
-	/** Make a step throw on its next N calls. */
 	failStep(step: string, error: Error, times?: number): void;
-	/** Make a step never settle. */
 	hangStep(step: string): void;
 	readonly retired: RetentionPolicyRecord[];
 	readonly feedRequests: FeedRequest[];

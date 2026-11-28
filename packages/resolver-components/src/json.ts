@@ -1,5 +1,3 @@
-// JSON guards for this package's parse boundaries (same contract as the
-// @hobo/core helpers, which core does not re-export).
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 export type { JsonObject, JsonValue };
@@ -27,7 +25,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-/** Parse JSON text; a syntax error is reported to the caller, never swallowed. */
 export function parseJsonText(text: string): JsonValue {
 	// SAFETY: JSON.parse yields a JSON value at this document boundary.
 	return JSON.parse(text) as JsonValue;

@@ -1,7 +1,3 @@
-/**
- * CLI/MCP-facing describe surface for effects + resiliency visibility.
- */
-
 import type { BoundaryContract } from "./contract-ir.js";
 import { effectiveEffects } from "./contract-ir.js";
 import {

@@ -1,10 +1,6 @@
 import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
 type ResourceKind = "api" | "kv" | "queue" | "topic" | "schedule" | "bucket";
 
-// A handler accepts whatever arguments its trigger kind supplies; declaring
-// the rest-parameter as `never[]` makes this a safe "any function" shape
-// (every concrete handler signature is assignable to it) without resorting
-// to `Function` or `any`.
 type Handler = (...args: never[]) => JsonValue | void | Promise<JsonValue | void>;
 
 interface WorkflowHandler {

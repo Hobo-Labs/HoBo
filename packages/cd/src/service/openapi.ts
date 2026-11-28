@@ -1,14 +1,7 @@
-// OpenAPI 3.1 description of the CD read API (WP12). The PACT in
-// packages/control-api/contracts/pacts/control-api-cd.pact.json is checked
-// against this document (every interaction's path, parameters and response
-// body must match), so the two cannot drift. Record payloads are canonical
-// protobuf JSON of the frozen `hobo.cd.v1` messages (cd.proto).
 import type { JsonObject } from "@hobo/core";
 
-/** A JSON Schema (OpenAPI 3.1 dialect) node. */
 export type CdApiSchema = JsonObject;
 
-/** The OpenAPI document; plain JSON so it can be served and merged as-is. */
 export type CdOpenApiDocument = JsonObject;
 
 function obj(

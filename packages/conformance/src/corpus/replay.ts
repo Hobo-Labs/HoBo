@@ -17,23 +17,9 @@ import {
 
 import { createSeededClock, createSeededUlid } from "./deterministic-seed.js";
 
-/**
- * Replay==live production corpus (S1-16).
- *
- * A committed golden corpus recorded from `examples/hello-bindle` under seeded
- * Clock + ULID. Rebuilding the read model from zero (replay) must equal the
- * live fold byte-for-byte, and an upcaster case (`vN -> vN+1`, an evolved event
- * body) must round-trip. This is the production replay lane the S1-24 gate
- * runs; it reuses `@hobo/runtime`'s replay engine (`assertReplayEqualsLive`) —
- * it does not reinvent replay.
- */
-
+// public-contract: stable exported contract literal
 export const REPLAY_CORPUS_SEED = "hobo.s1-16.hello-bindle";
 
-/**
- * The hello-bindle read model: greetings served, folded from the domain event
- * stream. Deterministic and read-only (no writes, no ambient clock/entropy).
- */
 export interface GreetingReadModel {
 	served: ReadonlyArray<{ name: string; message: string }>;
 	count: number;
@@ -60,11 +46,6 @@ export const helloBindleFold: FoldFn<GreetingReadModel> = (state, event) => {
 	return { ...state, seq };
 };
 
-/**
- * Upcaster chain for `greeting.Served`: v1 carried `{ name, text }`; v2 renames
- * `text -> message`. Old events remain replayable forever — the reader lifts
- * them to the current version before folding.
- */
 export const helloBindleUpcast: UpcastFn = (event) => {
 	if (event.type === "greeting.Served" && (event.v ?? 1) < 2) {
 		// SAFETY: assertion to `t.data as { name?: JsonValue; text?: JsonValue }; ` is required at this boundary.
@@ -82,7 +63,6 @@ export interface ReplayCorpus {
 	readonly id: string;
 	readonly description: string;
 	readonly seed: string;
-	/** Whether folding requires the upcaster (a corpus case with an evolved body). */
 	readonly requiresUpcaster: boolean;
 	readonly events: readonly EventEnvelope[];
 	readonly expected: {
@@ -97,7 +77,6 @@ function digestState(state: GreetingReadModel): string {
 		.digest("hex");
 }
 
-/** Parse-don't-validate: lift a committed corpus JSON blob into a typed corpus. */
 export function parseReplayCorpus(raw: JsonValue): ReplayCorpus {
 	if (!raw || !isJsonObject(raw)) {
 		throw new TypeError("replay corpus must be an object");
@@ -134,10 +113,6 @@ export function parseReplayCorpus(raw: JsonValue): ReplayCorpus {
 	});
 }
 
-/**
- * Fold the corpus events in live arrival order with the given upcaster — the
- * "live" state the committed corpus pins its expectation to.
- */
 export function foldLive(
 	events: readonly EventEnvelope[],
 	upcast: UpcastFn,
@@ -162,11 +137,6 @@ export function foldLive(
 	return state;
 }
 
-/**
- * Record the golden corpus deterministically from a hello-bindle run. Two
- * cases: `greetings` (current schema) and `greetings-upcast` (an evolved v1
- * body that the upcaster lifts to v2).
- */
 export function buildReplayCorpus(): ReplayCorpus[] {
 	return [buildGreetingsCorpus(), buildUpcastCorpus()];
 }
@@ -209,8 +179,6 @@ function buildUpcastCorpus(): ReplayCorpus {
 		makeEvent(ulid, clock, streamId, 1, "greeting.Requested", 1, {
 			name: "legacy",
 		}),
-		// A legacy v1 `greeting.Served` body: `{ name, text }` before the
-		// `text -> message` rename. The upcaster must lift it to v2.
 		makeEvent(ulid, clock, streamId, 2, "greeting.Served", 1, {
 			name: "legacy",
 			text: "hello, legacy",
@@ -250,11 +218,6 @@ export interface CorpusReplayResult {
 	readonly digestMatches: boolean;
 }
 
-/**
- * Assert the corpus rebuilds byte-for-byte: replay (canonical order) equals
- * live (arrival order) via `@hobo/runtime`'s engine, and the recomputed state
- * digest equals the committed golden digest. Throws on any divergence.
- */
 export function assertCorpusReplayEqualsLive(
 	corpus: ReplayCorpus,
 ): CorpusReplayResult {

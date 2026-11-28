@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Customer Assurance Evidence Packet
-// Contract draft package reasons about. This is a design-time contract artifact.
 
 enum CustomerAssuranceReadinessState {
   CUSTOMER_ASSURANCE_READINESS_STATE_UNSPECIFIED = 0;

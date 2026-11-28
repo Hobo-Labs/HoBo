@@ -15,12 +15,6 @@ function stationBrokerGlobal(): StationBrokerGlobal {
 	return globalThis as StationBrokerGlobal;
 }
 
-/** Cloudflare Temporary Accounts entry for Examples — same-origin or CORS relay. */
-
-/**
- * Dead placeholder previously shipped as default. DNS does not resolve.
- * Kept only so tests can assert we no longer treat it as a working broker.
- */
 export const LEGACY_DEAD_CORS_RELAY_URL =
 	"https://hobo-cors-relay.workers.dev";
 
@@ -48,7 +42,6 @@ export type ResolveStationBrokerInput = {
 	readonly envBrokerUrl?: string | null;
 };
 
-/** Same-origin Temporary Accounts API served by `astro dev` / preview middleware. */
 export function sameOriginTemporaryStationApiBase(
 	pageUrl: string | URL,
 	basePath = "/HoBo/",
@@ -68,11 +61,6 @@ export function isLocalWebsiteHost(hostname: string): boolean {
 	);
 }
 
-/**
- * Resolve Temporary Accounts broker base.
- * Priority: explicit override → env → global override → localhost same-origin API.
- * Never falls back to the dead hobo-cors-relay.workers.dev host.
- */
 export function resolveStationBrokerBase(
 	input: ResolveStationBrokerInput | string | undefined = undefined,
 ): string {
@@ -111,7 +99,6 @@ export function resolveStationBrokerBase(
 	);
 }
 
-/** Apply `?stationBroker=` / `data-station-broker` before Deploy stations. */
 export function applyStationBrokerUrlOverride(
 	raw: string | null | undefined,
 ): string | undefined {

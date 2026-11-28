@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for s1-10-conformance-trust-boundary.feature.
- *
- * Drives the epic's real conformance modules — the frozen runtime-port
- * durability suite and the component-host cross-host suite — against the
- * package's own in-memory port fixtures (reference and seeded-violation
- * backends). No live services; this is the S1 trust boundary drawn in code.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -35,8 +27,6 @@ type TrustBoundaryWorld = {
 };
 
 const world: TrustBoundaryWorld = {};
-
-// --- Scenario: Reference runtime backend passes the frozen durability suite --
 
 Given("the S1 trust-boundary runtime-local durability backend", () => {
   world.backendFactory = createRuntimeLocalDurabilityBackend;
@@ -82,8 +72,6 @@ Then(
   },
 );
 
-// --- Scenario: Broken-fence backend is caught by the stale-fence check -------
-
 Then("the trust-boundary durability report fails closed", () => {
   const report = world.durabilityReport;
   assert.ok(report, "durability suite must have run");
@@ -101,8 +89,6 @@ Then("the trust-boundary failure names check {string}", (checkId: string) => {
   const check = report.checks.find((entry) => entry.checkId === checkId);
   assert.equal(check?.status, "fail", "the named check is marked failed in the report");
 });
-
-// --- Scenario: Certified component hosts pass cross-host conformance ---------
 
 Given("the pinned component-host manifest and both certified host fixtures", async () => {
   world.crossHostReport = await runComponentHostConformance({
@@ -142,8 +128,6 @@ Then("the trust-boundary report declares its non-covered divergences", () => {
     "host-specific partial-failure timing",
   ]);
 });
-
-// --- Scenario: Drifted host version is rejected before planning completes ----
 
 Given(
   "a runtime-local component host that drifted to version {string}",

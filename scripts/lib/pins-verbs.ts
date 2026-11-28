@@ -1,10 +1,3 @@
-/**
- * The verbs of `bootstrap-siblings.mts`, over git pins and asset pins alike:
- * initialise, report, fetch, move. Each prints what it did and returns the
- * process exit code; a refusal is a thrown `PinsError`.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type GitPin, PINS_FILE, type Pins, PinsError } from "./pins.ts";
@@ -61,16 +54,10 @@ function assetContext(request: Request): AssetContext {
 	};
 }
 
-// A pin name comes from the command line: only the manifest's own keys count,
-// never `toString` or `__proto__` from the prototype chain.
 function gitPinOf(pins: Pins, name: string): GitPin | undefined {
 	return Object.hasOwn(pins.git, name) ? pins.git[name] : undefined;
 }
 
-/**
- * Refuses, before the first git pin is read, a git older than the manifest
- * needs: 2.35 when any pin has a sparse cone, 2.31 otherwise.
- */
 function requireGitFor(request: Request, pins: Pins): void {
 	const sparse = Object.values(pins.git).some((pin) => pin.sparse !== null);
 	requireGit(request.root, sparse ? SPARSE_GIT : MIN_GIT);
@@ -80,7 +67,6 @@ function hasAsset(pins: Pins, name: string): boolean {
 	return Object.hasOwn(pins.assets, name);
 }
 
-/** A vendored copy is placed by the installer of the repository it comes from. */
 function refuseVendored(pins: Pins, name: string): void {
 	const pin = Object.hasOwn(pins.vendor, name) ? pins.vendor[name] : undefined;
 	if (pin !== undefined) {
@@ -126,13 +112,11 @@ async function initGit(
 	);
 }
 
-/** No verb: every git pin, nothing downloaded. */
 export async function runInit(request: Request, pins: Pins): Promise<number> {
 	for (const name of Object.keys(pins.git)) await initGit(request, pins, name);
 	return 0;
 }
 
-/** Named pins, or all of them (an unpublished asset is skipped, not an error). */
 export async function runFetch(request: Request, pins: Pins): Promise<number> {
 	refuseOverridesInCi(Object.keys(pins.assets), process.env);
 	const explicit = request.names.length > 0;
@@ -164,7 +148,6 @@ function printProblems(
 	);
 }
 
-/** A warning leaves the exit status alone. */
 function printWarnings(
 	warnings: readonly string[],
 	fixes: readonly string[],

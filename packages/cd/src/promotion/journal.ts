@@ -1,6 +1,3 @@
-// Journal helpers for the promotion saga: protobuf-JSON event bodies, tolerant
-// decoding, canonical digests, stream-head CAS appends with idempotency keys,
-// and advisory telemetry. Guards are tag-based so callers keep their evidence.
 import { createHash } from "node:crypto";
 import { fromJson, type Message, toJson } from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
@@ -16,7 +13,6 @@ import { emitMetrics } from "../telemetry/advisory.js";
 
 const tagOf = Object.prototype.toString;
 
-/** A readonly port input built field by field (optional fields added only when present). */
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 export function isJsonObject<T>(value: T): value is T & JsonObject {
@@ -36,13 +32,11 @@ export function isNumber<T>(value: T): value is T & number {
 	return tagOf.call(value) === "[object Number]";
 }
 
-/** Cross a value over the JSON boundary (drops undefined, rejects bigint). */
 export function toJsonValue<T>(value: T): JsonValue {
 	// SAFETY: JSON.parse of JSON.stringify output is a JSON value by construction.
 	return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
 }
 
-/** Key-sorted at every depth (arrays keep their order); code-unit order. */
 export function sortDeep(value: JsonValue): JsonValue {
 	if (Array.isArray(value)) return value.map(sortDeep);
 	if (isJsonObject(value)) {
@@ -56,7 +50,6 @@ export function sortDeep(value: JsonValue): JsonValue {
 	return value;
 }
 
-/** Deterministic compact JSON: sorted keys at every depth. */
 export function canonicalJson<T>(value: T): string {
 	return JSON.stringify(sortDeep(toJsonValue(value)));
 }
@@ -69,7 +62,6 @@ export function digestOf<T>(value: T): Digest {
 	return `sha256:${sha256Hex(canonicalJson(value))}`;
 }
 
-/** Event body for a generated record: its canonical protobuf JSON. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	record: T,
@@ -77,7 +69,6 @@ export function body<T extends Message>(
 	return toJson(schema, record);
 }
 
-/** Decode a persisted body; undefined when it is not that record (never throws). */
 export function decode<T extends Message, D>(
 	schema: GenMessage<T>,
 	data: D,
@@ -99,7 +90,6 @@ export function iso(ms: number): string {
 	return new Date(ms).toISOString();
 }
 
-/** Epoch ms of an RFC 3339 instant; undefined when absent or unparseable. */
 export function msOf(instant: string): number | undefined {
 	if (instant === "") return undefined;
 	const ms = Date.parse(instant);
@@ -139,7 +129,6 @@ export type AppendEvents = Readonly<{
 	actor: PrincipalRef;
 }>;
 
-/** Append several facts atomically (one CAS); same retry rule as appendOnce. */
 export async function appendAll(
 	input: AppendEvents,
 ): Promise<readonly EventEnvelope[] | undefined> {
@@ -156,9 +145,7 @@ export async function appendAll(
 				{ expectedSeq, actor: input.actor, tenant: input.tenant },
 			);
 			return [...result.deduped, ...result.appended];
-		} catch {
-			// Stream-head CAS lost to a concurrent writer: re-read and retry once.
-		}
+		} catch {}
 	}
 	return undefined;
 }
@@ -174,11 +161,6 @@ export type AppendOne = Readonly<{
 	actor: PrincipalRef;
 }>;
 
-/**
- * Append one fact with stream-head CAS and an idempotency key. A lost CAS race
- * re-reads and retries once; a repeated key returns the event already
- * recorded. Undefined only when both attempts lose (a journal conflict).
- */
 export async function appendOnce(
 	input: AppendOne,
 ): Promise<EventEnvelope | undefined> {
@@ -198,17 +180,11 @@ export async function appendOnce(
 			);
 			const event = result.appended[0] ?? result.deduped[0];
 			if (event) return event;
-		} catch {
-			// Stream-head CAS lost to a concurrent writer: re-read and retry once.
-		}
+		} catch {}
 	}
 	return undefined;
 }
 
-/**
- * Emit one metric point. Telemetry is advisory (the journal is the record),
- * so a failing sink never turns a committed command into an error.
- */
 export async function emitMetric(
 	sink: TelemetrySink,
 	point: Readonly<{

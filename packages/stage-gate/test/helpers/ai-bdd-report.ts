@@ -1,7 +1,3 @@
-/**
- * The ai-bdd run report fixtures (copied byte for byte from real runs, see
- * test/fixtures/ai-bdd/README.md) and the edits a test makes to a copy.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +24,6 @@ export function fixtureBytes(name: string): Buffer {
 	return readFileSync(join(FIXTURE_DIR, name));
 }
 
-/** A mutable copy of a fixture report. */
 export function fixtureDoc(name: "passed" | "failed"): ReportDoc {
 	const text = fixtureBytes(`report.v1.${name}.json`).toString("utf8");
 	// SAFETY: the fixture is a committed RunReport JSON object (its digest is pinned in acceptance-fields.test.ts).
@@ -53,10 +48,6 @@ function childDocs(node: ReportNode | undefined): ReportDoc[] {
 	return isDoc(node) ? [node] : [];
 }
 
-/**
- * Every object a ledger path's parent names: `scenarios[].steps[].text` is the
- * step objects of every scenario. `[]` steps into each array entry.
- */
 function parentsOf(doc: ReportDoc, segments: readonly string[]): ReportDoc[] {
 	let current: ReportDoc[] = [doc];
 	for (const segment of segments) {
@@ -66,7 +57,6 @@ function parentsOf(doc: ReportDoc, segments: readonly string[]): ReportDoc[] {
 	return current;
 }
 
-/** Delete the field a ledger path names, from every object that has it. */
 export function removeAt(doc: ReportDoc, path: string): ReportDoc {
 	const segments = path.split(".");
 	const leaf = segments.at(-1)?.replace(/\[\]$/u, "") ?? "";
@@ -76,7 +66,6 @@ export function removeAt(doc: ReportDoc, path: string): ReportDoc {
 	return doc;
 }
 
-/** The object at `key`, or a thrown error naming what the fixture lacks. */
 export function docAt(doc: ReportDoc, key: string): ReportDoc {
 	const node = doc[key];
 	if (!isDoc(node)) throw new Error(`fixture has no object at ${key}`);
@@ -101,7 +90,6 @@ export function stepAt(
 	return node;
 }
 
-/** The object at a dotted path of keys and array indexes (`scenarios.0.usage`); "" is the report. */
 export function nodeAt(doc: ReportDoc, path: string): ReportDoc {
 	let node: ReportNode = doc;
 	for (const segment of path === "" ? [] : path.split(".")) {
@@ -117,7 +105,6 @@ export function nodeAt(doc: ReportDoc, path: string): ReportDoc {
 	return node;
 }
 
-/** Another value of the same kind for the field a ledger path names, in every object that has it. */
 export function perturbAt(doc: ReportDoc, path: string): ReportDoc {
 	const segments = path.split(".");
 	const leaf = segments.at(-1)?.replace(/\[\]$/u, "") ?? "";

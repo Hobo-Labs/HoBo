@@ -1,13 +1,3 @@
-/**
- * Runnable example for autonomous-drift-remediation-contract. The draft-artifact
- * gate EXECUTES this with `node --import tsx` and diffs stdout against
- * usage.expected.txt — keep both honest.
- *
- * Proves the drift-remediation decision surface: a heal-mode resource auto-resyncs
- * through the gated canary path, a propose-mode prod resource opens a gated diff
- * without writing, ignore-mode records the drift and does nothing, and replay of
- * the emitted events reproduces the terminal status deterministically.
- */
 import { strict as assert } from "node:assert";
 
 import {
@@ -59,7 +49,6 @@ function recordingGateway(routeId: string) {
 	};
 }
 
-// 1) heal mode: auto-resync rides the gated canary and applies.
 const healed = await handleResourceDrift({
 	drift: driftSignal("api", "drift-api-1"),
 	policies: { api: { mode: "heal", environment: "staging", estimatedImpact: "medium" } },
@@ -71,7 +60,6 @@ assert.equal(healed.status, "applied");
 assert.equal(healed.action.kind, "resync");
 console.log(`heal: status=${healed.status} class=${healed.classification.failureClass} drift=${healed.events.drift[0].type}`);
 
-// 2) propose mode in prod: gated diff, no write.
 const proposed = await handleResourceDrift({
 	drift: driftSignal("billing-db", "drift-billing-1", "prod"),
 	policies: { "billing-db": { mode: "propose", environment: "prod" } },
@@ -81,7 +69,6 @@ assert.equal(proposed.status, "proposed");
 assert.equal(proposed.events.rollout.length, 0);
 console.log(`propose: status=${proposed.status} drift=${proposed.events.drift[0].type} crew=${proposed.events.crew.map((e: { type: string }) => e.type).join(",")}`);
 
-// 3) ignore mode: recorded, zero write actions.
 const ignored = await handleResourceDrift({
 	drift: driftSignal("legacy-cache", "drift-cache-1"),
 	policies: { "legacy-cache": { mode: "ignore", reason: "adopted detect-only resource" } },
@@ -91,7 +78,6 @@ assert.equal(ignored.status, "ignored");
 assert.equal(ignored.events.crew.length, 0);
 console.log(`ignore: status=${ignored.status} drift=${ignored.events.drift[0].type}`);
 
-// 4) Replay of each event log reproduces the terminal status.
 for (const [name, result] of [
 	["heal", healed],
 	["propose", proposed],

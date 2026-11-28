@@ -5,7 +5,6 @@ import {
 } from "./errors.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export function deepFreeze<T>(value: T): T {
   if (value && isJsonObject(value)) {
     Object.freeze(value);

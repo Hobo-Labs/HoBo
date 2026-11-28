@@ -117,9 +117,9 @@ describe("agent source policy hook", () => {
 	it("keeps the anti-slop installer consistent with the common comment policy", () => {
 		const rule = "anti-slop/require-safety-comment-for-type-assertion";
 		const config = readFileSync(join(root, "oxlint.config.ts"), "utf8");
-		assert.match(
+		assert.doesNotMatch(
 			config,
-			/"anti-slop\/require-safety-comment-for-type-assertion"\s*:\s*"error"/u,
+			/"anti-slop\/require-safety-comment-for-type-assertion"\s*:\s*"(?:error|warn)"/u,
 		);
 		for (const harness of [".agents", ".claude"]) {
 			const skill = readFileSync(
@@ -132,8 +132,12 @@ describe("agent source policy hook", () => {
 			const rules = z
 				.record(z.string(), z.string())
 				.parse(JSON.parse(recommendedRules));
-			assert.equal(rules[rule], "error");
+			assert.equal(rules[rule], undefined);
 			assert.equal(rules["anti-slop/no-widen-then-assert"], "error");
+			assert.match(
+				skill,
+				/Do not enable `anti-slop\/require-safety-comment-for-type-assertion`; remove it/u,
+			);
 		}
 	});
 });

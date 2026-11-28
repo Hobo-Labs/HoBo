@@ -5,17 +5,9 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-// The connector's policy gate, promoted from the s3-07-agent-guardrails
-// draft proof: every agent tool-permission request is classified into an
-// action class and decided against the parsed guardrail policy BEFORE any
-// grant reaches the agent. Deny-ceiling semantics: effects only ever rank
-// DOWN (deny < require-approval < allow); unknown/unparseable inputs fail
-// closed.
-
 // public-contract: the guardrail policy document schema id.
 export const AGENT_GUARDRAILS_SCHEMA = "hobo.agent-guardrails/v1";
 
-// The action classes agent tool calls collapse into (s3-07 taxonomy).
 export const ACTION_CLASSES = [
 	"read",
 	"write",
@@ -48,8 +40,6 @@ export interface PolicyDecision {
 	readonly reasons: readonly string[];
 }
 
-// Map a raw agent action string onto its class — unknown verbs default to
-// `write` (never silently `read`): fail toward the stricter class.
 export function classifyActionClass(action: string): ActionClass {
 	const normalized = String(action ?? "").toLowerCase();
 	if (
@@ -83,11 +73,6 @@ export function classifyActionClass(action: string): ActionClass {
 	return "write";
 }
 
-/**
- * Parse-don't-validate boundary for guardrail policies: an untrusted policy
- * document becomes a frozen derived policy or throws — a missing class
- * defaults to `require-approval`, never to allow.
- */
 export function parseAgentGuardrailPolicy(
 	input: JsonValue,
 ): AgentGuardrailPolicy {
@@ -137,13 +122,9 @@ export function parseAgentGuardrailPolicy(
 export interface ToolPermissionInput {
 	readonly action: string;
 	readonly policy: AgentGuardrailPolicy;
-	// A recorded human approval for THIS action (require-approval lane).
 	readonly approval?: { readonly approver: string };
 }
 
-// Decide one tool-permission request. Deny-ceiling: the decision can never
-// rank above what the class effect grants, and anything unresolved fails
-// closed to deny.
 export function evaluateToolPermission(
 	input: ToolPermissionInput,
 ): PolicyDecision {
@@ -159,8 +140,6 @@ export function evaluateToolPermission(
 		reasons.push("class-effect:auto-allow");
 		return { effect: "allow", actionClass, reasons };
 	}
-	// require-approval: an approval from an allowed approver upgrades to
-	// allow; anything else stays below the ceiling and FAILS CLOSED.
 	if (
 		input.approval &&
 		input.policy.allowedApprovers.includes(input.approval.approver)

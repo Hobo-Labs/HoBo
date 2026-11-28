@@ -1,5 +1,3 @@
-// Reference fleet adapters (placement, fan-out, posture, inventory) and their
-// harnesses. Small and deterministic; each mutant breaks one fleet invariant.
 import {
 	CD_CONDITION_STATUS,
 	CD_CONDITION_TYPE,
@@ -26,8 +24,6 @@ import {
 	cdCanonicalText,
 } from "@hobo/conformance";
 import { ManualClock, ok, type RefCtx, refCtx, refuse, sha256 } from "./common.js";
-
-// ── Placement ────────────────────────────────────────────────────────────────
 
 export type PlacementMutant = "order-sensitive" | "claims-grant" | "extrapolates-scores";
 
@@ -88,8 +84,6 @@ export function referenceDecide(scenario: PlacementScenario, order: readonly str
 export function refPlacementHarness(mutant?: PlacementMutant): PlacementEngineHarness {
 	return { subject: mutant ? `reference-placement[${mutant}]` : "reference-placement", decide: async (scenario, order) => referenceDecide(scenario, order, mutant) };
 }
-
-// ── Fan-out ──────────────────────────────────────────────────────────────────
 
 export type FanoutMutant = "unbounded" | "defer-as-failure" | "eager-groups" | "non-idempotent";
 
@@ -153,8 +147,6 @@ export function refFanoutHarness(mutant?: FanoutMutant): FanoutControllerHarness
 	return { subject: mutant ? `reference-fanout[${mutant}]` : "reference-fanout", start: async (scenario) => referenceFanout(scenario, mutant) };
 }
 
-// ── Posture ──────────────────────────────────────────────────────────────────
-
 export type PostureMutant = "unknown-passes" | "unbounded-observed";
 
 function semver(text: string): readonly number[] | undefined {
@@ -212,8 +204,6 @@ export function referenceEvaluate(rules: readonly PostureRuleLike[], observation
 export function refPostureHarness(mutant?: PostureMutant): PostureEvaluatorHarness {
 	return { subject: mutant ? `reference-posture[${mutant}]` : "reference-posture", evaluate: (rules, observation) => referenceEvaluate(rules, observation, mutant) };
 }
-
-// ── Inventory ────────────────────────────────────────────────────────────────
 
 export type InventoryMutant = "agent-no-run" | "order-digest" | "accepts-agent-no-run";
 type Condition = Readonly<{ type: number; status: number; source: number; reason: string }>;

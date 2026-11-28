@@ -1,25 +1,14 @@
-// Per-call resource limits (CD_DEFAULTS: 128 MiB, 30 s, 10^9 fuel), metered
-// deterministically by the host. Fuel and memory are charged only at
-// host-observable points — invocation, every import call, every byte that
-// crosses the boundary — so the same call against the same upstream trips
-// at the same point on every run. Time is read from the injected clock at
-// each boundary and backstopped by an injected timer for a guest that never
-// yields.
 import type { ComponentLimits } from "./manifest.js";
 
 // public-contract: deterministic fuel prices charged by the host meter.
 export const FUEL_COSTS = Object.freeze({
-	/** Entering an exported function. */
 	invoke: 1_000_000,
-	/** Each host import call (log, send, authorized-fetch). */
 	importCall: 5_000_000,
-	/** Each byte crossing the boundary in either direction. */
 	perByte: 100,
 });
 
 export type LimitKind = "fuel" | "memory" | "timeout";
 
-/** Thrown inside a call when a limit trips; the host maps it to a refusal. */
 export class LimitTrap extends Error {
 	readonly kind: LimitKind;
 	constructor(kind: LimitKind, message: string) {
@@ -29,7 +18,6 @@ export class LimitTrap extends Error {
 	}
 }
 
-/** Injected timer so a hung guest is cut off without an ambient clock. */
 export interface ComponentTimers {
 	set(ms: number, fire: () => void): () => void;
 }
@@ -42,7 +30,6 @@ export const systemTimers: ComponentTimers = Object.freeze({
 	},
 });
 
-/** One call's meter. Not shared between calls. */
 export class CallMeter {
 	readonly #limits: ComponentLimits;
 	readonly #now: () => number;
@@ -70,12 +57,10 @@ export class CallMeter {
 	get deadline(): number {
 		return this.#startedAt + this.#limits.callTimeoutMs;
 	}
-	/** The first trap recorded for this call, if any. Sticky. */
 	get trap(): LimitTrap | undefined {
 		return this.#trap;
 	}
 
-	/** Charge fuel; trips at the exact charge that crosses the limit. */
 	charge(fuel: number): void {
 		this.#rethrow();
 		this.#fuel += fuel;
@@ -88,7 +73,6 @@ export class CallMeter {
 			);
 	}
 
-	/** Account bytes held for the rest of the call (bodies, outputs). */
 	hold(bytes: number): void {
 		this.#rethrow();
 		this.#memory += bytes;
@@ -102,7 +86,6 @@ export class CallMeter {
 			);
 	}
 
-	/** Check the deadline against the injected clock. */
 	checkDeadline(): void {
 		this.#rethrow();
 		if (this.#now() > this.deadline)
@@ -114,7 +97,6 @@ export class CallMeter {
 			);
 	}
 
-	/** Mark the call timed out (from the backstop timer). */
 	expire(): LimitTrap {
 		const trap = new LimitTrap(
 			"timeout",

@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// Parse, don't validate: markdown crosses this boundary once and becomes parsed
-// domain types for downstream parity checks.
-
 export const DAPR_COMPETITOR_DOC = "docs/competitors/dapr.md";
 
 export const AUDITED_DAPR_FEATURES = ["Bindings", "Distributed lock"] as const;

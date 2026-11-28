@@ -1,18 +1,3 @@
-/**
- * Bulk-harden grandfathered draft proofs with honest minimal artifacts:
- * - executed example that asserts proof.json identity
- * - structure-valid notebook with executed code cell
- * - technical: presence bench
- * - epic: stub feature + steps (presence gate)
- * - exp: per-type assets
- *
- * Then optionally verify with check-draft-artifacts and print survivors.
- *
- * Usage:
- *   node --import tsx scripts/bulk-harden-proofs.mts
- *   node --import tsx scripts/bulk-harden-proofs.mts --verify
- *   node --import tsx scripts/bulk-harden-proofs.mts --apply-ungrandfather
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -74,7 +59,6 @@ console.log("proof-identity: ok");
 `,
 		);
 	}
-	// Always refresh expected from a dry run of the example logic (deterministic)
 	const out = [`slug: ${slug}`, `layer: ${layer}`, "proof-identity: ok"].join(
 		"\n",
 	);
@@ -84,7 +68,6 @@ console.log("proof-identity: ok");
 function writeNotebook(abs: string, slug: string) {
 	const nbPath = path.join(abs, "notebook.ipynb");
 	if (existsSync(nbPath)) {
-		// Ensure executed outputs exist
 		try {
 			// SAFETY: assertion to `ON.parse(readFileSync(nbPath, "utf8")) as { nbformat?: number; cells?: Array<{ cell_type?: string; outputs?: unknown[]; ` is required at this boundary.
 			const nb = JSON.parse(readFileSync(nbPath, "utf8")) as {
@@ -100,9 +83,7 @@ function writeNotebook(abs: string, slug: string) {
 				(c) => Array.isArray(c.outputs) && c.outputs.length > 0,
 			);
 			if (nb.nbformat && nb.nbformat >= 4 && code.length > 0 && hasOut) return;
-		} catch {
-			/* rewrite */
-		}
+		} catch {}
 	}
 	const nb = {
 		cells: [
@@ -324,7 +305,6 @@ function ensureProofArtifacts(workspace: string) {
 		const t = expType(workspace) ?? proof.experienceType ?? "dx";
 		writeExpAssets(abs, t, slug);
 	}
-	// ensure artifacts map
 	// SAFETY: assertion to `.proof.artifacts } as Record<string, unknown>; a` is required at this boundary.
 	const arts = { ...proof.artifacts };
 	arts.examples = arts.examples ?? "examples";
@@ -399,7 +379,6 @@ function main() {
 
 	if (doApply && passed.length > 0) {
 		const remain = gf.packages.filter((p) => !passed.includes(p));
-		// also keep packages not in this batch
 		writeFileSync(
 			gfPath,
 			`${JSON.stringify(

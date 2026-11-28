@@ -47,10 +47,6 @@ export interface YardGenerationConnector {
 	compensate?(plan: YardGenerationPlan): Promise<YardGenerationResult>;
 }
 
-/**
- * Pure decision: whether generation is allowed and which runtime/connector wins.
- * Default effect is deny.
- */
 export function planYardGeneration(options: {
 	readonly ownerTenantId: string;
 	readonly requestedLayout: YardLayout;
@@ -179,10 +175,6 @@ export function planYardGeneration(options: {
 	};
 }
 
-/**
- * In-memory generation saga coordinator: leases by idempotency key so concurrent
- * identical requests share one attempt.
- */
 export interface YardGenerationSaga {
 	readonly run: (plan: YardGenerationPlan) => Promise<YardGenerationResult>;
 	readonly inspect: (
@@ -208,7 +200,6 @@ export function createYardGenerationSaga(options: {
 				) {
 					return existing.result;
 				}
-				// Resume inspect path for in-flight.
 				const connector = options.connectors.get(plan.generatorConnectorId);
 				if (!connector) {
 					return fail(plan, "connector-missing", "generator connector missing");
@@ -241,7 +232,6 @@ export function createYardGenerationSaga(options: {
 			attempts.set(plan.idempotencyKey, { plan, result: started });
 
 			const result = await connector.provision(plan);
-			// Never treat provisioned as ready without registration path.
 			const normalized =
 				result.status === "provisioned"
 					? Object.freeze({ ...result, status: "registered" as const })

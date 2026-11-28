@@ -73,8 +73,6 @@ describe("provider allocation conversion", () => {
 			startupMinutes: 1,
 			offers: [blacksmith, depot],
 		});
-		// Eight base minutes cover two minutes on the 8-vCPU host. Consume
-		// those minutes first, even though Depot's paid reservation is cheaper.
 		const choice = route(account, [], "2026-10-26T12:00:00Z");
 		expect(choice?.offer.id).toBe("blacksmith");
 		expect(choice?.freeMinutes).toBe(2);

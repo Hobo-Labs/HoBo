@@ -29,11 +29,6 @@ import {
 } from "../src/index.js";
 import { isJsonString, type JsonValue, parseJsonObject } from "../src/json.js";
 
-// S2-08: the cloud verbs (login/plan/up/down) wired to the @hobo/cloud Yard
-// through the shared yard-client seam. The mocked lane drives the gateway +
-// orchestrator in-process against a runtime-local EventStore with an injected
-// in-memory IacProvider — no real Cloudflare calls.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -72,9 +67,6 @@ afterEach(() => {
 	stores = [];
 });
 
-// An in-memory IacProvider — the injected dev/test backend the Executor drives.
-// It never touches a real cloud (mocked lane); apply returns a synthetic
-// endpoint, destroy is a no-op.
 function inMemoryIac(): IacProvider {
 	return {
 		id: "mock-local-container",
@@ -84,9 +76,7 @@ function inMemoryIac(): IacProvider {
 		async apply(program: IacProgram) {
 			return { endpoint: `${program.resourceId}.local` };
 		},
-		async destroy() {
-			/* local backend no-op */
-		},
+		async destroy() {},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},
@@ -299,7 +289,6 @@ describe("hobo down drives the compensation/destroy path to Destroyed", () => {
 				"service",
 				"sessions",
 			]);
-			// Dependents tear down before their dependencies.
 			expect(envelope.data.destroyed.indexOf("service")).toBeLessThan(
 				envelope.data.destroyed.indexOf("sessions"),
 			);

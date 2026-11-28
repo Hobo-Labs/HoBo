@@ -1,8 +1,3 @@
-/**
- * Main-thread client for the storage worker. Serializes all ops through one
- * Worker so DatabaseSync never races and never monopolizes the event loop.
- */
-
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type {
@@ -186,9 +181,7 @@ export class StorageWorkerClient {
 		if (!this.worker) return;
 		try {
 			await this.call({ id: this.nextId(), op: "shutdown" });
-		} catch {
-			// ignore
-		}
+		} catch {}
 		await this.worker.terminate();
 		this.worker = null;
 	}

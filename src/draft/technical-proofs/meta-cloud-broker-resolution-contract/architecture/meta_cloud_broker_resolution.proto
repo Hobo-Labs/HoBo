@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-525
-// deterministic Meta-cloud Broker resolution proof.
 
 enum BrokerResolutionAction {
   BROKER_RESOLUTION_ACTION_UNSPECIFIED = 0;

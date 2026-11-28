@@ -107,7 +107,7 @@ front of simulators, registries, databases, and queues — never a live cloud
 credential.
 
 Related resilience scope (steady-state hypotheses, blast radius) stays in
-[`chaos-resilience-tests.md`](./chaos-resilience-tests.md). This document is
+[`chaos-resilience-tests.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/chaos-resilience-tests.md). This document is
 the property/fuzz **discipline** and CI map.
 
 ## Lanes

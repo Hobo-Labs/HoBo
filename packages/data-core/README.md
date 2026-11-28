@@ -10,7 +10,7 @@ holds no state. Engine packages (`@hobo/data-sqlite`, `@hobo/data-postgres`,
 `@hobo/data-mongodb`) derive from it; `@hobo/trails` composes its executors
 into runbooks and consumes their evidence.
 
-Design: [`docs/design/data-engines-continuous-migration.md`](../../docs/design/data-engines-continuous-migration.md).
+Design: [`docs/design/data-engines-continuous-migration.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md).
 
 ## What this package owns
 
@@ -670,3 +670,10 @@ and CUE invariants in `data-models/`, and the two Pact contracts in
 `test/second-review.test.ts` holds the late authority move, the rollback
 exceptions, fence ownership, the erasure window, the paused transfer and a
 journal recorded from an earlier release (`test/fixtures/journal-65a46a72.json`).
+
+The optional cross-engine live suite runs with `pnpm run test:data-live`. The
+local fixtures in `deploy/compose.live-engines.yml` bind to loopback, allow
+unauthenticated PostgreSQL and MongoDB connections, and are for disposable
+test data. The suite creates and removes databases and tables. Existing
+`HOBO_TEST_POSTGRES_URL` and `HOBO_TEST_MONGODB_URL` values override the local
+defaults, so point them only at dedicated test servers.

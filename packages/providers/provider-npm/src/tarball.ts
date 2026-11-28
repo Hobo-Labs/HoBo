@@ -1,17 +1,3 @@
-/**
- * The Freight tarball, parsed: bytes proven to hash to the Freight digest, the
- * npm integrity values the registry will be compared against, and the
- * `package.json` read out of the tarball itself.
- *
- * The manifest comes from the tarball, never from desired state, so the
- * published version document cannot disagree with the bytes it ships: a plan
- * that names `1.2.3` for a tarball whose `package.json` says `1.2.4` is
- * refused before any request leaves the process.
- *
- * Only what npm needs is implemented: gzip, ustar headers, the PAX `path`
- * extension `node-tar` writes for long names, and the top-level
- * `package.json`. Everything is bounded.
- */
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { reject } from "./errors.js";
@@ -22,7 +8,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-/** Largest tarball the realizer will publish; it travels base64 in a string body. */
 export const NPM_MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 512 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
@@ -31,12 +16,9 @@ const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 // domain-view: parse-time derived tarball; only built by parseNpmTarball.
 export interface NpmTarball {
 	readonly bytes: Uint8Array;
-	/** The Freight digest the bytes were proven to match. */
 	readonly digest: string;
-	/** `sha512-<base64>`, what npm writes as `dist.integrity`. */
 	readonly integrity: string;
 	readonly sha512Hex: string;
-	/** Hex sha1, what npm writes as `dist.shasum`. */
 	readonly shasum: string;
 	readonly manifest: JsonObject;
 }
@@ -54,7 +36,6 @@ export function sha256Of(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-/** Prove `bytes` are the Freight artifact, then read what npm needs out of them. */
 export function parseNpmTarball(bytes: Uint8Array, digest: string): NpmTarball {
 	if (bytes.byteLength > NPM_MAX_TARBALL_BYTES)
 		reject(
@@ -150,7 +131,6 @@ function text(field: Uint8Array): string {
 	);
 }
 
-/** PAX records are `<len> <key>=<value>\n`; only `path` is consulted. */
 function paxRecord(data: Uint8Array, key: string): string | undefined {
 	let found: string | undefined;
 	for (const line of Buffer.from(data).toString("utf8").split("\n")) {
@@ -166,11 +146,6 @@ const SRI_ALGORITHMS = new Map([
 	["sha256", "sha256"],
 ]);
 
-/**
- * Compare a registry `dist.integrity` (Subresource Integrity, possibly several
- * space-separated hashes) with the bytes. `incomparable` means the registry
- * named no sha256/384/512 hash, so nothing strong can be concluded.
- */
 export function compareIntegrity(
 	integrity: string,
 	bytes: Uint8Array,

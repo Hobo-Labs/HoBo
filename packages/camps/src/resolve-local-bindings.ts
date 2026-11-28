@@ -19,11 +19,6 @@ export class BindingResolutionError extends Error {
 
 export type ResolvedEnv = Readonly<Record<string, string>>;
 
-/**
- * Resolve lazy binding tokens for a Camp running on the local provider.
- * Provider is inherited from the enclosing Yard (derivedProviderId) or
- * explicitly required as "local" for bare-metal camps.
- */
 export async function resolveLocalBindings(
 	manifest: WiringManifest,
 	camp: Camp,

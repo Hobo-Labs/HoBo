@@ -88,7 +88,6 @@ describe("createRealComponentize (injected impl)", () => {
 			"stdio",
 			"http",
 		]);
-		// SOURCE_DATE_EPOCH flows through as pinned epoch seconds — no Date.now.
 		expect(opts?.env).toEqual({ SOURCE_DATE_EPOCH: "1767225600" });
 	});
 
@@ -160,7 +159,6 @@ describe("createRealComponentize (toolchain probe)", () => {
 			.catch((caught: ComponentizeToolchainError) => caught);
 		expect(error).toBeInstanceOf(ComponentizeToolchainError);
 		if (error instanceof ComponentizeToolchainError) {
-			// Remediation names the synthetic offline floor.
 			expect(error.remediation).toMatch(/componentizeHelloBindle/);
 			expect(error.remediation).toMatch(/synthetic contract-shaped floor/);
 		}

@@ -1,16 +1,3 @@
-/**
- * `pins:bump` of an asset pin: move it to another release.
- *
- * A release lists its digests in `SHA256SUMS`. The convention that makes a
- * bump mechanical is `<pin name>-<target>` for each executable
- * (`mirror-linux-x64`), or, where the release ships Go-named archives
- * instead, `<pin name>_<tag>_<goos>_<goarch>.tar.gz` with the executable as
- * one member. A bump downloads every file it pins and checks it against the
- * published sum, and unpacks an archive's member, so a pin is never written
- * from a list alone.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -35,7 +22,6 @@ import { prepareCache } from "./pins-cache.ts";
 import { fetchText, fetchVerified } from "./pins-fetch.ts";
 import { sameRepo } from "./pins-repo-url.ts";
 
-/** The targets a release is expected to publish when its pin has none yet. */
 const DEFAULT_TARGETS = ["linux-x64", "linux-arm64"] as const;
 
 function oldEntries(pin: AssetPin | null): string[] {
@@ -45,20 +31,15 @@ function oldEntries(pin: AssetPin | null): string[] {
 }
 
 export interface BumpOptions {
-	/** `--repo`: the repository that publishes the release. */
 	readonly repo: string | undefined;
-	/** `--drop`: targets the new release is allowed to stop publishing. */
 	readonly drop: readonly string[];
-	/** `--entry`: rename the file the verified bytes are kept and run under. */
 	readonly entry: string | undefined;
-	/** `--member`: the archive member to run, when the release ships archives. */
 	readonly member: string | undefined;
 	readonly allowLocal: boolean;
 }
 
 export interface Bumped {
 	readonly text: string;
-	/** What to print: the move, then what was kept and what was dropped. */
 	readonly lines: readonly string[];
 }
 
@@ -68,11 +49,6 @@ interface TargetPlan {
 	readonly unpublished: string[];
 }
 
-/**
- * The file a release publishes for `target`: the bare executable
- * `<name>-<target>`, else the Go-style archive `<name>_<tag>_<os>_<arch>.tar.gz`
- * that mirror.cloud's release workflow publishes.
- */
 function publishedFor(
 	name: string,
 	tag: string,
@@ -88,10 +64,6 @@ function publishedFor(
 		: undefined;
 }
 
-/**
- * Refuse a bump that would lose a build without being told to: every target
- * the pin has must be published by the release, or named in `--drop`.
- */
 function planTargets(
 	name: string,
 	tag: string,
@@ -127,11 +99,6 @@ function planTargets(
 	};
 }
 
-/**
- * Point `name` at release `tag`: read its SHA256SUMS, download each file it
- * pins into the cache, check it against the published sum, measure it, and
- * return the manifest text with only that entry replaced.
- */
 export async function bumpAsset(
 	pins: Pins,
 	name: string,
@@ -139,7 +106,6 @@ export async function bumpAsset(
 	options: BumpOptions,
 	ctx: AssetContext,
 ): Promise<Bumped> {
-	// Nothing the operator typed reaches a URL, the cache or the network unchecked.
 	if (!isReleaseTag(tag)) {
 		throw new PinsError("USAGE", `${tag} is not a release tag`);
 	}
@@ -147,8 +113,6 @@ export async function bumpAsset(
 		checkRepoUrl(options.repo, "--repo", options.allowLocal);
 	}
 	const pin = pins.assets[name] ?? null;
-	// `--repo` naming the pin's own repository (a trailing slash, `.git`) is
-	// not a move: keep the manifest's text and announce nothing.
 	const repo =
 		options.repo !== undefined &&
 		pin !== null &&
@@ -191,11 +155,9 @@ export async function bumpAsset(
 			);
 		}
 	}
-	// The name a binary runs under is the pin's, not the release's: carry it over.
 	const entryFor = (target: string): string =>
 		options.entry ?? pin?.files[target]?.entry ?? name;
 	for (const [target, release] of found) {
-		// The archive and the entry share the cache directory, under their own names.
 		if (release?.archive === true && entryFor(target) === release.file) {
 			throw new PinsError(
 				"USAGE",
@@ -224,10 +186,8 @@ export async function bumpAsset(
 			entry,
 		};
 		if (release?.archive === true) {
-			// `--member`, else the member the pin already names, else the pin's entry.
 			const member =
 				options.member ?? pin?.files[target]?.archive?.member ?? entry;
-			// Unpacking it is the check that the archive holds what the pin will run.
 			await extractMember(dest, member, join(ctx.cache, sha256, entry), sha256);
 			files[target] = { ...file, archive: { format: "tar.gz", member } };
 		} else {

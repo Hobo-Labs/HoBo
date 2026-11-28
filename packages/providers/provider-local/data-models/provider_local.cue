@@ -1,10 +1,3 @@
-// CUE constraints for every protobuf type in provider_local.proto, so the
-// architecture guard can confirm the boundary shapes are bounded at parse
-// time.
-//
-// The invariants that matter are the honesty ones: a claim names a seed
-// product and a runtime-local executor, the provider is the seed's own id,
-// and a physical name is derived from its inputs rather than supplied.
 
 package provider_local
 
@@ -24,8 +17,6 @@ import "list"
 	seed_product_id:         #LocalSeedProductId
 	port:                    string & !=""
 	profile_ids:             [...string] & list.MinItems(1)
-	// The executor is always a runtime-local engine ref; this package
-	// registers no driver of its own.
 	executor_ref:            =~"^executor\\.runtime-local\\.[a-z0-9-]+/v1$"
 	trust_evidence_ref:      string & !=""
 	evidence_signature_valid: bool
@@ -35,8 +26,6 @@ import "list"
 #LocalEngineGapRecord: {
 	seed_product_id: #LocalSeedProductId
 	missing_engine:  string & =~"^.{8,512}$"
-	// Long enough to name what to do about the gap; "unsupported" alone
-	// would read as no opinion.
 	reason: string & =~"^.{20,1024}$"
 }
 

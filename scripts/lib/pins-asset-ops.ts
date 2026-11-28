@@ -1,13 +1,3 @@
-/**
- * What `bootstrap-siblings` does with an asset pin: report it and fetch it.
- * Moving it to another release is `pins-asset-bump.ts`.
- *
- * An asset is one executable per target, pinned by sha256 and kept in the
- * content-addressed cache: a bare file, or one member of a release archive,
- * where the archive is what the pin's digest covers (`pins-archive.ts`).
- *
- * Erasable TypeScript with node builtins only.
- */
 import { basename } from "node:path";
 
 import { type AssetPin, PinsError } from "./pins.ts";
@@ -49,11 +39,6 @@ function fetchHint(name: string): string {
 	return `pnpm run pins:fetch ${name}`;
 }
 
-/**
- * Whether this run is a CI run: `CI` (GitHub, GitLab, CircleCI and most
- * others), `GITHUB_ACTIONS` or `TF_BUILD` (Azure Pipelines) set to anything
- * but empty, false or 0. Nothing else is read.
- */
 function inCi(env: NodeJS.ProcessEnv): boolean {
 	return [env.CI, env.GITHUB_ACTIONS, env.TF_BUILD].some((value) => {
 		const set = (value ?? "").toLowerCase();
@@ -61,11 +46,6 @@ function inCi(env: NodeJS.ProcessEnv): boolean {
 	});
 }
 
-/**
- * An override variable points a lane at a local binary, which nothing has
- * verified. Refuse it in CI, where a green run has to mean the pinned bytes
- * ran, unless `HOBO_PINS_ALLOW_OVERRIDE=1` says the run means something else.
- */
 export function refuseOverridesInCi(
 	names: readonly string[],
 	env: NodeJS.ProcessEnv,
@@ -80,7 +60,6 @@ export function refuseOverridesInCi(
 	}
 }
 
-/** Offline: the cached bytes still hash to the pin. Online: the release still says so. */
 export async function statusAsset(
 	name: string,
 	pin: AssetPin | null,
@@ -189,7 +168,6 @@ async function compareWithRelease(
 	return problems;
 }
 
-/** Download, verify and cache this machine's build; the line to print. */
 export async function fetchAsset(
 	name: string,
 	pin: AssetPin | null,

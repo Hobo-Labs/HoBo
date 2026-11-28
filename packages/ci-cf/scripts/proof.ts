@@ -6,9 +6,6 @@ import {
 } from "../src/_generated/readiness_pb.js";
 import { initialLocalState, transitionLocalRun } from "../src/local-state.js";
 
-// Complete finite graph exploration, without a depth or iteration limit. The
-// invariants below describe the external safety contract, not expected outputs
-// for individual switch branches in the implementation.
 export function proveLocalSafety() {
 	const events = [
 		...[

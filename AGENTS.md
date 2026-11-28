@@ -9,9 +9,13 @@ over conflicting repository workflow guidance.
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
   directives consumed by compilers or tools, such as `/* @vite-ignore */` for
-  dynamic imports.
-- Complete unfinished work when it is found. Do not hide it by deleting its
-  marker or by moving it into a backlog.
+  dynamic imports. Preserve comments used as input
+  by comment-driven training and its executable fixtures. Independent
+  submodules follow their own rules unless their work is explicitly requested.
+- Treat TODOs and other deferred markers as flags. Resolve a small in-scope
+  task directly or record genuinely unfinished work in the HoBo Linear team,
+  using an existing issue when possible, before removing its marker. Do not
+  invent feature work or change behavior merely to remove a comment.
 - Do not run GitHub Actions validation on draft pull requests. The first routing
   job on every `pull_request` workflow skips draft events, so no Fabric runners
   start until the pull request is marked ready for review. Review and validate
@@ -33,8 +37,8 @@ over conflicting repository workflow guidance.
   and report any contradiction before building. The `hobo-setup` skill covers
   owner interaction and the `sdlc` skill covers landing pull requests.
 - Do not create or retain planning documents, roadmaps, or design documents.
-  Implement their outstanding work, then remove them. Keep user and operator
-  documentation about behavior that actually exists.
+  Record genuinely outstanding work in Linear, then remove the artifacts. Keep
+  user and operator documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 - When work needs an MCP server, check the active host's tools. If the server
@@ -205,7 +209,7 @@ Prefer changes inside one package, app, feature folder, or test folder.
 - **ResilienceProfile** is a **secondary** visible layer (retry / circuitBreaker / timeout / bulkhead / fallback / hedging). Thin `applyResilienceProfile` applicator emits facts; **never** retries `policy.Decided` deny, terminal, or cancellation — aligned with [`docs/design/dx-sdk-resilience-semantics.md`](docs/design/dx-sdk-resilience-semantics.md). Not a primary control-plane noun.
 - Capture/export: `EffectManifest`, `EffectTracer` (`contract.EffectDeclared` / `contract.EffectInvoked`); Gatekeeper `effectSummaries` + `gate: "effects" | "resilience"`.
 - Harness: `@hobo/contracts` `createEffectIsolation`, `mocksForEffects`, `runResilienceFaultInjection` — pure contracts isolate with zero infra (`@hobo/contract-harness` itself stays dependency-free PACT infra).
-- No public Effect-TS, Polly, or XState dependency. Design: [`docs/design/adr/03-data-plane-effects-resiliency.md`](docs/design/adr/03-data-plane-effects-resiliency.md).
+- No public Effect-TS, Polly, or XState dependency. Design: [Effects and resilience ADR](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md).
 
 ### Secretless-first config & secrets (ADR-0027)
 

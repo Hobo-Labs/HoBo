@@ -1,8 +1,3 @@
-/**
- * Messaging over Dapr pub/sub building block.
- * Live fidelity requires an injected {@link DaprSidecarClient}.
- */
-
 import { randomUUID } from "node:crypto";
 import {
 	assertDeadLetterSupported,
@@ -36,9 +31,7 @@ import type { DaprRuntimeConfig } from "./types.js";
 export interface DaprMessagingOptions {
 	readonly config: DaprRuntimeConfig;
 	readonly metering?: MeteringBus;
-	/** Requires {@link client} when true. */
 	readonly live?: boolean;
-	/** Live path: all publish/drain/ack go through daprd client. */
 	readonly client?: DaprSidecarClient;
 	readonly now?: () => string;
 	readonly settlementTimeoutMs?: number;

@@ -1,7 +1,3 @@
-// Pure pipeline-graph validation (D4, D21, D24) and the derived facts the
-// controller reads from a parsed graph. The controller gathers what lives
-// elsewhere (topology, defined sources, placements) and passes it in, so this
-// module has no I/O and every rule has one place.
 import { clone } from "@bufbuild/protobuf";
 import {
 	AutoPromotion,
@@ -25,13 +21,10 @@ import { ORIGIN_SOURCES, PIPELINE_REASON, PROJECT_LABEL } from "./reasons.js";
 
 const SLUG = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** Facts from outside the record that validation needs. */
 export type GraphFacts = Readonly<{
 	camps: ReadonlyMap<string, CampTopology>;
-	/** Names of defined Freight sources (`source.Defined`). */
 	sources: ReadonlySet<string>;
 	placements: ReadonlyMap<string, PlacementRecord>;
-	/** Another pipeline already delivering this Bindle, if any. */
 	bindleOwner?: string | undefined;
 }>;
 
@@ -43,23 +36,17 @@ export function isPreview(node: PipelineNodeRecord): boolean {
 	return node.previewTtlMs > 0n;
 }
 
-/** UNSPECIFIED subject reads as BINDLE. */
 export function subjectOf(subject: FreightSubject): FreightSubject {
 	return subject === FreightSubject.UNSPECIFIED
 		? FreightSubject.BINDLE
 		: subject;
 }
 
-/** A Bindle's project: the segment before the first "/" ("" when unqualified). */
 export function projectOf(bindle: string): string {
 	const slash = bindle.indexOf("/");
 	return slash > 0 ? bindle.slice(0, slash) : "";
 }
 
-/**
- * The availability strategy a node applies to its upstream nodes (R10):
- * UNSPECIFIED is QUORUM when any upstream node is placed, else ONE_OF.
- */
 export function effectiveAvailability(
 	node: PipelineNodeRecord,
 	nodes: ReadonlyMap<string, PipelineNodeRecord>,
@@ -72,7 +59,6 @@ export function effectiveAvailability(
 	return placedUpstream ? Availability.QUORUM : Availability.ONE_OF;
 }
 
-/** A parsed record: schema stamped, subject normalized, definer recorded. */
 export function normalizePipeline(
 	record: PipelineRecord,
 	definedBy: string,
@@ -84,7 +70,6 @@ export function normalizePipeline(
 	return out;
 }
 
-/** Node names in an order where every upstream precedes its downstream, or undefined on a cycle. */
 export function topologicalOrder(
 	record: PipelineRecord,
 ): readonly string[] | undefined {
@@ -126,7 +111,6 @@ function ancestorsOf(
 	return seen;
 }
 
-/** Every problem with a pipeline graph, each with a remediation. Empty means valid. */
 export function validatePipeline(
 	record: PipelineRecord,
 	facts: GraphFacts,

@@ -18,22 +18,14 @@ import {
 export const BLACKSMITH_RUNNER_WORKFLOW_DEFAULT = "hobo-runner-blacksmith.yml";
 
 export interface BlacksmithRunnerProviderOptions {
-	// The real GitHub Actions client (injected fetch inside) — Blacksmith is a
-	// drop-in runs-on substitution, so jobs still dispatch through GitHub.
 	readonly client: GithubActionsClient;
 	readonly id?: string;
 	readonly workflow?: string;
 	readonly ref?: string;
-	// The Blacksmith runner class the workflow runs on.
 	readonly runsOn?: string;
 	readonly tracking?: RunTrackingOptions;
 }
 
-// The REAL Blacksmith.sh RunnerProvider (`hobo:runner`): the SAME job spec
-// that runs on runner-github runs unmodified here — `run(job)` fires the same
-// workflow_dispatch shape, but the workflow executes on Blacksmith-managed
-// fast runners (`runs-on: blacksmith-*`), carried as the `runs_on` input so
-// the substitution is recorded on the run itself.
 export function createBlacksmithRunnerProvider(
 	options: BlacksmithRunnerProviderOptions,
 ): RunnerProvider {

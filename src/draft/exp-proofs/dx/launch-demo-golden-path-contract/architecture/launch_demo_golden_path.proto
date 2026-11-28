@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-488 launch
-// demo golden path contract. This is a design-time schema artifact, not a
-// runtime compilation target.
 
 enum LaunchDemoProofMode {
   LAUNCH_DEMO_PROOF_MODE_UNSPECIFIED = 0;

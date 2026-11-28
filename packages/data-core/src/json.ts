@@ -40,13 +40,6 @@ function compareCodeUnits(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/**
- * The canonical byte form every digest in this package is computed over.
- *
- * Keys are ordered by UTF-16 code unit — never by locale — and no whitespace
- * is emitted, so two engines on two hosts with two locales hash the same
- * record to the same bytes. `JSON.stringify` alone guarantees neither.
- */
 export function canonicalEncode(value: JsonValue): string {
 	if (isJsonArray(value)) {
 		return `[${value.map((item) => canonicalEncode(item)).join(",")}]`;
@@ -65,7 +58,6 @@ export function sha256Hex(text: string): string {
 	return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-/** Digest of a JSON value in canonical form, as a `sha256:` reference. */
 export function digestOf(value: JsonValue): `sha256:${string}` {
 	return `sha256:${sha256Hex(canonicalEncode(value))}`;
 }

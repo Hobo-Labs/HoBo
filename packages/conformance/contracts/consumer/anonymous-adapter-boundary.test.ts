@@ -1,11 +1,3 @@
-// Executable PACT evidence for the runner <-> anonymous-adapter boundary.
-//
-// The pact is the contract an adapter implements: it names the exact request
-// the runner sends for a case and the exact response body the adapter answers
-// with. Replaying every recorded interaction through the real judges is what
-// keeps the JSON honest — a pact nobody executes drifts from the code within a
-// release.
-
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,8 +59,6 @@ describe("anonymous conformance adapter boundary", () => {
 			const suite = SUITES[interaction.request.path as keyof typeof SUITES];
 			const caseId = String(interaction.request.body.caseId);
 
-			// Only the recorded case runs; everything else is left `unknown`,
-			// which is exactly how a partial run must report.
 			const report = await runAnonymousSuite(
 				suite,
 				() => interaction.response.body,

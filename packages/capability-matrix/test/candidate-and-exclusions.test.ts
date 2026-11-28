@@ -71,9 +71,7 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("puts sponsorship above everything else", () => {
-		// Money first. A sponsor-backed path works, but counting it as
 		// provider-native would describe HoBo's budget as market coverage — which
-		// is the single claim this package exists to prevent.
 		expect(
 			classifyCandidateBucket({
 				realization: "native",
@@ -84,8 +82,6 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("puts HoBo-operated substrate above the realization kind", () => {
-		// The same argument one remove out: native-on-iron-HoBo-runs is not the
-		// market implementing the primitive.
 		expect(
 			classifyCandidateBucket({
 				realization: "native",
@@ -96,9 +92,7 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("treats zero and negative sponsor exposure as no sponsorship", () => {
-		// `> 0`, not truthiness. A definition that records zero exposure is not
 		// sponsored, and demoting it would understate real market coverage —
-		// dishonest in the other direction.
 		for (const sponsorExposureMinorUnits of [0, -1]) {
 			expect(
 				classifyCandidateBucket({
@@ -112,8 +106,6 @@ describe("classifyCandidateBucket", () => {
 	});
 
 	it("demotes a pack or bridge to sponsor or substrate too", () => {
-		// The caveats are not native-only. A sponsored pack is reported by its
-		// strongest caveat, so no bucket ever hides a weaker one.
 		expect(
 			classifyCandidateBucket({
 				realization: "pack",
@@ -147,17 +139,12 @@ describe("unavailabilityForEvidenceState", () => {
 		expect(unavailabilityForEvidenceState("absent")).toBe("evidence-absent");
 		expect(unavailabilityForEvidenceState("expired")).toBe("evidence-expired");
 		expect(unavailabilityForEvidenceState("aged")).toBe("evidence-aged");
-		// `aged` and `expired` are separate codes because they call for different
-		// work: one is a renewal that has not happened yet, the other is a claim
-		// that is already invalid.
 		expect(unavailabilityForEvidenceState("future-dated")).toBe(
 			"evidence-future-dated",
 		);
 	});
 
 	it("pins the closed reason vocabulary", () => {
-		// Every code is a fact about evidence or conformance, never about
-		// preference — a candidate is never demoted for being slow or expensive.
 		expect(CANDIDATE_UNAVAILABILITY_CODES).toEqual([
 			"evidence-absent",
 			"evidence-expired",
@@ -180,7 +167,6 @@ describe("compareCandidates", () => {
 			candidate({ bucket: "substrate", definitionId: "c" }),
 		].sort(compareCandidates);
 		// Strongest coverage first, so a reader of a cell sees the honest answer
-		// at the top rather than whichever definition sorted alphabetically.
 		expect(ranked.map((c) => c.bucket)).toEqual([
 			"native",
 			"pack",
@@ -195,8 +181,6 @@ describe("compareCandidates", () => {
 			candidate({ definitionId: "a", available: false }),
 			candidate({ definitionId: "z", available: true }),
 		].sort(compareCandidates);
-		// Availability outranks the id: a usable candidate must surface above an
-		// unusable one even when the unusable one sorts first alphabetically.
 		expect(ranked.map((c) => c.definitionId)).toEqual(["z", "a"]);
 	});
 
@@ -215,8 +199,6 @@ describe("compareCandidates", () => {
 
 	it("is a total order — no key depends on registration order", () => {
 		const same = candidate();
-		// Zero for genuinely identical candidates, so the sort is stable and the
-		// digest cannot shift between two runs over the same catalog.
 		expect(compareCandidates(same, candidate())).toBe(0);
 		expect(compareCandidates(same, same)).toBe(0);
 	});
@@ -230,8 +212,6 @@ describe("compareCandidates", () => {
 				[candidate({ profileId: "a" }), candidate({ profileId: "b" })],
 			];
 		for (const [left, right] of pairs) {
-			// A comparator that returned the same sign both ways would make
-			// `Array.sort` implementation-defined, and the digest with it.
 			expect(Math.sign(compareCandidates(left, right))).toBe(
 				-Math.sign(compareCandidates(right, left)),
 			);
@@ -259,7 +239,6 @@ describe("claims that reach no cell", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ definitions: [bad] }),
 		);
-		// Defaulting to `native` would be the worst possible guess: an unreadable
 		// claim would be published as the strongest kind of coverage.
 		const exclusion = matrix.excluded.find(
 			(entry) => entry.definitionId === "bad.realization/v1",
@@ -287,9 +266,7 @@ describe("claims that reach no cell", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ definitions: [bad] }),
 		);
-		// The grid is primitive x runtime. A claim naming no runtime reaches no
 		// cell, and saying so is what stops it looking like coverage nobody can
-		// find.
 		expect(
 			matrix.excluded.find((entry) => entry.definitionId === "no.runtime/v1")
 				?.code,
@@ -318,7 +295,6 @@ describe("claims that reach no cell", () => {
 				trustEvidence: TRUST_EVIDENCE,
 			}),
 		);
-		// One bad runtime must not void the whole claim — the definition really
 		// does cover `oci`, and dropping that would understate coverage.
 		expect(
 			matrix.excluded.find(
@@ -335,13 +311,9 @@ describe("claims that reach no cell", () => {
 	it("keeps the definition and profile ids on every exclusion", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
 		for (const exclusion of matrix.excluded) {
-			// An exclusion nobody can trace back to a catalog entry is an
-			// unactionable report.
 			expect(exclusion.definitionId.length).toBeGreaterThan(0);
 			expect(exclusion.detail.length).toBeGreaterThan(0);
 		}
-		// The legacy entry is the one case with an empty profile id, because it
-		// made no profile claim at all.
 		const legacy = matrix.excluded.find(
 			(entry) => entry.code === "no-declared-semantics",
 		);
@@ -370,8 +342,6 @@ describe("candidate availability", () => {
 		);
 		const found = cellOf(matrix, cellKey("data", "oci"))?.candidates[0];
 		const codes = found?.unavailability.map((reason) => reason.code) ?? [];
-		// Three independent problems, three reasons. Reporting only the first
-		// would send an operator round the loop three times.
 		expect(codes).toContain("evidence-absent");
 		expect(codes).toContain("conformance-not-passing");
 		expect(codes).toContain("conformance-ref-missing");
@@ -385,8 +355,6 @@ describe("candidate availability", () => {
 		for (const cell of matrix.cells) {
 			for (const found of cell.candidates) {
 				const codes = found.unavailability.map((reason) => reason.code);
-				// Unsorted reasons would make the digest depend on the order the
-				// checks happened to run in, which is exactly what a re-derivable
 				// coverage claim cannot tolerate.
 				expect([...codes].sort()).toEqual(codes);
 			}
@@ -397,9 +365,7 @@ describe("candidate availability", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
 		for (const cell of matrix.cells) {
 			for (const found of cell.candidates) {
-				// The type documents "empty exactly when available is true". If the
 				// two could disagree, a cell could report coverage while naming the
-				// reason it is not covered.
 				expect(found.available, found.definitionId).toBe(
 					found.unavailability.length === 0,
 				);
@@ -412,8 +378,6 @@ describe("candidate availability", () => {
 		const covered = matrix.cells
 			.flatMap((cell) => cell.candidates)
 			.find((found) => found.available);
-		// The expiry is what makes a regression predictable rather than a
-		// surprise; a candidate with none cannot be warned about in advance.
 		expect(covered?.evidenceExpiresAtMs).toBeGreaterThan(NOW);
 	});
 
@@ -423,8 +387,6 @@ describe("candidate availability", () => {
 		);
 		const found = matrix.cells.flatMap((cell) => cell.candidates)[0];
 		expect(found?.evidenceState).toBe("absent");
-		// Absent, not zero: a zero expiry would read as "expired at the epoch",
-		// which is a different and more alarming claim than "never recorded".
 		expect(found?.evidenceExpiresAtMs).toBeUndefined();
 	});
 
@@ -434,7 +396,6 @@ describe("candidate availability", () => {
 			matrixInput({ nowMs: NOW + 5 * DAY }),
 		);
 		const key = cellKey("kv", "serverless_faas");
-		// The definition is still in the catalog and still in the cell — only its
 		// availability changed. Removing it would hide that coverage was lost.
 		expect(cellOf(before, key)?.buckets.native.available).toContain(
 			"upstash.claimable-redis/v1",
@@ -452,10 +413,7 @@ describe("candidate availability", () => {
 
 describe("bucket membership", () => {
 	it("never lists one definition as both available and unavailable in a bucket", () => {
-		// A definition may claim the same cell twice through two profiles. If
-		// either claim is usable the definition is usable; listing it in both
 		// columns would let a reader count the same product as coverage and as a
-		// gap simultaneously.
 		const twice = definition({
 			id: "twice.claiming/v1",
 			providerId: "twice",
@@ -500,8 +458,6 @@ describe("bucket membership", () => {
 			for (const bucketName of CANDIDATE_BUCKETS) {
 				const bucket = cell.buckets[bucketName];
 				for (const list of [bucket.available, bucket.unavailable]) {
-					// Sorted and unique, so two matrices over the same catalog diff
-					// cleanly and the digest is a function of content alone.
 					expect([...list].sort(), `${cell.key}/${bucketName}`).toEqual(list);
 					expect(new Set(list).size).toBe(list.length);
 				}
@@ -513,8 +469,6 @@ describe("bucket membership", () => {
 		const matrix = generateCapabilityMatrix(
 			matrixInput({ definitions: [], trustEvidence: new Map() }),
 		);
-		// An absent cell and an empty cell would otherwise be
-		// indistinguishable, and only one of them is honest.
 		expect(matrix.cells.length).toBeGreaterThan(0);
 		for (const cell of matrix.cells) {
 			for (const bucketName of CANDIDATE_BUCKETS) {
@@ -531,9 +485,7 @@ describe("determinism", () => {
 	it("is byte-identical across two runs over the same input", () => {
 		const a = generateCapabilityMatrix(matrixInput());
 		const b = generateCapabilityMatrix(matrixInput());
-		// The function is pure by contract — no clock, no filesystem, no
 		// randomness — so a coverage claim can be re-derived years later and
-		// come out the same.
 		expect(a.digest).toBe(b.digest);
 		expect(JSON.stringify(a)).toBe(JSON.stringify(b));
 	});
@@ -543,9 +495,7 @@ describe("determinism", () => {
 		const reversed = generateCapabilityMatrix(
 			matrixInput({ definitions: [...matrixInput().definitions].reverse() }),
 		);
-		// Catalog registration order is an accident of startup. If it reached the
 		// digest, two identical deployments would publish different coverage
-		// claims.
 		expect(reversed.digest).toBe(forward.digest);
 	});
 
@@ -554,18 +504,12 @@ describe("determinism", () => {
 		const later = generateCapabilityMatrix(
 			matrixInput({ nowMs: NOW + 5 * DAY }),
 		);
-		// The instant is part of the claim: "covered" is only ever true *as of*
-		// a moment, so a digest that ignored it would let a stale claim be
-		// presented as current.
 		expect(later.digest).not.toBe(now.digest);
 		expect(later.evaluatedAtMs).toBe(NOW + 5 * DAY);
 	});
 
 	it("pins the profile registry and trust bundle digests into the matrix", () => {
 		const matrix = generateCapabilityMatrix(matrixInput());
-		// Both inputs are digested into the result, so a matrix cannot be
-		// re-attributed to a different registry or a different trust judgement
-		// after the fact.
 		expect(matrix.profileRegistryDigest).toBe(PROFILE_REGISTRY.digest);
 		expect(matrix.trustBundleDigest).toMatch(/^sha256:/u);
 	});

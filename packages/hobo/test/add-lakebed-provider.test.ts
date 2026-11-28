@@ -6,9 +6,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// HOBO-714 / ADR-0127: the Lakebed deploy target registers HELD by default —
-// participation in Matching requires an explicit second `hobo add lakebed`.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -34,7 +31,6 @@ describe("hobo add lakebed (held-by-default catalog posture)", () => {
 		expect(first.status).toBe("installed");
 		expect(first.data.approved).toBe(false);
 
-		// Held: registered but unmatchable.
 		expect(runtime.registry.held?.()).toEqual([
 			{
 				providerId: "@hobo/provider-lakebed",

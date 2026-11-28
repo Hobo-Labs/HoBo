@@ -58,7 +58,6 @@ function fleet(peers: readonly Peer[], notAfterMs = NOW + 60_000) {
 	};
 }
 
-/** An idle box that admission refuses for memory, a fresh poll, nothing else. */
 function input(
 	overrides: Partial<RoutingSlipEvaluatorInput> = {},
 ): RoutingSlipEvaluatorInput {
@@ -145,7 +144,6 @@ describe("the routing slip decision", () => {
 			expect(evaluation.blocked.size, reason).toBe(2);
 			expect(evaluation.labels.get("hobo")?.reasons).toEqual([reason]);
 		}
-		// The load average stays high for minutes after CI's own jobs end (R4).
 		expect(
 			blocked({
 				host: { ...host, health: { state: "critical", reasons: ["load"] } },
@@ -210,9 +208,7 @@ describe("the routing slip decision", () => {
 				runnerName,
 				startedAtMs: NOW - 120_000,
 			}));
-		// Two free: open.
 		expect(blocked({ pools })).toEqual(["hobo-trunk"]);
-		// One busy, minimum 2: below it, blocked.
 		expect(
 			blocked({
 				pools,
@@ -221,7 +217,6 @@ describe("the routing slip decision", () => {
 				pickups: busy(["hobo-runner-a"]),
 			}),
 		).toEqual(["hobo", "hobo-trunk"]);
-		// Both busy (and one more than declared): never below zero, blocked.
 		expect(
 			blocked({
 				pools,
@@ -231,7 +226,6 @@ describe("the routing slip decision", () => {
 				},
 			}),
 		).toEqual(["hobo", "hobo-trunk"]);
-		// A job on another label does not use this pool's runners.
 		expect(
 			blocked({
 				pools,
@@ -274,7 +268,6 @@ describe("the routing slip decision", () => {
 		);
 		expect([...stale.blocked.keys()]).toEqual([]);
 		expect(stale.labels.get("hobo")?.reasons).toContain("poll-stale");
-		// No poll at all is no fresher.
 		expect(blocked({ poll: undefined })).toEqual([]);
 	});
 
@@ -297,7 +290,6 @@ describe("the routing slip decision", () => {
 		expect(evaluation.unaccounted).toEqual([
 			"hobo-runner-set-x7k2p-runner-9q4z",
 		]);
-		// Older than 15 minutes no longer counts.
 		expect(
 			blocked({
 				pickups: [
@@ -397,7 +389,6 @@ describe("the routing slip decision", () => {
 });
 
 describe("the evaluator's answer for a lone idle box", () => {
-	// A small deterministic generator, so a failure names its seed.
 	function* samples(seed: number, count: number) {
 		let state = seed;
 		const next = () => {
@@ -469,9 +460,6 @@ describe("the evaluator's answer for a lone idle box", () => {
 	});
 });
 
-// ADR-0181, decision 5 and M6: a busy, healthy box is never refused (R4); critical
-// storage refuses whether or not the box is busy; pools are counted from
-// GitHub's runner list, and a list that cannot be read is unknown.
 describe("the evaluator behind the routing slip", () => {
 	const disk = {
 		availableMb: 64_000,

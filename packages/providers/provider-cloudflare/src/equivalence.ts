@@ -17,16 +17,12 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "R2",
 		features: ["durable", "s3-compatible"],
 	},
-	// Queues: at-least-once delivery to a consumer Worker, with delayed sends
-	// and retries.
 	queue: {
 		port: "queue",
 		resourceClass: "cloudflare:queue",
 		providerService: "Queues",
 		features: ["queue", "at-least-once", "delay", "managed"],
 	},
-	// Cron Triggers: a cron expression on a Worker that runs its `scheduled`
-	// handler. Attached to the Worker it triggers; nothing else is provisioned.
 	schedule: {
 		port: "schedule",
 		resourceClass: "cloudflare:cron-trigger",
@@ -49,7 +45,6 @@ export function equivalenceForPort(port: InitialCapabilityPort) {
 	return EQUIVALENCE_CLASSES[port];
 }
 
-/** HoBo ports this provider can natively host (Matching / Examples truth). */
 export function cloudflareNativePorts(): readonly string[] {
 	return Object.freeze([
 		...new Set(Object.values(EQUIVALENCE_CLASSES).map((entry) => entry.port)),

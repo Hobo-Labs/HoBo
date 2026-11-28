@@ -1,7 +1,3 @@
-# A self-hosted Valkey as the hosted relay's cache (ADR-0179 amendment,
-# phase 5). Lowered into the @hobo/pricing catalog by
-# scripts/generate-offers.mts. No provider cost: the host's own cost is
-# outside this catalog.
 schema: hobo.provider-manifest/v1
 
 provider:

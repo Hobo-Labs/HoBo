@@ -806,7 +806,6 @@ describe("worker lease reconciliation", () => {
 			inventoryKnown: false,
 			liveLeaseIds: new Set([lease.id]),
 		});
-		// Memory in use is still reported when the container list is unknown.
 		expect(result.inUseMemoryMb).toBeGreaterThanOrEqual(0);
 		expect(active).toEqual([lease]);
 		expect(store.abortIsolatedAndRequeue).not.toHaveBeenCalled();

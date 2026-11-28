@@ -8,12 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createVerifyCommand } from "../src/verify-command.js";
 
-// `hobo verify` drives the REAL @hobo/contracts Gatekeeper over the project's
-// Bindle. These tests exercise the wired engine end to end: the permissive lane
-// allows and records a decision, a seeded low quota denies with a machine-
-// readable cost reason, a deny policy pack denies with a policy reason, and a
-// missing Bindle is a clean typed error (not a stub).
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -75,7 +69,6 @@ describe("createVerifyCommand", () => {
 				command: "verify",
 				decision: "allow",
 			});
-			// The cost gate saw both resources against the default budget.
 			expect(
 				// SAFETY: assertion required at this I/O or test boundary.
 				(result.data as { costQuota: { requested: number } }).costQuota

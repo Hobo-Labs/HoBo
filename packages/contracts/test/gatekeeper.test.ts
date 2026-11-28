@@ -1,12 +1,3 @@
-/**
- * Every case is a line in `gatekeeper.cases.jsonl`.
- *
- * `evaluateGatekeeper` takes one options object and every gate input in it is
- * already JSON — except `policyPack`, whose rules are closures. Those are the
- * only thing that cannot be written down, so they live here as a named set and
- * a case selects one by name. Everything else is data.
- */
-
 import { describeConcern } from "@hobo/contract-harness";
 import {
 	createBoundaryContract,
@@ -34,7 +25,6 @@ const DEPLOYED = createBoundaryContract({
 	},
 });
 
-/** Adds a field: widening, so the consumer keeps working. */
 const COMPATIBLE = createBoundaryContract({
 	id: "contract-orders-http",
 	version: "1.3.0",
@@ -46,7 +36,6 @@ const COMPATIBLE = createBoundaryContract({
 	},
 });
 
-/** Drops `tenantId`: the removal the contracts gate exists to catch. */
 const BREAKING = createBoundaryContract({
 	id: "contract-orders-http",
 	version: "3.0.0",
@@ -75,7 +64,6 @@ const pack = (
 	],
 });
 
-/** The closures, which are the one thing a case cannot spell out. */
 interface PolicyPackById {
 	[id: string]: PolicyPack | undefined;
 }
@@ -144,8 +132,6 @@ describeConcern("gatekeeper", {
 			} as never);
 			return {
 				decision: result.decision,
-				// Sorted and whole: a `find(gate === …)` assertion stays green when
-				// an unrelated gate also fires, which is what this replaces.
 				reasons: result.reasons
 					.map((reason) => `${reason.gate}:${reason.code}`)
 					.sort(),

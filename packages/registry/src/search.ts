@@ -1,11 +1,5 @@
 import { type BundleManifest, bundleManifestDigest } from "./ingest.js";
 
-// Search/index: a small pure module — an in-memory
-// index over ingested bundles queryable by name, capability, and provider
-// with deterministic ranking (fixed scores, codepoint tie-breaks). No IO,
-// no clock, no randomness: equal inputs always rank equally.
-
-// Derived from a parsed BundleManifest only; the proto message is its wire form.
 // domain-view: parsed derived type of data-models BundleIndexEntry
 export interface BundleIndexEntry {
 	name: string;
@@ -26,7 +20,6 @@ export interface RankedBundle {
 	entry: BundleIndexEntry;
 }
 
-// Project a parsed manifest onto its search-index row.
 export function toIndexEntry(manifest: BundleManifest): BundleIndexEntry {
 	return {
 		name: manifest.name,
@@ -50,10 +43,6 @@ function nameScore(entryName: string, query: string): number {
 	return -1;
 }
 
-// Rank index entries against a query. Every provided criterion must match
-// (capability and provider exactly, name by exact/prefix/substring); an empty
-// query matches nothing. Ties break by name, then version, then provider
-// (codepoint order), so results are stable across runs.
 export function searchBundles(
 	entries: readonly BundleIndexEntry[],
 	query: BundleSearchQuery,

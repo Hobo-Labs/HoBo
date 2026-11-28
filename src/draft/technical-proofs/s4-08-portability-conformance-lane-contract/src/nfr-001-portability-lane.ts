@@ -5,7 +5,6 @@ import {
 } from "./multi-cloud-shop-fixture.js";
 import { isJsonObject, type JsonObject } from "./json.js";
 
-
 export const NFR001_SCHEMA = "hobo.conformance.nfr001-portability-lane/v1";
 export const REQUIRED_TARGET_PROVIDERS = Object.freeze(["aws", "azure"]);
 

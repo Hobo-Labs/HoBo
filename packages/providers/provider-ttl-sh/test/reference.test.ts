@@ -133,8 +133,6 @@ describe("parseTtlWindow", () => {
 	});
 
 	it("refuses a TTL over the documented 24h ceiling", () => {
-		// Refused rather than clamped: a caller planning around 48 hours is
-		// planning around a lease that will not exist.
 		expectTtlShCode(() => parseTtlWindow("25h"), "TTL_OUT_OF_RANGE");
 		expectTtlShCode(() => parseTtlWindow("1441m"), "TTL_OUT_OF_RANGE");
 	});

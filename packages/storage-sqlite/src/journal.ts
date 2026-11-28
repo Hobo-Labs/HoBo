@@ -70,7 +70,6 @@ import { NATIVE_PRAGMAS } from "./schema.js";
 export interface JournalOpenOptions {
 	readonly clock?: Clock;
 	readonly partitionId?: string;
-	/** Apply native WAL/FULL pragmas (default true for node drivers). */
 	readonly nativePragmas?: boolean;
 	readonly now?: string;
 }
@@ -110,10 +109,6 @@ export interface StreamHead {
 	readonly ownerEpoch: bigint;
 }
 
-/**
- * Portable SQLite journal implementing DurableEventStore semantics.
- * Driver-agnostic: Node and browser adapters supply SqliteDriver.
- */
 export class SqliteJournal {
 	readonly partitionId: string;
 	private readonly db: SqliteDriver;
@@ -135,18 +130,12 @@ export class SqliteJournal {
 			this.db.exec(`PRAGMA foreign_keys = ${NATIVE_PRAGMAS.foreign_keys}`);
 			this.db.exec(`PRAGMA busy_timeout = ${NATIVE_PRAGMAS.busy_timeout}`);
 		} else {
-			// Browser / memory: foreign keys + busy timeout only
 			try {
 				this.db.exec("PRAGMA foreign_keys = ON");
-			} catch {
-				// some WASM builds may not support
-			}
+			} catch {}
 		}
 
 		migrateToCurrent(this.db, { now: options.now ?? this.clock.now() });
-		// A deterministic clock can restart at the same instant after reopen.
-		// Seed from durable state, then check under the append transaction so
-		// independent handles and clock rewinds cannot reuse an existing ID.
 		const existing = this.db
 			.prepare("SELECT COUNT(*) AS count FROM events")
 			.get();
@@ -172,8 +161,6 @@ export class SqliteJournal {
 	getDriver(): SqliteDriver {
 		return this.db;
 	}
-
-	// ── EventStore surface ──────────────────────────────────────────────────
 
 	async append(
 		streamId: string,
@@ -215,7 +202,6 @@ export class SqliteJournal {
 		const pendingByKey = new Map<string, ParsedEventInput>();
 		const pendingDuplicateKeys: string[] = [];
 
-		// Pre-txn idempotency lookup for already-committed keys (also re-checked in txn)
 		for (const input of inputs) {
 			if (input.idempotencyKey) {
 				const existing = this.findByIdempotencyKey(
@@ -244,13 +230,10 @@ export class SqliteJournal {
 			});
 		}
 
-		// All-deduped with no new events: still allow effects; expectedSeq not required
-		// to match head when every input was an already-committed idempotent retry.
 		const allDeduped = pending.length === 0;
 
 		this.db.beginImmediate();
 		try {
-			// Ensure stream head
 			this.db
 				.prepare(
 					`INSERT OR IGNORE INTO streams (stream_id, revision, owner_epoch, created_at, updated_at)
@@ -269,7 +252,6 @@ export class SqliteJournal {
 			const revision = asNumber(headRow.revision, "revision");
 			const ownerEpoch = asBigInt(headRow.owner_epoch, "owner_epoch");
 
-			// Re-resolve idempotency inside txn
 			const toWrite: ParsedEventInput[] = [];
 			const txnDeduped: EventEnvelope[] = [...deduped];
 			for (const input of pending) {
@@ -286,7 +268,6 @@ export class SqliteJournal {
 				toWrite.push(input);
 			}
 
-			// Fencing
 			const fence = opts.fenceToken;
 			let nextOwnerEpoch = ownerEpoch;
 			if (ownerEpoch > FENCING_COMPAT.UNFENCED_EPOCH) {
@@ -307,7 +288,6 @@ export class SqliteJournal {
 				}
 			}
 
-			// expectedSeq CAS — only for new events
 			if (toWrite.length > 0) {
 				const expectedSeq = requireNonNegInt(opts.expectedSeq, "expectedSeq");
 				if (revision !== expectedSeq) {
@@ -318,7 +298,6 @@ export class SqliteJournal {
 					);
 				}
 			} else if (!allDeduped && effects.length === 0) {
-				// no-op
 			}
 
 			const appended: EventEnvelope[] = [];
@@ -372,7 +351,6 @@ export class SqliteJournal {
 				nextSeq += 1;
 			}
 
-			// Advance stream head with CAS on revision
 			if (toWrite.length > 0 || nextOwnerEpoch !== ownerEpoch) {
 				const newRevision = revision + toWrite.length;
 				const update = this.db
@@ -398,14 +376,12 @@ export class SqliteJournal {
 				}
 			}
 
-			// Stage durable effects
 			const effectReceipts: DurableEffectReceipt[] = [];
 			const createdPosition = lastPosition ?? 0n;
 			for (const effect of effects) {
 				effectReceipts.push(this.stageEffect(effect, now, createdPosition));
 			}
 
-			// In-batch duplicate keys → deduped as the just-appended event
 			const appendedByKey = new Map<string, EventEnvelope>();
 			for (const envelope of appended) {
 				// SAFETY: assertion required at this I/O or test boundary.
@@ -422,7 +398,6 @@ export class SqliteJournal {
 
 			this.db.commit();
 
-			// Live wake only after commit
 			for (const envelope of appended) {
 				this.publish(envelope);
 			}
@@ -438,9 +413,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -491,7 +464,6 @@ export class SqliteJournal {
 			params.push(options.tenant);
 		}
 		if (options.lane) {
-			// lane filter: exact lane match only (no accidental baseline skip)
 			clauses.push("lane = ?");
 			params.push(options.lane);
 		}
@@ -545,7 +517,6 @@ export class SqliteJournal {
 		if (snapshotSeq > headSeq) {
 			throw new SnapshotAheadError(id, snapshotSeq, headSeq);
 		}
-		// Ensure stream row exists for FK
 		if (!head) {
 			const now = this.clock.now();
 			this.db
@@ -618,12 +589,6 @@ export class SqliteJournal {
 		return this.getStreamHead(streamId)?.revision ?? 0;
 	}
 
-	// ── Durable subscriptions ───────────────────────────────────────────────
-
-	/**
-	 * Renew an existing subscription lease without rotating the fence token.
-	 * Distinct from claimSubscription, which issues a new fence.
-	 */
 	async renewSubscription(options: {
 		subscriptionId: string;
 		partitionId: string;
@@ -725,9 +690,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -837,9 +800,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -855,7 +816,6 @@ export class SqliteJournal {
 		const partitionId = parsePartitionId(options.partitionId);
 		const position = parseEventPosition(options.position);
 		const now = this.clock.now();
-		// Administrative reset uses fence 1 as marker; claim first in production
 		// SAFETY: assertion required at this I/O or test boundary.
 		const fenceToken = 1n as FenceToken;
 		this.db
@@ -877,8 +837,6 @@ export class SqliteJournal {
 			updatedAt: now,
 		});
 	}
-
-	// ── Queue operations ────────────────────────────────────────────────────
 
 	enqueueMessage(input: QueueEnqueueInput): EnqueueMessageResult {
 		const now = this.clock.now();
@@ -949,7 +907,6 @@ export class SqliteJournal {
 
 		this.db.beginImmediate();
 		try {
-			// reclaim expired
 			this.db
 				.prepare(
 					`UPDATE queue_messages
@@ -999,9 +956,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -1025,8 +980,6 @@ export class SqliteJournal {
 			.run(now, messageId, leaseId, leaseFence, deliveryAttempt);
 		return result.changes === 1;
 	}
-
-	// ── Outbox ──────────────────────────────────────────────────────────────
 
 	claimOutbox(input: {
 		limit: number;
@@ -1116,9 +1069,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -1142,8 +1093,6 @@ export class SqliteJournal {
 			.run(now, outboxId, leaseId, leaseFence, deliveryAttempt);
 		return result.changes === 1;
 	}
-
-	// ── Timers ──────────────────────────────────────────────────────────────
 
 	claimDueTimers(input: { limit: number; now?: string }): Array<{
 		timerId: string;
@@ -1188,8 +1137,6 @@ export class SqliteJournal {
 			.run(at, timerId);
 		return result.changes === 1;
 	}
-
-	// ── Actor leases (durable) ──────────────────────────────────────────────
 
 	acquireActorLease(input: {
 		key: string;
@@ -1246,9 +1193,7 @@ export class SqliteJournal {
 		} catch (error) {
 			try {
 				this.db.rollback();
-			} catch {
-				// ignore
-			}
+			} catch {}
 			throw error;
 		}
 	}
@@ -1261,8 +1206,6 @@ export class SqliteJournal {
 			)
 			.run(key, holderId, fenceToken);
 	}
-
-	// ── Internals ───────────────────────────────────────────────────────────
 
 	private stageEffect(
 		effect: DurableEffectInput,

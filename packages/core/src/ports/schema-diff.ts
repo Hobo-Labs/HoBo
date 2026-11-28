@@ -1,30 +1,3 @@
-/**
- * Canonical schema IR + schema-diff port (ADR-0160).
- *
- * HoBo owns the canonical intermediate representation of a relational schema
- * and the plan that moves one schema to another; toolchains (drizzle-kit,
- * atlas, hand-written SQL) are *adapters* behind `SchemaDiffEngine` that ingest
- * into this IR and emit dialect SQL out of it. That ownership is the whole
- * point: if the plan lived inside a vendor tool, an upgrade of that tool would
- * silently change the SQL a deploy runs. Here the engine id and version ride in
- * the plan and participate in its digest, so an engine upgrade is a *visible*
- * plan change that a review can see.
- *
- * The plan is phased expand / backfill / contract — the same three phase names
- * `@hobo/trails` already executes (`SchemaPhase`, `DataMigrationPlan`), so a
- * `MigrationPlan` converts mechanically into an executable data migration
- * without a translation table. Additions land in `expand`, data population in
- * `backfill`, and every removal or narrowing lands in `contract` marked
- * `destructive`. The differ is forward-only (ADR-0032): it never emits a
- * down/inverse step, because a "rollback" that drops a column written to in
- * production is data loss wearing a safety label.
- *
- * Purity is load-bearing. `diffSchemaIr` reads no clock, draws no randomness,
- * sorts every collection, and hashes canonical JSON — the same two schemas
- * always produce the same digest, which is what makes a plan reviewable and a
- * drift check meaningful.
- */
-
 import { createHash } from "node:crypto";
 import { CoreParseError } from "../errors.js";
 import {
@@ -42,15 +15,11 @@ export const SCHEMA_IR_CONTRACT = "hobo.schema-ir/v1";
 // public-contract: the schema id a phased migration plan is published under.
 export const MIGRATION_PLAN_CONTRACT = "hobo.migration-plan/v1";
 
-/** The canonical differ's identity. Stamped into every plan it produces. */
 export const CANONICAL_SCHEMA_DIFF_ENGINE_ID = "hobo-canonical"; // public-contract: differ identity stamped into every plan it produces
-/** Bump deliberately: the version participates in every plan digest. */
 export const CANONICAL_SCHEMA_DIFF_ENGINE_VERSION = "1.0.0"; // public-contract: participates in every plan digest
 
-/** Unquoted SQL identifier, bounded by postgres' NAMEDATALEN (63 bytes). */
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_$]*$/u;
 const MAX_IDENTIFIER_LENGTH = 63;
-/** Type tokens are structural only: no statement separators, no comments. */
 const TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9_ ,.()'[\]]*$/u;
 const MAX_TYPE_LENGTH = 128;
 
@@ -85,7 +54,6 @@ export interface SchemaIr {
 	readonly tables: readonly SchemaTable[];
 }
 
-/** The three phases `@hobo/trails` already executes — reused verbatim. */
 export const MIGRATION_PHASES = Object.freeze([
 	"expand",
 	"backfill",
@@ -93,11 +61,6 @@ export const MIGRATION_PHASES = Object.freeze([
 ] as const);
 export type MigrationPhaseName = (typeof MIGRATION_PHASES)[number];
 
-/**
- * Declared in emission-safe order: within one phase and table a step never
- * depends on a step that sorts after it (a table is created before its indexes;
- * a column is dropped before its table).
- */
 export const MIGRATION_STEP_KINDS = Object.freeze([
 	"create-table",
 	"add-column",
@@ -127,15 +90,9 @@ export interface MigrationPlan {
 	readonly steps: readonly MigrationStep[];
 	readonly engineId: string;
 	readonly engineVersion: string;
-	/** Canonical-JSON hash over `{steps, engineId, engineVersion}`. */
 	readonly digest: string;
 }
 
-/**
- * The port a toolchain adapter implements. `diff` must be pure; `emitSql` is
- * optional because emitting dialect SQL requires a toolchain that may not be
- * installed — an adapter without it fails closed rather than guessing SQL.
- */
 export interface SchemaDiffEngine {
 	readonly id: string;
 	readonly version: string;
@@ -157,12 +114,6 @@ export class SchemaIrParseError extends CoreParseError {
 	}
 }
 
-/**
- * Parse boundary for an authored or ingested schema IR. Returns a deeply
- * frozen, canonically ordered derived type or throws. Ordering is by name at
- * every level except an index's column list, where position is semantic
- * (a composite index on `(a, b)` is not the index on `(b, a)`).
- */
 export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 	const source = expectRecord(value, "schemaIr");
 	assertOnlyKeys(source, "schemaIr", ["contract", "dialect", "tables"]);
@@ -207,10 +158,6 @@ export function parseSchemaIr(value: JsonValue | undefined): SchemaIr {
 	}) as SchemaIr;
 }
 
-/**
- * Canonical differ. Pure, deterministic, forward-only. Destructive steps are
- * always phase "contract".
- */
 export function diffSchemaIr(
 	current: SchemaIr,
 	desired: SchemaIr,
@@ -255,7 +202,6 @@ export function diffSchemaIr(
 	return freezePlan(dedupe(steps).sort(compareSteps), engineId, engineVersion);
 }
 
-/** The differ this package ships, exposed as the port other packages consume. */
 export const CANONICAL_SCHEMA_DIFF_ENGINE: SchemaDiffEngine = Object.freeze({
 	id: CANONICAL_SCHEMA_DIFF_ENGINE_ID,
 	version: CANONICAL_SCHEMA_DIFF_ENGINE_VERSION,
@@ -278,9 +224,6 @@ function diffColumns(
 	for (const column of after.columns) {
 		const previous = beforeColumns.get(column.name);
 		if (previous === undefined) {
-			// A column added to a populated table is only safe to add nullable;
-			// making it NOT NULL needs the rows filled first, which is exactly the
-			// expand → backfill → contract dance.
 			steps.push(
 				step("expand", "add-column", after.name, { column: column.name }),
 			);
@@ -340,13 +283,8 @@ function diffColumnAttributes(
 	if (!before.unique && after.unique) narrow();
 	if (before.unique && !after.unique) widen();
 
-	// Primary-key churn is never a safe online widening in either direction:
-	// gaining one demands uniqueness plus NOT NULL, losing one drops a
-	// constraint other objects may depend on.
 	if (before.primaryKey !== after.primaryKey) narrow();
 
-	// A default only affects future inserts, so changing or removing one is a
-	// metadata change — but it is never silently dropped from the plan.
 	if (before.defaultExpression !== after.defaultExpression) widen();
 }
 
@@ -385,11 +323,6 @@ function sameIndexLayout(left: SchemaIndex, right: SchemaIndex): boolean {
 	);
 }
 
-/**
- * Type-change classification over a deliberately small, documented lattice.
- * Anything outside it is treated as a narrowing — fail closed, because calling
- * an unknown conversion "safe" is how an expand phase loses data.
- */
 export function classifyTypeChange(
 	from: string,
 	to: string,
@@ -419,7 +352,6 @@ export function classifyTypeChange(
 		: "narrow";
 }
 
-/** Widening chains, narrowest first. Cross-family changes are narrowings. */
 const TYPE_FAMILIES: readonly (readonly string[])[] = Object.freeze([
 	Object.freeze(["smallint", "integer", "bigint", "numeric"]),
 	Object.freeze(["real", "double precision"]),
@@ -521,7 +453,6 @@ function freezePlan(
 	}) as MigrationPlan;
 }
 
-/** Key-sorted JSON with no whitespace: the same value always hashes the same. */
 function canonicalJson(value: JsonValue | undefined): string {
 	if (Array.isArray(value)) {
 		return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
@@ -754,7 +685,6 @@ function assertOnlyKeys(
 	}
 }
 
-/** Code-unit comparison: locale-independent so ordering is reproducible. */
 function compare(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const CDKTF_IMPORT_ONLY_ERROR = "cdktf-import-only";
 export const CDKTF_IMPORT_REPORT_VERSION = "hobo.iac-cdktf.import/v1";
 

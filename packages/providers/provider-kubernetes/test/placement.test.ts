@@ -1,8 +1,3 @@
-/**
- * The parse boundary: what an authored option bag has to survive before any
- * manifest exists.
- */
-
 import { describe, expect, it } from "vitest";
 import {
 	formatMemoryQuantity,
@@ -39,8 +34,6 @@ describe("Kubernetes quantities", () => {
 	});
 
 	it("keeps the binary and decimal memory suffixes apart", () => {
-		// 1M is 1,000,000 bytes and 1Mi is 1,048,576. Treating them alike
-		// under-provisions by 4.8% at gibibyte scale.
 		expect(parseMemoryBytes("128Mi", "memory")).toBe(134_217_728);
 		expect(parseMemoryBytes("128M", "memory")).toBe(128_000_000);
 	});
@@ -76,8 +69,6 @@ describe("parseWorkloadPlacement", () => {
 	});
 
 	it("rejects an unqualified image reference", () => {
-		// `nginx` resolves through whatever default registry the node is
-		// configured with, which is nobody's placement decision.
 		expect(() =>
 			parseWorkloadPlacement({ ...VALID, image: "nginx" }),
 		).toThrow();

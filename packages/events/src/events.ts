@@ -1,8 +1,3 @@
-// Past-tense facts for the reactive-streams / saga leg of the data plane
-// (data-plane.md Plan 32 event catalog: `subscription.*`, `saga.*`,
-// `data.Changed`). Plain fact bodies; a runtime wraps them in the shared
-// EventEnvelope from @hobo/core.
-
 export const EVENTS_EVENT_SCHEMA_VERSION = "hobo.reactive-events/v1"; // public-contract: schemaVersion stamped on every reactive fact body
 
 type FactValue = string | number | readonly string[];

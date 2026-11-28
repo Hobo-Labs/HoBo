@@ -1,7 +1,3 @@
-/**
- * Jazzer.js-shaped entrypoints. PR smoke calls these with generated
- * buffers; a nightly Jazzer run can import the same functions.
- */
 import {
 	type FuzzValue,
 	hasPrototypePollution,
@@ -52,8 +48,6 @@ export function fuzzPolicyDocument(data: Uint8Array): void {
 		// SAFETY: Object identity above proves the parsed JSON value is object-like.
 		const rec = parsed as { effect?: unknown };
 		if (rec.effect === "allow" && !Object.hasOwn(rec, "resource")) {
-			// fail-closed: allow without a resource is invalid and must not throw
-			// an untyped crash.
 			return;
 		}
 	}

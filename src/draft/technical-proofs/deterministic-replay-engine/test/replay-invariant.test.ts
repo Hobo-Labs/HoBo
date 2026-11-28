@@ -10,7 +10,6 @@ import {
 } from "../src/test-runtime.js";
 import { isJsonNumber, type JsonValue } from "../src/json.js";
 
-
 const checkoutWorkflow = defineWorkflow("checkout", {
   initialState: (order: { id: string }) => ({
     orderId: order.id,

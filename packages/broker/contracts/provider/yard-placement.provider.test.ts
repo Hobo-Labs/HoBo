@@ -1,9 +1,3 @@
-/**
- * Provider verification for Broker Yard-first placement surface.
- * Offline: real resolveBindleDeployment + fold path, no live cloud keys.
- * (Mirrors broker-resolution.provider.test.ts style — no contract-harness dep.)
- */
-
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

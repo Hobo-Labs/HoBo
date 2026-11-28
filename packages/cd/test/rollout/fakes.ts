@@ -1,5 +1,3 @@
-// Test doubles and builders for the WP10 rollout tests. Each double models a
-// frozen port (ports.ts, @hobo/core); none is reachable from production code.
 import { create } from "@bufbuild/protobuf";
 import type {
 	AppendOptions,
@@ -101,12 +99,10 @@ export function context(
 	return { tenant: TENANT, principal, now };
 }
 
-/** In-memory DurableEventStore: per-stream expected-seq CAS and idempotency-key dedup. */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	private readonly all: PositionedEvent[] = [];
 	private nextId = 1;
-	/** Make the next append to a stream whose id starts with this prefix fail once. */
 	failNextAppend: string | undefined;
 
 	async append(
@@ -231,11 +227,6 @@ export class RecordingTelemetry implements TelemetrySink {
 	}
 }
 
-/**
- * A TrafficShifter that realizes stage plans in memory. `stuck` makes the
- * provider acknowledge `full` while the observed routing stays on the previous
- * split (provider self-report vs observed traffic).
- */
 export class FakeTraffic implements TrafficShifter {
 	readonly shifts: Array<
 		Readonly<{ campId: CampId; percent: number; planId: string }>
@@ -299,7 +290,6 @@ type Script = (
 	input: Readonly<{ campId: string; cohortAware: boolean; call: number }>,
 ) => VerificationVerdict | "pending";
 
-/** A VerificationEngine whose verdicts the test scripts per Camp and call. */
 export class FakeVerification implements VerificationEngine {
 	readonly started: Array<
 		Readonly<{
@@ -353,7 +343,6 @@ export class FakeVerification implements VerificationEngine {
 		);
 	}
 
-	/** Complete every pending verification with this verdict. */
 	settle(verdict: VerificationVerdict): void {
 		for (const started of this.started)
 			if (this.pendingIds.has(started.id))
@@ -369,7 +358,6 @@ export class FakeVerification implements VerificationEngine {
 	}
 }
 
-/** ChangeWindows whose verdict the test toggles. */
 export class FakeWindows implements ChangeWindows {
 	open = true;
 	rollbackAllowed = true;
@@ -406,14 +394,12 @@ export class FakeWindows implements ChangeWindows {
 	}
 }
 
-/** Desired state: current Sets and reconcile observations per Camp; records opened Deltas. */
 export class FakeDesired implements DesiredStateReader, DeltaLedger {
 	readonly sets = new Map<string, SetRecord>();
 	readonly currentByCamp = new Map<string, string>();
 	readonly statusByCamp = new Map<string, ReconcileObservationRecord>();
 	readonly deltas = new Map<string, DeltaRecord>();
 
-	/** Record `freightId` as the converged current Set on the Camp, with a predecessor Set. */
 	promoted(
 		campId: string,
 		freightId: string,

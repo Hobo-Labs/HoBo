@@ -77,7 +77,6 @@ function quoteWindowsShellArg(value: string): string {
 	return `"${value.replaceAll('"', '\\"')}"`;
 }
 
-/** The process to spawn for a check command, after platform resolution. */
 export interface CommandInvocation {
 	readonly executable: string;
 	readonly args: string[];
@@ -117,11 +116,9 @@ export function createCommandInvocation(
 	};
 }
 
-/** A check's exit code and the output it left, before evidence parsing. */
 interface CheckRun {
 	readonly exitCode: number;
 	readonly evidence: Record<string, string>;
-	/** It outlived its `timeoutMs` and was stopped. */
 	readonly timedOut: boolean;
 }
 
@@ -154,7 +151,6 @@ function runCheck(
 		stdio: ["ignore", "pipe", "pipe"],
 		maxBuffer: CHECK_OUTPUT_LIMIT,
 		killSignal: "SIGTERM",
-		// undefined: no bound, as before timeoutMs existed.
 		timeout: timeoutMs,
 	});
 	const timedOut =
@@ -212,14 +208,6 @@ function parseEvidenceJson(stdout: string | undefined): CheckEvidence {
 	const lines = stdout.trim().split("\n");
 	const parsed = parseJsonText(lines.at(-1) ?? "");
 	if (parsed === undefined || parsed === null) {
-		// Return the text as-is. `stdout` has already been through
-		// `trimEvidence`, which is the only place that should decide how much of
-		// a check's output to keep, because it is the only place that knows the
-		// exit code. Re-truncating here to a flat 4000 characters discarded the
-		// failure tail that `trimEvidence` had just gone to the trouble of
-		// preserving — so for a failing check that printed a long non-JSON log
-		// (a failing test suite, the common case) the record kept only the first
-		// 4000 characters and threw away the end, which is where the reason is.
 		evidence.stdout = stdout;
 		return evidence;
 	}
@@ -242,13 +230,6 @@ function mergeArtifactEvidence(
 	if (!digest || !mediaType || !byteLengthRaw) {
 		return undefined;
 	}
-	// `Number.parseInt` stops at the first character it cannot use, so it
-	// silently *reinterprets* a malformed length rather than rejecting it:
-	// "1.5" becomes 1, "1e3" becomes 1, "10abc" becomes 10. Each of those is a
-	// whole non-negative integer, so the checks below pass and the record ends
-	// up claiming a byte length the check never measured — which a verifier
-	// comparing the recorded length against the real artifact reads as a
-	// mismatch on a perfectly good build. Require the string to be digits.
 	if (!/^\d+$/u.test(byteLengthRaw)) {
 		return undefined;
 	}

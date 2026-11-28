@@ -1,8 +1,3 @@
-/**
- * Ensure a kubectl client binary under HOBO_HOME (offline equip path).
- * Cluster reachability is separate — ensure makes the client equippable.
- */
-
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -44,7 +39,6 @@ function tryKubectl(bin: string): { version: string } | null {
 		timeout: 15_000,
 	});
 	if (r.status !== 0) {
-		// older clients
 		const plain = spawnSync(bin, ["version", "--client"], {
 			encoding: "utf8",
 			timeout: 15_000,
@@ -67,9 +61,6 @@ function tryKubectl(bin: string): { version: string } | null {
 	}
 }
 
-/**
- * Resolve kubectl meeting pinned floor, downloading into $HOBO_HOME/tools/kubectl.
- */
 export async function ensureKubectlBinary(
 	options: {
 		readonly hoboHome: string;

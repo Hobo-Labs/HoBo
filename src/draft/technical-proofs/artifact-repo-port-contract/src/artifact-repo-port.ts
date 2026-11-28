@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject } from "./json.js";
 
-
 const OCI_DIGEST_URI_RE = /^oci:\/\/[^@\s]+@sha256:[a-f0-9]{64}$/;
 const SHA256_DIGEST_RE = /^sha256:[a-f0-9]{64}$/;
 
@@ -172,7 +171,6 @@ export async function runArtifactRepoConformance(adapter, { coordinate }) {
     await adapter.publish({ artifact: createDigestArtifactRef("conformance-missing-provenance") });
     failures.push("publish without provenance must fail");
   } catch {
-    // Expected: an adapter must not accept a publish without provenance.
   }
 
   try {

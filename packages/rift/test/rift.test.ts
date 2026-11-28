@@ -1,13 +1,3 @@
-/**
- * Virtual worktrees on a machine upstream rift cannot serve.
- *
- * Upstream needs btrfs/XFS-reflink/APFS and ships per-platform binaries; on
- * plain ext4 arm64 it does not run, and a caller falls back to giving every
- * agent the same checkout. These tests pin the ladder that replaces it,
- * and in particular the property that matters: an agent writing in place must
- * not reach the source.
- */
-
 import { execSync, spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -99,8 +89,6 @@ describe("capability ladder", () => {
 			hardlink: () => true,
 		});
 		expect(hard.tier).toBe("hardlink");
-		// The whole reason for the ordering: this tier is not safe against
-		// `>>` or `sed -i`, so it must announce that rather than look equal.
 		expect(hard.isolatesInPlaceWrites).toBe(false);
 		expect(hard.reason).toMatch(/in-place writes reach the source/);
 	});
@@ -136,7 +124,6 @@ describe("workspace creation", () => {
 		expect(lean).toContain("README.md");
 		expect(lean).not.toContain("node_modules");
 		expect(entriesToClone(root, true)).toContain("node_modules");
-		// Its own bookkeeping is never cloned into a child.
 		expect(entriesToClone(root, true)).not.toContain(RIFT_DIR);
 		expect(REGENERABLE).toContain("node_modules");
 	});
@@ -199,8 +186,6 @@ describe("exec wrapper", () => {
 	});
 
 	it("single-quotes paths so the shell cannot expand them", () => {
-		// JSON.stringify produces double quotes, inside which `$(…)`, backticks
-		// and `\` are still interpreted — the path was an injection point.
 		const cmd = execCommand(
 			{
 				name: "a",
@@ -216,9 +201,6 @@ describe("exec wrapper", () => {
 	});
 
 	it("survives a source path containing a space", () => {
-		// Unquoted mount options split on the space, so `mount: bad usage` — and
-		// because the chain used `;`, the agent's command then ran anyway, in
-		// whatever directory the shell happened to be in.
 		const cmd = execCommand(
 			{
 				name: "a",
@@ -248,11 +230,8 @@ describe("exec wrapper", () => {
 			},
 			"echo one; echo two",
 		);
-		// Every step joined with && and the command exec'd as a nested sh -c:
-		// a `;` here would let a compound command partially run unmounted.
 		expect(cmd).not.toMatch(/mount[^&]*;/);
 		expect(cmd).toContain("exec sh -c");
-		// Every step joined with &&, so a failed mount stops the chain.
 		expect(cmd.split("&&").length).toBeGreaterThanOrEqual(4);
 	});
 
@@ -269,8 +248,6 @@ describe("exec wrapper", () => {
 			},
 			"claude",
 		);
-		// The whole source is the lower layer, which includes every other
-		// agent's upper layer.
 		expect(cmd).toContain("mount -t tmpfs none ");
 		expect(cmd).toContain("/ws/merged/.hobo-rift");
 	});
@@ -305,9 +282,6 @@ describe("overlay availability is reported, not silently skipped", () => {
 	});
 
 	it("says so when this machine cannot grant an unprivileged overlay", () => {
-		// runIf drops the property block below with no skip count in the report,
-		// so a CI box without user namespaces would print "all passed" while
-		// proving nothing about the tier this package exists to add.
 		const root = source();
 		const available = probeOverlayfs(root);
 		if (!available) {
@@ -315,17 +289,12 @@ describe("overlay availability is reported, not silently skipped", () => {
 				"[rift] unprivileged overlayfs unavailable here — the isolation property test did NOT run",
 			);
 		}
-		// Not a tautology: the probe and the selector must agree. A probe that
-		// says yes while detectCapability picks something else (or vice versa)
-		// means the recorded tier does not describe the machine.
 		const tier = detectCapability(root).tier;
 		expect(available ? tier !== "hardlink" : tier !== "overlayfs").toBe(true);
 		if (available) expect(["reflink", "overlayfs"]).toContain(tier);
 	});
 });
 
-// The property that justifies the whole package. Skipped where the kernel
-// will not give us an unprivileged overlay.
 describe.runIf(probeOverlayfs())("overlayfs isolation", () => {
 	it("keeps an in-place write inside the workspace", () => {
 		const root = source();
@@ -335,7 +304,6 @@ describe.runIf(probeOverlayfs())("overlayfs isolation", () => {
 		execSync(
 			`sh -c ${JSON.stringify(execCommand(must(made.workspace, "made.workspace"), "echo EDIT >> src/app.ts"))}`,
 		);
-		// An append is exactly what hardlinks leak; the source must be intact.
 		expect(readFileSync(join(root, "src", "app.ts"), "utf8")).toBe(
 			"original content\n",
 		);
@@ -363,8 +331,6 @@ describe("workspace names are parsed, not trusted", () => {
 	});
 
 	it("refuses every shell metacharacter, not just path separators", () => {
-		// `create --name 'ws$(touch INJECTED)x'` executed the substitution in
-		// the SOURCE tree — the exact tree a workspace exists to protect.
 		for (const bad of [
 			"ws$(touch INJECTED)x",
 			"ws`id`",
@@ -398,7 +364,6 @@ describe("workspace names are parsed, not trusted", () => {
 		const made = createWorkspace({ root, name: "../escaped" });
 		expect(made.workspace).toBeNull();
 		expect(made.reason).toMatch(/invalid workspace name/);
-		// Nothing may have been produced next to the root.
 		expect(existsSync(join(root, "..", "escaped"))).toBe(false);
 	});
 });
@@ -412,7 +377,6 @@ describe("registry is a projection of the journal", () => {
 		const events = readEvents(join(root, RIFT_DIR));
 		expect(events.map((e) => e.type)).toEqual([
 			"RootInitialized",
-			// Intent is recorded before the clone, which can take seconds and die.
 			"WorkspaceCreating",
 			"WorkspaceCreated",
 			"WorkspaceCreating",
@@ -425,7 +389,6 @@ describe("registry is a projection of the journal", () => {
 	it("keeps the journal readable and preserves a torn snapshot", () => {
 		const root = source();
 		createWorkspace({ root, name: "alive" });
-		// The crash shape: a half-written snapshot. It must cost time, not data.
 		writeFileSync(join(root, RIFT_DIR, "registry.json"), '{"root":"/x","works');
 		expect(readRegistry(root).workspaces.map((w) => w.name)).toEqual(["alive"]);
 		expect(() => rebuildRegistry(root)).toThrow("invalid workspace snapshot");
@@ -453,7 +416,6 @@ describe("wire boundary", () => {
 		const tiers = ["reflink", "overlayfs", "hardlink", "copy"] as const;
 		const wire = tiers.map(tierToWire);
 		expect(new Set(wire).size).toBe(tiers.length);
-		// Round-trip: the schema and the domain cannot drift apart silently.
 		expect(wire.map(tierFromWire)).toEqual([...tiers]);
 		expect(tierFromWire(CowTierPb.UNSPECIFIED)).toBeNull();
 	});
@@ -470,7 +432,6 @@ describe("wire boundary", () => {
 		});
 		expect(wire.tier).toBe(CowTierPb.OVERLAYFS);
 		expect(wire.upper).toBe("/ws/upper");
-		// A directory-backed tier has no layers; proto3 carries that as empty.
 		expect(
 			workspaceToWire({
 				name: "codex",
@@ -496,9 +457,6 @@ describe("wire boundary", () => {
 
 describe("crash windows", () => {
 	it("prefers the journal over a stale-but-valid snapshot", () => {
-		// record() appends the event then rewrites the snapshot. A crash in
-		// between leaves a snapshot that parses perfectly and is wrong; trusting
-		// it made a real workspace invisible to list, exec and remove.
 		const root = source();
 		createWorkspace({ root, name: "alpha" });
 		const stale = readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8");
@@ -512,13 +470,10 @@ describe("crash windows", () => {
 	});
 
 	it("clears debris from a creation that never finished", () => {
-		// The clone is the long part; a crash inside it left a directory that
-		// nothing knew about but that blocked the name forever.
 		const root = source();
 		const made = createWorkspace({ root, name: "half" });
 		const path = must(made.workspace, "made.workspace").path;
 		expect(existsSync(path)).toBe(true);
-		// Rewind the journal to just the intent, as a crash mid-clone would.
 		const journal = join(root, RIFT_DIR, "events.jsonl");
 		const kept = readFileSync(journal, "utf8")
 			.split("\n")
@@ -529,7 +484,6 @@ describe("crash windows", () => {
 			JSON.stringify({ root, workspaces: [], eventCount: kept.length }),
 		);
 		expect(readRegistry(root).workspaces).toEqual([]);
-		// The name is reusable rather than poisoned.
 		const retry = createWorkspace({ root, name: "half" });
 		expect(retry.workspace).not.toBeNull();
 		expect(retry.reason).toBeUndefined();
@@ -538,15 +492,10 @@ describe("crash windows", () => {
 
 describe("a removal that dies mid-delete", () => {
 	it("does not wedge the name forever", () => {
-		// Removal records the event before deleting, so a crash inside rmSync of
-		// a large tree leaves a directory the registry says is gone. Refusing to
-		// recreate it would drop every agent to a git worktree on the next mux —
-		// permanently, until a human deleted the directory by hand.
 		const root = source();
 		const made = createWorkspace({ root, name: "w" });
 		const path = must(made.workspace, "made.workspace").path;
 		const base = join(root, RIFT_DIR, "workspaces", "w");
-		// Record the removal, then leave the directory behind, as a crash would.
 		const journal = join(root, RIFT_DIR, "events.jsonl");
 		writeFileSync(
 			journal,
@@ -567,10 +516,6 @@ describe("a removal that dies mid-delete", () => {
 
 describe("an externally truncated journal", () => {
 	it("is recovered by repair, not silently on every read", () => {
-		// appendFileSync never truncates, so this needs external corruption —
-		// the zero-length-file-after-power-loss shape. Recovering implicitly
-		// would resurrect deliberately removed workspaces, so reads stay
-		// journal-authoritative and `repair` is where the operator opts in.
 		const root = source();
 		createWorkspace({ root, name: "keep" });
 		writeFileSync(join(root, RIFT_DIR, "events.jsonl"), "");
@@ -578,7 +523,6 @@ describe("an externally truncated journal", () => {
 		expect(rebuildRegistry(root).workspaces.map((w) => w.name)).toEqual([
 			"keep",
 		]);
-		// And the repair is durable — it went back into the journal.
 		expect(readRegistry(root).workspaces.map((w) => w.name)).toEqual(["keep"]);
 	});
 
@@ -603,11 +547,6 @@ describe("an externally truncated journal", () => {
 
 describe("create never destroys what it cannot prove is dead", () => {
 	it("parks an unrecognised directory instead of deleting it", () => {
-		// The registry not listing a name does not prove the directory is dead:
-		// a lost journal produces the same state, and the directory then holds
-		// an agent's uncommitted work. A multiplexer may call create on every
-		// run, so deleting here turns one lost journal into silent, permanent
-		// loss of every agent's tree.
 		const root = source();
 		const made = createWorkspace({ root, name: "claude" });
 		const upper =
@@ -623,7 +562,6 @@ describe("create never destroys what it cannot prove is dead", () => {
 		const again = createWorkspace({ root, name: "claude" });
 		expect(again.workspace).not.toBeNull();
 		expect(again.debris).toBeDefined();
-		// The work still exists, at the reported location.
 		// SAFETY: `const rescued = join(again.debris as string, "upper", "WORK.txt");` is required at this I/O or test boundary.
 		const rescued = join(again.debris as string, "upper", "WORK.txt");
 		// SAFETY: `const flat = join(again.debris as string, "WORK.txt");` is required at this I/O or test boundary.
@@ -645,10 +583,6 @@ describe("create never destroys what it cannot prove is dead", () => {
 
 describe("repair distinguishes stale from truncated", () => {
 	it("does not resurrect a workspace that was deliberately removed", () => {
-		// removeWorkspace appends the event, rewrites the snapshot, then deletes.
-		// A crash after the append leaves: journal correct, snapshot stale, and
-		// the directory surviving — so `existsSync` is not evidence of life, it
-		// is the signature of that window.
 		const root = source();
 		createWorkspace({ root, name: "w" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
@@ -658,7 +592,7 @@ describe("repair distinguishes stale from truncated", () => {
 			journal,
 			`${readFileSync(journal, "utf8")}${JSON.stringify({ type: "WorkspaceRemoved", at: "2026-08-03T00:00:00.000Z", name: "w" })}\n`,
 		);
-		writeFileSync(snapshotPath, stale); // snapshot predates the removal
+		writeFileSync(snapshotPath, stale);
 		expect(readRegistry(root).workspaces).toEqual([]);
 		expect(rebuildRegistry(root).workspaces).toEqual([]);
 		expect(readRegistry(root).workspaces).toEqual([]);
@@ -677,9 +611,6 @@ describe("repair distinguishes stale from truncated", () => {
 
 describe("debris only accumulates when there is work to keep", () => {
 	it("does not park an overlayfs skeleton with no files in it", () => {
-		// The overlay tier always leaves an upper/work/merged skeleton, so a
-		// plain "is the directory empty" test never fires and every repeated
-		// run would leave another parked copy behind.
 		const capability = {
 			tier: "overlayfs",
 			available: ["overlayfs"],
@@ -765,9 +696,6 @@ describe("a root that predates event counting", () => {
 
 describe("repair leaves evidence intact", () => {
 	it("does not overwrite the snapshot it tells the operator to read", () => {
-		// registry.json is the only surviving record of a workspace's name, tier
-		// and layer paths. Emptying it in the same call that says "go read this
-		// file" leaves the root worse off for having run the recovery command.
 		const root = source();
 		createWorkspace({ root, name: "keep" });
 		const snapshotPath = join(root, RIFT_DIR, "registry.json");
@@ -792,10 +720,6 @@ describe("repair leaves evidence intact", () => {
 	});
 
 	it("labels a restored snapshot with a count that matches the journal", () => {
-		// A partial truncation makes the snapshot's list and the journal's
-		// length disagree. Persisting one labelled with the other poisons the
-		// discriminator: a later genuine truncation would restore from a count
-		// that never described those workspaces.
 		const root = source();
 		createWorkspace({ root, name: "alpha" });
 		createWorkspace({ root, name: "beta" });
@@ -809,8 +733,6 @@ describe("repair leaves evidence intact", () => {
 		const persisted = JSON.parse(
 			readFileSync(join(root, RIFT_DIR, "registry.json"), "utf8"),
 		) as { workspaces: JsonValue[]; eventCount: number };
-		// What repair reports, what list would report, and what the snapshot
-		// claims to be folded from must all be the same thing.
 		expect(persisted.workspaces).toHaveLength(repaired.workspaces.length);
 		expect(persisted.eventCount).toBe(
 			readFileSync(journal, "utf8").split("\n").filter(Boolean).length,
@@ -824,9 +746,6 @@ describe("repair leaves evidence intact", () => {
 describe("two creates racing on one name", () => {
 	it("lets exactly one through while the other is in flight", () => {
 		const root = source();
-		// A live claim is what an in-flight create holds; the clone can take
-		// seconds on a large tree, and both processes would otherwise see
-		// "no such workspace" and copy into the same destination.
 		const claim = join(root, RIFT_DIR, "workspaces", ".claude.claim");
 		mkdirSync(join(root, RIFT_DIR, "workspaces"), { recursive: true });
 		writeFileSync(claim, `${process.ppid}\n`);
@@ -836,12 +755,10 @@ describe("two creates racing on one name", () => {
 	});
 
 	it("takes over a claim whose holder is gone", () => {
-		// Otherwise a create that died wedges the name forever — the failure
-		// mode this package keeps re-learning.
 		const root = source();
 		const claim = join(root, RIFT_DIR, "workspaces", ".claude.claim");
 		mkdirSync(join(root, RIFT_DIR, "workspaces"), { recursive: true });
-		writeFileSync(claim, "2147483646\n"); // no such pid
+		writeFileSync(claim, "2147483646\n");
 		const made = createWorkspace({ root, name: "claude" });
 		expect(made.workspace).not.toBeNull();
 		expect(existsSync(claim)).toBe(false);
@@ -849,9 +766,6 @@ describe("two creates racing on one name", () => {
 });
 
 describe("exec reassembles its argv without losing quoting", () => {
-	// Against the BUILT BIN, not a helper. The defect was in
-	// `src/bin/hobo-rift.ts` joining argv with spaces, so a test that maps
-	// shellQuote itself would pass with the bug restored.
 	const bin = join(here, "..", "dist", "bin", "hobo-rift.js");
 
 	function printCmd(
@@ -889,8 +803,6 @@ describe("exec reassembles its argv without losing quoting", () => {
 	});
 
 	it("neutralises a path that would otherwise execute", () => {
-		// A directory named `pj;touch $SP` ran `touch` — a real binary, in the
-		// namespace — before the workspace command ran at all.
 		const root = source();
 		createWorkspace({ root, name: "b" });
 		const out = printCmd(root, "b", [
@@ -902,8 +814,6 @@ describe("exec reassembles its argv without losing quoting", () => {
 	});
 
 	it("runs a vector as a vector, not as a snippet", () => {
-		// The filename contains a space, so a bin that joins argv splits it into
-		// two nonexistent files. Without that, the assertion passes either way.
 		const root = source();
 		writeFileSync(join(root, "my marker.txt"), "vector-ok\n");
 		createWorkspace({ root, name: "c" });
@@ -963,10 +873,6 @@ describe("exec reassembles its argv without losing quoting", () => {
 
 describe("the namespace announces itself", () => {
 	it("sets a marker a process inside can read", () => {
-		// Without it, a caller that also passes `--tier overlayfs --source …`
-		// would mount the SHARED source from inside the namespace and hand the
-		// agent every other agent's tree. The marker is what lets that be
-		// refused instead of documented.
 		const cmd = execCommand(
 			{
 				name: "claude",
@@ -979,8 +885,6 @@ describe("the namespace announces itself", () => {
 			},
 			"agent",
 		);
-		// The outer sh -c wrapping re-escapes the quotes, so assert on the
-		// variable and its value rather than on a literal quoted form.
 		expect(cmd).toContain("HOBO_RIFT_WORKSPACE=");
 		expect(cmd).toMatch(/HOBO_RIFT_WORKSPACE=\S*claude/u);
 	});
@@ -1002,10 +906,6 @@ describe("the advertised contract is measured, not asserted", () => {
 	});
 
 	it("is derived from the same functions a caller depends on", () => {
-		// The point of deriving rather than hardcoding: a refactor that stops
-		// quoting the vector, or drops the marker, flips the flag by
-		// construction. A constant would keep reading `true` and the guard would
-		// catch only *old* sidecars, never regressed ones — the likelier failure.
 		expect(quoteVector(["a b"])).toBe("'a b'");
 		expect(quoteVector(["x", "y z"])).toBe("'x' 'y z'");
 		const overlay = {
@@ -1018,7 +918,6 @@ describe("the advertised contract is measured, not asserted", () => {
 			createdAt: "",
 		};
 		expect(execCommand(overlay, "x")).toContain("HOBO_RIFT_WORKSPACE=");
-		// Both flags trace to these two observations and nothing else.
 		expect(deriveContract()).toEqual({
 			execArgvVector: quoteVector(["a b"]) === "'a b'",
 			namespaceMarker: execCommand(overlay, "x").includes(

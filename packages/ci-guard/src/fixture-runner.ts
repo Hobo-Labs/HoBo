@@ -47,9 +47,7 @@ export async function runExampleFixture(
 		if (id !== undefined) {
 			fixtureId = id;
 		}
-	} catch {
-		// stub fixtures may omit fixture.json during early bootstrap
-	}
+	} catch {}
 
 	if (opts.phase === "deploy-and-assert") {
 		const contract = createHoboCiFabricContract({

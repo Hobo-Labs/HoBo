@@ -200,7 +200,7 @@ HoBo routes its own CI through this example: every non-matrix Linux job in
 the CLI on a daily schedule (plan always; apply when `VARS_ADMIN_TOKEN` is
 configured). The rebalance controller itself stays pinned to `ubuntu-latest`
 so it can never be stranded by the variable it manages. See
-[`docs/design/ci-runner-balancing-example.md`](../../docs/design/ci-runner-balancing-example.md)
+[CI runner balancing dogfood record](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/ci-runner-balancing-example.md)
 for the full dogfood record and rollout posture.
 
 ## How this maps to HoBo's architecture

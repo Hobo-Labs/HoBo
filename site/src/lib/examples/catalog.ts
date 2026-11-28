@@ -47,14 +47,6 @@ const DEFAULT_REPO_ROOT = fileURLToPath(
 );
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
-// One process-wide tsx loader + module memo. `tsImport()` per app is a trap:
-// every call registers ANOTHER namespaced ESM loader, resolution cost
-// compounds per registered loader (measured 0.6s → 6s → 76s → minutes for
-// successive app imports — 16 CPU-hours of spin in a pre-commit hook), and
-// on Node 22.22 the namespaced-loader path can deadlock outright. So:
-// register() the tsx loader exactly once and use plain dynamic import; the
-// site vitest config marks the app modules external so the runner leaves
-// these imports to the native loader too.
 type ExampleAppModule = {
 	readonly default?: BindleDefinition;
 	readonly runtime?: JsonValue;
@@ -119,8 +111,6 @@ function importAppModule(appPath: string): Promise<ExampleAppModule> {
 	return loaded;
 }
 
-// The catalog itself is deterministic per repoRoot within one process —
-// every test file and prerender path shares one load.
 const catalogCache = new Map<
 	string,
 	Promise<readonly ExampleCatalogEntry[]>
@@ -268,7 +258,6 @@ function resolveExampleRuntime(
 	handlersFile: string,
 ): ExampleRuntimeParts {
 	if (deployKind === "local-bridge") {
-		// Browser WIT guest unused — ship path deploys Bindle container images.
 		return { runtime: BRIDGE_PLACEHOLDER_RUNTIME, guestHandlersSource: "" };
 	}
 

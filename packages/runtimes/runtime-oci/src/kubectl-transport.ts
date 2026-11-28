@@ -7,11 +7,6 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
-/**
- * HTTP-shaped request/response for the kubectl integration boundary.
- * Structurally compatible with `@hobo/contract-harness` PactRequest/PactResponse
- * so tests inject `createMockProviderFromPact` without a production dep.
- */
 export interface KubectlRequest {
 	readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 	readonly path: string;
@@ -25,11 +20,6 @@ export interface KubectlResponse {
 	readonly body?: unknown;
 }
 
-/**
- * Transport for the kubectl/cluster integration boundary.
- * Production: {@link createProcessKubectlTransport}.
- * Tests: {@link createMockProviderFromPact} from `@hobo/contract-harness`.
- */
 export interface KubectlTransport {
 	readonly name: string;
 	handle(request: KubectlRequest): KubectlResponse | Promise<KubectlResponse>;
@@ -39,12 +29,6 @@ export interface ProcessKubectlTransportOptions {
 	readonly kubectlBin?: string;
 	readonly context?: string;
 	readonly env?: NodeJS.ProcessEnv;
-	/**
-	 * Upper bound, in ms, on each read probe (`version`, `cluster-info`).
-	 * A probe answers "is this cluster reachable?", so an unreachable or
-	 * slow API server must come back as 503 within this bound rather than
-	 * after kubectl's own discovery retries. Default 4000.
-	 */
 	readonly probeTimeoutMs?: number;
 }
 
@@ -86,9 +70,6 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Real kubectl process transport — the production side of the PACT boundary.
- */
 export function createProcessKubectlTransport(
 	options: ProcessKubectlTransportOptions = {},
 ): KubectlTransport {
@@ -131,7 +112,6 @@ export function createProcessKubectlTransport(
 		return result.stdout;
 	}
 
-	// Active port-forwards keyed by service for http-proxy.
 	const forwards = new Map<
 		string,
 		{ loopbackUrl: string; localPort: number; child: ChildProcess }
@@ -176,9 +156,6 @@ export function createProcessKubectlTransport(
 			}
 
 			if (path === "/kubectl/cluster-info") {
-				// Bounded twice: the API request itself, and the process, because
-				// kubectl retries discovery against an unreachable server (with no
-				// kubeconfig, localhost:8080) for longer than a probe may take.
 				const requestTimeoutSeconds = Math.max(
 					1,
 					Math.floor(probeTimeoutMs / 2000),

@@ -10,7 +10,6 @@ import {
 } from "./parse-utils.js";
 import { type JsonValue, type JsonObject, type JsonBag } from "./json.js";
 
-
 export type PrincipalKind = "user" | "agent" | "service" | "system";
 
 // domain-view: parse-produced draft-proof record; its wire form is the PrincipalRef proto message in data-models/.

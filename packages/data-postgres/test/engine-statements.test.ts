@@ -1,5 +1,3 @@
-// Statement text, identifiers and log positions. Always on: everything here
-// is pure, so the exact SQL a dataset produces is pinned without a server.
 import assert from "node:assert/strict";
 import {
 	CapturePositionError,
@@ -74,7 +72,6 @@ describe("dataset DDL", () => {
 		const ddl = datasetTableDdl("public", open);
 		assert.match(ddl, /"hobo_extra" jsonb NOT NULL DEFAULT '\{\}'::jsonb/u);
 		assert.match(ddl, /PRIMARY KEY \("tenant_id", "seq", "region"\)/u);
-		// Only key text is pinned to byte order.
 		assert.match(ddl, /"region" text COLLATE "C" NOT NULL/u);
 	});
 
@@ -135,15 +132,12 @@ describe("dataset DDL", () => {
 		assert.ok(
 			fence.includes(`current_setting('${FENCE_TOKEN_SETTING}', true)`),
 		);
-		// The share lock comes before the fence lookup: that order is what
-		// makes raising a fence wait for writers already past the check.
 		assert.ok(fence.indexOf("FOR SHARE") < fence.indexOf("SELECT EXISTS"));
 		assert.ok(fence.indexOf("FOR SHARE") > 0);
 		const truncate = statements.find((statement) =>
 			statement.includes('FUNCTION "app"."hobo_truncate_guard"()'),
 		);
 		assert.ok(truncate?.includes(`ERRCODE = '${TRUNCATE_REFUSED_SQLSTATE}'`));
-		// The marker is stamped last, so finding it means everything exists.
 		assert.equal(
 			statements[statements.length - 1],
 			`COMMENT ON FUNCTION "app"."hobo_truncate_guard"() IS '${BOOTSTRAP_MARKER}'`,
@@ -293,7 +287,6 @@ describe("identifiers", () => {
 			}
 		}
 		assert.equal(seen.size, awkward.length * 3 * 2, "no two collide");
-		// Every slot one namespace owns shares a prefix an operator can list.
 		assert.equal(
 			captureObjectNames("app", "public", "a").slot.slice(0, 19),
 			captureObjectNames("app", "public", "b").slot.slice(0, 19),
@@ -306,7 +299,6 @@ describe("log positions", () => {
 		assert.equal(parseLsn("0/0"), 0n);
 		assert.equal(parseLsn("16/B374D848"), 0x16_b374_d848n);
 		assert.equal(parseLsn("ffffffff/FFFFFFFF"), 0xffff_ffff_ffff_ffffn);
-		// As text "9/0" sorts after "10/0"; as positions it comes first.
 		assert.ok(parseLsn("9/0") < parseLsn("10/0"));
 		assert.ok(parseLsn("0/9") < parseLsn("0/10"));
 		for (const text of ["0/0", "16/B374D848", "1/1", "FFFFFFFF/FFFFFFFF"]) {

@@ -6,7 +6,6 @@ declare const parsedProject: unique symbol;
 export type ParsedAdoProject = AdoProject & { readonly [parsedProject]: true };
 
 export function parseAdoProject(json: string): ParsedAdoProject {
-	// Reject this map key before protobuf's defensive JSON parser can silently discard it.
 	const project = fromJson(
 		AdoProjectSchema,
 		JSON.parse(json, (key, value) => {
@@ -64,7 +63,6 @@ export function parseAdoProject(json: string): ParsedAdoProject {
 	return Object.freeze(project) as ParsedAdoProject;
 }
 
-/** Paths interpolated by Azure must be literal workspace paths, never expressions. */
 export function parseProjectPath(path: string): string {
 	parseRelativePath(path);
 	if (!/^[A-Za-z0-9_.-][A-Za-z0-9_./-]{0,499}$/.test(path))

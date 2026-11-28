@@ -1,21 +1,4 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters -- SAFETY: topology files are untrusted module exports; each `rails` entry is parsed member by member and rebuilt with @hobo/stations createRail before it is used. */
-/**
- * Station Rails declared in topology files (`--yard`, HOBO_CD_TOPOLOGY, a
- * delivery module applied with `pipeline apply --file`): the `rails` export.
- *
- * A Rail decides what a Station's CD may touch: which Camp sets it binds
- * (`delivery.campSets`) and which providers it approves
- * (`approvedProviders`). Placement fails closed without them
- * (`rail-providers-unknown`, `set-not-bound`). A repository that delivers
- * itself (the runner fleet's `hobo.delivery.ts`) declares its Rail beside its
- * Camps, so the Station it runs on can decide placement for them.
- *
- * Each declaration is built with `@hobo/stations` `createRail`, so its content
- * digest is computed here, never taken from the file. An empty `stationId`
- * is the Station the CD runtime composes. A Rail the Station's journal
- * activated wins over a declared one: the declared Rail is the Station's Rail
- * only while its journal has none active.
- */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -66,7 +49,6 @@ function text(value: unknown, at: string): string {
 	return value;
 }
 
-/** Parse one `rails[i]` declaration into a content-addressed Rail. */
 function parseRail(
 	value: unknown,
 	at: string,
@@ -134,7 +116,6 @@ function parseRail(
 	});
 }
 
-/** Parse a topology file's `rails` export (absent: none). */
 export function parseDeclaredRails(
 	exports: Readonly<Record<string, unknown>>,
 	options: Readonly<{ stationId: string; source: string }>,
@@ -174,20 +155,11 @@ export function parseDeclaredRails(
 
 export type DeclaredRailCatalog = RailCatalog &
 	Readonly<{
-		/**
-		 * The active Rail's approvedProviders, or undefined when the active Rail
-		 * is not a declared one (the journal catalog does not carry them), so
-		 * placement fails closed.
-		 */
 		approvedProviders(
 			stationId: string,
 		): Promise<readonly string[] | undefined>;
 	}>;
 
-/**
- * The journal's Rails, with declared Rails as each Station's active Rail
- * while its journal has none. Two declared Rails for one Station refuse.
- */
 export function declaredRailCatalog(
 	journal: RailCatalog,
 	declared: readonly DeclaredRail[],
@@ -235,11 +207,6 @@ export function declaredRailCatalog(
 	};
 }
 
-/**
- * Load the `rails` of topology files (`.json` exports objects or modules),
- * through the importer the topology loader used, so a module is evaluated
- * once per command (`memoizedImporter`).
- */
 export async function loadDeclaredRails(
 	files: readonly string[],
 	options: Readonly<{
@@ -280,7 +247,6 @@ export async function loadDeclaredRails(
 	return { ok: true, value: out };
 }
 
-/** One evaluation per module path for the life of one command. */
 export function memoizedImporter(importer: ModuleImporter): ModuleImporter {
 	const loaded = new Map<string, ReturnType<ModuleImporter>>();
 	return (path) => {

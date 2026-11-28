@@ -91,7 +91,6 @@ export async function compile(root: string): Promise<void> {
 		rootDir: root,
 		outDir: join(root, "out"),
 	};
-	// Codegen's host: lib and package declarations are parsed once per worker, not per program.
 	const program = ts.createProgram(
 		roots,
 		options,

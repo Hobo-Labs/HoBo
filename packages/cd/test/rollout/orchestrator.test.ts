@@ -1,5 +1,3 @@
-// WP10 Accept bullets and §10 rows for createRolloutOrchestrator, driven over
-// the real Harness engine adapter (adapters/harness.ts) and port doubles.
 import { describe, expect, it } from "vitest";
 import type { RolloutPlanRecord } from "../../src/_generated/cd_pb.js";
 import {
@@ -73,7 +71,6 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.status).toBe("promoted");
 		expect(snapshot.percent).toBe(100);
 		expect(r.traffic.percents("prod-a")).toEqual([5, 25, 50, 100]);
-		// Comparisons run while traffic is split; at 100% there is no baseline.
 		expect(r.verification.started.map((s) => s.cohortAware)).toEqual([
 			true,
 			true,
@@ -125,7 +122,7 @@ describe("createRolloutOrchestrator", () => {
 		r.traffic.stuck.add("prod-a");
 		let snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("running");
-		expect(r.verification.started.map((s) => s.id)).toEqual(["ver-prod-a-0"]); // idle side only
+		expect(r.verification.started.map((s) => s.id)).toEqual(["ver-prod-a-0"]);
 		r.time.advance(9 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
 		snapshot = (await r.orchestrator.get(rid(plan))) ?? snapshot;
@@ -137,7 +134,6 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.reasons.map((x) => x.code)).toContain(
 			"rollout-traffic-unconverged",
 		);
-		// The stage was never verified on the strength of a provider self-report.
 		expect(r.verification.started).toHaveLength(1);
 	});
 
@@ -180,13 +176,12 @@ describe("createRolloutOrchestrator", () => {
 		const plan = await planned(r, RolloutStrategy.CANARY);
 		await r.orchestrator.run(plan, r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
-		r.windows.open = false; // freeze starts while the 5% stage verifies
+		r.windows.open = false;
 		r.verification.settle(VerificationVerdict.PASS);
 		await r.orchestrator.tick(r.ctx);
 		let snapshot = await r.orchestrator.get(rid(plan));
 		expect(snapshot?.status).toBe("awaiting-window");
 		expect(snapshot?.reasons[0]?.code).toBe(WINDOW_CLOSED);
-		// The in-flight stage was never aborted: 5% stays, nothing advanced.
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
 		r.time.advance(30 * MINUTE);
 		await r.orchestrator.tick(r.ctx);
@@ -215,7 +210,6 @@ describe("createRolloutOrchestrator", () => {
 		expect(await replayed.engine.get(rid(plan))).toEqual(
 			await live.engine.get(rid(plan)),
 		);
-		// The journal fully determines the next decision too.
 		live.verification.settle(VerificationVerdict.PASS);
 		await live.orchestrator.tick(live.ctx);
 		const finished = await live.orchestrator.get(rid(plan));
@@ -470,7 +464,7 @@ describe("createRolloutOrchestrator", () => {
 			deadlineMs: 5 * MINUTE,
 		});
 		r.traffic.stuck.add("prod-a");
-		r.traffic.active.set(camp("prod-a"), "manual"); // first shift is not observed either
+		r.traffic.active.set(camp("prod-a"), "manual");
 		await r.orchestrator.run(plan, r.ctx);
 		await r.orchestrator.rollback(
 			{ rolloutId: rid(plan), reason: "operator" },
@@ -492,10 +486,9 @@ describe("createRolloutOrchestrator", () => {
 		const plan = await planned(r, RolloutStrategy.CANARY, ["prod-a"], {
 			stagePercents: [5, 100],
 		});
-		r.traffic.throwOn.add("prod-a"); // the provider call dies mid-flight
+		r.traffic.throwOn.add("prod-a");
 		await r.orchestrator.run(plan, r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
-		// The 5% plan did reach the provider: observation settles the outcome.
 		r.traffic.throwOn.delete("prod-a");
 		r.traffic.active.set(camp("prod-a"), `${plan.rolloutId}:prod-a:p5`);
 		const resumed = rig({ store });

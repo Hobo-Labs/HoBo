@@ -1,8 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-unsafe-dictionary-type, anti-slop/no-runtime-typeof -- SAFETY: the PACT verifier walks the provider's JSON envelope by path; values are only checked for presence. */
-// Consumer-driven contract (PACT form) for the `hobo deploy` CD envelope
-// (WP18): the consumers are the MCP tool surface and scripted/agent callers;
-// the provider is `runCdDeploySubcommand`. Each interaction pins the fields a
-// consumer reads; the provider is verified against every interaction.
 import { describe, expect, it } from "vitest";
 import { runCdDeploySubcommand } from "../src/cd-deploy.js";
 import {
@@ -18,7 +14,6 @@ type Interaction = Readonly<{
 	providerState: Parameters<typeof fakeCd>[0];
 	request: Readonly<{ args: string[]; flags: Record<string, unknown> }>;
 	response: Readonly<Record<string, unknown>>;
-	/** Paths under `data` the consumer reads; each must be present. */
 	reads: readonly string[];
 }>;
 

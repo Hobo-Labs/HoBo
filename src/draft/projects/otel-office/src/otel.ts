@@ -1,19 +1,3 @@
-/**
- * OTLP/JSON → office model mapper.
- *
- * Accepts a subset of OTLP trace JSON (ExportTraceServiceRequest):
- *   resourceSpans[] → resource.attributes (service.name, hobo.*)
- *     → scopeSpans[] → spans[] { traceId, spanId, name, kind, status,
- *                                startTimeUnixNano, endTimeUnixNano, attributes }
- *
- * Custom resource attributes pin HoBo topology:
- *   hobo.station (default "default"), hobo.yard, hobo.camp (default "default"),
- *   hobo.junction (peer camp id for cross-camp spans),
- *   hobo.primitive = bindle | crew | actor (default bindle).
- *
- * Unknown services materialize stations/yards/camps/characters on demand so a
- * real OTLP exporter can point at POST /v1/traces with zero provisioning.
- */
 import { type StringBag } from "./json.js";
 import { syncLayout } from "./layout.js";
 import {
@@ -25,7 +9,6 @@ import {
 } from "./model.js";
 import type { TraceIndex } from "./trace-index.js";
 import { isJsonString } from "./json.js";
-
 
 interface OtlpValue {
 	stringValue?: string;
@@ -113,15 +96,10 @@ const PRIMITIVES: PrimitiveKindByName = {
 	actor: "actor",
 };
 
-/** Stable character id — station-scoped so stations never mix. */
 export function characterIdFor(stationId: string, serviceName: string): string {
 	return `${stationId}/${serviceName}`;
 }
 
-/**
- * Ensure topology + character exist for a resource. Mutates `state`.
- * New entities get simple auto-layout positions on the tile grid.
- */
 export function ensureCharacter(
 	state: OfficeState,
 	attrs: Record<string, string>,
@@ -141,7 +119,6 @@ export function ensureCharacter(
 	state.stations[stationId] ??= { id: stationId, name: stationId };
 	state.yards[yardId] ??= { id: yardId, stationId, name: yardId };
 	if (state.camps[campId] === undefined) {
-		// Auto-layout: tile new rooms in a row under existing ones.
 		const count = Object.keys(state.camps).length;
 		state.camps[campId] = {
 			id: campId,
@@ -178,21 +155,10 @@ export function ensureCharacter(
 		state.characters[id] = ch;
 	}
 	if (ch === undefined) throw new Error(`failed to materialize character ${id}`);
-	// Auto-materialized topology flows into the station's layout as data.
 	syncLayout(state, stationId);
 	return ch;
 }
 
-/**
- * Map one OTLP/JSON trace request into normalized agent events.
- * Open spans (no end) emit only span-started; ended spans emit started+ended.
- * Cross-camp parent/child pairs (client span in camp A → server span in camp B,
- * same traceId) emit a packet-started so a packet walks the junction corridor.
- *
- * When a `TraceIndex` is passed, every ingested span is recorded in it and a
- * child's `parentSpanId` is resolved against it — so parent and child may
- * arrive in SEPARATE OTLP requests (the normal collector fan-out).
- */
 export function mapTracePayload(
 	payload: OtlpTraceRequest,
 	state: OfficeState,
@@ -256,7 +222,6 @@ export function mapTracePayload(
 		}
 	}
 
-	// Feed the server-side index first so pairs split across requests resolve.
 	for (const f of flat) {
 		index?.record(
 			{
@@ -273,9 +238,6 @@ export function mapTracePayload(
 		);
 	}
 
-	// Trace-pair derivation: a client/producer span in camp A whose child
-	// server/consumer span landed in camp B sends a packet along the junction.
-	// Parent resolution: same payload first, then the cross-request index.
 	const bySpanId = new Map(flat.map((f) => [f.span.spanId, f]));
 	for (const child of flat) {
 		if (child.kind !== "server" && child.kind !== "consumer") continue;

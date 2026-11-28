@@ -4,26 +4,16 @@ import { CLOUD_EVENTS } from "../events.js";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import type { DeploymentPlan, PlanRemediation } from "../plan-types.js";
 
-// The DeploymentView projection (control-plane.md "Choreography over
-// orchestration": a DeploymentView reconstructs the saga graph from events for
-// the dashboard). It is a read-model fold, rebuildable from zero — the log is
-// authoritative, the materialized view is derived.
-
 export interface DeploymentDecisionRow {
 	resource: string;
 	winner: string;
 	providerId: string;
 	port: string;
 	region?: string;
-	/** Winner beat the runner-up only on the definition-id tiebreak (ADR-0088). */
 	tie?: boolean;
-	/** Count of candidates rejected or outranked for this resource. */
 	rejectedCount?: number;
 }
 
-// The provisioning-phase FSM status per resource, reconstructed for the saga
-// graph (control-plane.md "a DeploymentView projection … reconstructs the saga
-// graph from events for the dashboard").
 export type ResourceLifecycle =
 	| "provisioning"
 	| "provisioned"
@@ -57,7 +47,6 @@ export interface DeploymentViewRow {
 	planHash?: string;
 	plan?: DeploymentPlan;
 	rejection?: { reason: string; remediations: PlanRemediation[] };
-	// Saga graph: per-resource lifecycle folded from resource.* facts.
 	resources: Record<string, ResourceLifecycle>;
 	reconciliations?: Record<
 		string,
@@ -66,14 +55,8 @@ export interface DeploymentViewRow {
 		}
 	>;
 	rollback?: { reason: string; targetSetId: string };
-	// The principal that owns this deployment. Seeded from the requester on
-	// `deployment.Requested`; rebound by `deployment.Claimed` (anonymous -> account)
-	// while every provisioned fact — resources, outputs, URL — is preserved.
 	owner?: { kind: string; id: string };
-	// True once ownership has been claimed away from the original requester.
 	claimed?: boolean;
-	// True when this deployment was adopted from an existing estate (`hobo import`)
-	// rather than provisioned by HoBo.
 	imported?: boolean;
 }
 
@@ -116,7 +99,6 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const next = base(row, data.deploymentId);
 				if (next.reconciliations === undefined) next.status = "requested";
 				next.bindleHash = data.bindleHash;
-				// Seed ownership from the requesting principal (the envelope actor).
 				if (next.owner === undefined && event.actor) {
 					next.owner = { kind: event.actor.kind, id: event.actor.id };
 				}
@@ -130,8 +112,6 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					resources: string[];
 				};
 				const next = base(row, data.deploymentId);
-				// The estate already exists: mark it deployed + adopted, each resource
-				// provisioned. No provisioning ran — this records external reality.
 				if (next.reconciliations === undefined) next.status = "deployed";
 				next.bindleHash = data.bindleHash;
 				next.imported = true;
@@ -151,8 +131,6 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					newOwner: { kind: string; id: string };
 				};
 				const next = base(row, data.deploymentId);
-				// Rebind ownership; ALL provisioned state (resources, plan, decisions,
-				// outputs/URL) is carried forward untouched by `base`.
 				next.owner = { kind: data.newOwner.kind, id: data.newOwner.id };
 				next.claimed = true;
 				return next;

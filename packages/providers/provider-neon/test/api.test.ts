@@ -24,8 +24,6 @@ describe("parseNeonDatabaseResponse", () => {
 		);
 		expect(parsed.expiresAtIso).toBe("2026-08-11T12:00:00.000Z");
 		expect(parsed.expiresAtMs).toBe(Date.parse("2026-08-11T12:00:00.000Z"));
-		// Provider-reported, not created_at + 72h — those coincide in this
-		// fixture only because Neon's current default happens to be 72h.
 		expect(parsed.expiresAtMs).not.toBe(Date.now() + 72 * 60 * 60 * 1000);
 	});
 

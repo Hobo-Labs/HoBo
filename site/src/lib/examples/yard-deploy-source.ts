@@ -10,7 +10,6 @@ export { yardDeployByTarget } from "./yard-deploy-source-contract.js";
 const DEFAULT_REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const DEPLOY_FILE = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.deploy\.ts$/u;
 
-/** Server/prerender only — do not import from browser controller entry. */
 export async function loadYardDeploySources(
 	repoRoot = DEFAULT_REPO_ROOT,
 ): Promise<readonly YardDeploySource[]> {

@@ -10,10 +10,6 @@ import {
 	createSandboxCommand,
 } from "../src/index.js";
 
-// `hobo sandbox` / `hobo test` run the project in a contract-backed isolated
-// lane: boot a fresh offline Camp, serve the probe, assert the response
-// contract, and exit pass/fail. These drive the real DevRuntime end to end.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -62,7 +58,6 @@ describe("hobo sandbox / test (contract-backed isolated lane)", () => {
 			expect(sandbox.data.isolated).toBe(true);
 			expect(sandbox.data.offline).toBe(true);
 			expect(sandbox.data.served.status).toBe(200);
-			// Every declared contract check passed.
 			for (const check of sandbox.data.checks) {
 				expect(check.ok).toBe(true);
 			}
@@ -92,8 +87,6 @@ describe("hobo sandbox / test (contract-backed isolated lane)", () => {
 			const b = envelope(
 				(await cli.run(["sandbox", "--json"], { cwd })).stdout,
 			);
-			// Both pass independently; a fresh runtime each time means neither
-			// accumulates the other's served state.
 			expect(a.status).toBe("passed");
 			expect(b.status).toBe("passed");
 			expect(a.data.served.body).toBe(b.data.served.body);
@@ -101,8 +94,6 @@ describe("hobo sandbox / test (contract-backed isolated lane)", () => {
 	});
 
 	it("fails the contract when the isolated runtime serves a non-200", async () => {
-		// A degraded runtime whose component handler serves HTTP 500 — the sandbox
-		// must catch it as a failed contract check (not a passing run).
 		function degradedRuntime(): DevRuntime {
 			const base = createDefaultDevRuntime();
 			const exports = Object.fromEntries(

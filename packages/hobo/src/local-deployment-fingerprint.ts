@@ -12,7 +12,6 @@ function temporary(name: string): boolean {
 	);
 }
 
-/** Hash executable project inputs and packaged artifacts, excluding local control state. */
 export async function fingerprintLocalDeployment(
 	projectDir: string,
 	hoboHome: string,

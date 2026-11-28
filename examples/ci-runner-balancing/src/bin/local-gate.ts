@@ -1,15 +1,3 @@
-/**
- * CLI shell for the local gate (Turborepo-style CI deferral).
- *
- *   node --import tsx src/bin/local-gate.ts [--base origin/main]
- *
- * Runs the same command suite as the hosted pr-gate job on THIS machine,
- * streams output, and writes the folded evidence (JSON + markdown) to
- * stdout and, when set, HOBO_RB_STATE_DIR. Exit code is 0 only when every
- * gate passed — usable as a pre-push verification and as the CI verdict
- * of last resort when no runner (hosted or self-hosted) can be had.
- */
-
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";

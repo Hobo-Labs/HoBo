@@ -69,8 +69,6 @@ describe("hobo-resource-intent-declaration (provider contract)", () => {
 				expect(canonicalResourceIntentJson(parsed)).toBe(
 					interaction.response.body.canonical,
 				);
-				// The wire record the contract publishes is the one this package
-				// emits — not merely one it can read.
 				expect(encodeResourceIntent(parsed)).toStrictEqual(
 					interaction.request.body,
 				);

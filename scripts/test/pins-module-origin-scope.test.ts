@@ -1,21 +1,3 @@
-/**
- * Where the origin is NOT compared, as ADR-0169 says it plainly: the check
- * against `.gitmodules` runs for a module directory under another name. A
- * section pointed at another upstream at the same path still ends with
- * `fetch` exiting 0 in the two places below, with the clone's `origin` the old
- * upstream and the new upstream's commit checked out:
- *
- *  - the section's own `modules/<name>` after `git submodule deinit`
- *    (`submodule.<name>.url` is gone, so the stale-URL check has nothing to
- *    compare, the path is empty, and `git submodule update` reactivates the
- *    module directory; moving a checkout aside would isolate nothing);
- *  - a clone the person made by hand into a separate git directory, with no
- *    `git submodule init`.
- *
- * These pin the documented limit, not a wish. While `submodule.<name>.url` is
- * set, the stale-URL check refuses both. If a later change compares the origin
- * here too, these are the tests to turn around, with the ADR.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -40,7 +22,6 @@ function setUp() {
 	return { dir, root, lib: join(root, "external/lib"), a, b };
 }
 
-/** The superproject's side: the section `external/lib` names B, pinned at B's second commit. */
 function pointAtB(root: string, b: { url: string; shas: readonly string[] }) {
 	writeFileSync(
 		join(root, ".gitmodules"),

@@ -1,20 +1,9 @@
-/**
- * Recipe identity.
- *
- * A recipe id is `recipe.<slug>/v<major>` where the slug names the providers
- * and the solution, e.g. `recipe.cloudflare-neon.portable-sql-api/v1`. The
- * provider names live in the *recipe* id, never in a Bindle: that is the whole
- * point of the split.
- */
-
 declare const recipeIdBrand: unique symbol;
 
-/** A parsed recipe id. Construct only through {@link parseRecipeId}. */
 export type RecipeId = string & { readonly [recipeIdBrand]: "RecipeId" };
 
 export type ParsedRecipeId = {
 	readonly id: RecipeId;
-	/** Dot-separated segments after the `recipe.` prefix. */
 	readonly slug: readonly string[];
 	readonly major: number;
 };
@@ -87,7 +76,6 @@ export function tryParseRecipeId(input: string): ParsedRecipeId | undefined {
 	}
 }
 
-/** Local identifiers (yard, camp, placement, edge) inside a recipe. */
 const LOCAL_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 export function isLocalRecipeId(value: string): boolean {

@@ -1,9 +1,3 @@
-// CD spans following the OTel CI/CD semantic conventions (D17). A promotion
-// is a pipeline run (`RUN <pipeline>`, SERVER); each target Camp is a task
-// run (`promote <campId>`, INTERNAL, task type `deploy`). Spans are a pure
-// projection of the promotion stream in the event store, so a trace replays
-// byte-identically from the journal (I8): trace and span ids are derived
-// from the promotion id, timestamps are the recorded event times.
 import { createHash } from "node:crypto";
 import { fromJson } from "@bufbuild/protobuf";
 import type { EventEnvelope, EventStore, JsonValue } from "@hobo/core";
@@ -25,7 +19,6 @@ import {
 	HOBO_ATTR,
 } from "./semconv.js";
 
-/** Where a Camp sits (from the topology port, composed by WP18). */
 export type CampPlacementRef = Readonly<{
 	stationId?: string;
 	yardId?: string;
@@ -40,7 +33,6 @@ const TERMINAL: ReadonlySet<string> = new Set([
 	CD_EVENTS.EnvPromoteSuperseded,
 ]);
 
-// Worst first: the run result is the worst task result.
 const RESULT_ORDER = Object.freeze([
 	"failure",
 	"error",
@@ -115,10 +107,6 @@ function placement(
 	if (ref?.yardId) into.set(HOBO_ATTR.yardId, ref.yardId);
 }
 
-/**
- * Project one promotion stream into CI/CD spans: one pipeline-run span and one
- * task-run span per target Camp. Returns `[]` for a stream with no request.
- */
 export function promotionSpans(
 	events: readonly EventEnvelope[],
 	locate?: CampLocator,
@@ -219,7 +207,6 @@ export function promotionSpans(
 	return [root, ...tasks];
 }
 
-/** Read a promotion stream from the event store and project its spans. */
 export async function journalPromotionSpans(
 	store: EventStore,
 	promotionId: string,
@@ -231,12 +218,6 @@ export async function journalPromotionSpans(
 	return promotionSpans(events, locate);
 }
 
-/**
- * The OTel CI/CD metrics of finished pipeline-run spans:
- * `cicd.pipeline.run.duration` (histogram, seconds, state `executing`) and
- * `cicd.pipeline.run.errors` (counter, `error.type` = the run result) for runs
- * that ended in failure or error.
- */
 export function pipelineRunMetrics(
 	spans: readonly OtelSpan[],
 ): OtelMetricPoint[] {

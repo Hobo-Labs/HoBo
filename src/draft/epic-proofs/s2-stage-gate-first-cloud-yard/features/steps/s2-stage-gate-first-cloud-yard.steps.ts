@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for s2-stage-gate-first-cloud-yard.feature.
- *
- * Drives the epic's real drill module (src/s2-stage-gate-drill.ts): governed
- * deploy, Yard restart/resume under NFR-009, saga compensation ordering,
- * Gatekeeper block, and the composed five-arm drill. All boundaries are
- * mocked in the module itself — no live Cloudflare, Yard, or event store.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -33,8 +25,6 @@ type S2World = {
 };
 
 const world: S2World = {};
-
-// --- Scenario: Governed deploy lands hello-bindle and serves traffic ---------
 
 Given("the pinned S2 hello-bindle stage-gate drill contract", () => {
   world.contract = createS2StageGateDrillContract();
@@ -77,8 +67,6 @@ Then("the full five-arm S2 stage-gate drill closes green", () => {
   assert.equal(report.evidencePath, "docs/design/stage-2-first-cloud-yard-acceptance.md");
 });
 
-// --- Scenario: Yard killed mid-deploy resumes within the NFR-009 budget ------
-
 Given("a hello-bindle deploy event log with the Yard killed mid-deploy", () => {
   world.killedLog = [
     { type: "deployment.DeployStarted", atMs: 0, payload: { fixture: "examples/hello-bindle" } },
@@ -110,8 +98,6 @@ Then("the hello-bindle resume completes within the 30 second NFR-009 budget", ()
   );
 });
 
-// --- Scenario: Seeded provisioning failure compensates in reverse order ------
-
 Given("a seeded provisioning failure at resource {string}", (resource: string) => {
   world.failAtResource = resource;
 });
@@ -137,8 +123,6 @@ Then("realized hello-bindle resources are destroyed in reverse-dependency order"
     .map((event) => event.payload?.resource);
   assert.deepEqual(compensated, compensation.compensationOrder);
 });
-
-// --- Scenario: Gatekeeper blocks an unsafe promotion -------------------------
 
 Given("an unsafe hello-bindle Delta promotion with consumer-producer skew", () => {
   world.gatekeeper = undefined;

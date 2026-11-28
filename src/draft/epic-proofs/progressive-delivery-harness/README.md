@@ -83,3 +83,5 @@ This package ships the architecture-guard evidence required by
 ## Cascade reconciliation (83d9b5c92)
 
 The SDK-flag, SLO-gated rollback, SLO-promotion, and stuck-rollout technical proof refreshes are absorbed without changing progressive-delivery evidence.
+
+The `SAFETY:` type-assertion notes restored from main in `built-in-flag-store-contract`, `cross-camp-flag-state-consistency-contract`, `delivery-experiment-adapter-conformance-suite`, `delivery-orchestrator-skeleton-contract`, `devops-canary-rollout-journey-contract`, `experiment-statistical-analysis-contract`, `flag-debt-auto-cleanup-contract`, `flag-event-contract`, `flag-ruleset-sync-contract`, `hobo-delivery-port`, `hobo-experiment-port`, `hobo-feature-flag-port`, `openexperiment-runtime-data-contract`, `openfeature-provider-adapters-contract`, `policy-gated-flag-flips-contract`, `rollback-failure-compensation-contract`, `sdk-flag-surface-contract`, `slo-gated-rollback-analysis-contract`, `slo-promotion-gate-contract`, `stuck-rollout-convergence-contract` are absorbed without changing this rollup's evidence.

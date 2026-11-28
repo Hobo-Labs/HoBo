@@ -1,17 +1,3 @@
-/**
- * The one git a person watches: `git submodule update`, run by setup and
- * pins:fetch. It runs under the same deadline wrapper as every network git
- * (its own process group, ended with every helper at the deadline, a signal
- * from the terminal passed on), but asynchronously, so its stderr can be
- * passed on as it arrives.
- *
- * On a terminal (the script's stderr is a TTY) the caller asks git for
- * `--progress` and every chunk is written through at once; the last 64 KiB
- * are kept for the failure hint. Without a terminal git prints no progress
- * and its stderr (up to 64 MiB) is printed once the call returns.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { spawn } from "node:child_process";
 
 import { PinsError } from "./pins.ts";
@@ -28,24 +14,20 @@ import { netTimeout, netTimeoutMs } from "./pins-net.ts";
 const TAIL_BYTES = 64 * 1024;
 const MAX_BUFFERED_BYTES = 64 * 1024 ** 2;
 
-/** What a caller knows of a stream: whether it is a terminal. */
 export interface MaybeTerminal {
 	readonly isTTY?: boolean;
 }
 
-/** Whether a person is watching: the script's stderr is a terminal. */
 export function onTerminal(stream: MaybeTerminal = process.stderr): boolean {
 	return stream.isTTY === true;
 }
 
-/** `--progress` for the watched git when a person is watching, else nothing. */
 export function progressArgs(
 	stream: MaybeTerminal = process.stderr,
 ): readonly string[] {
 	return onTerminal(stream) ? ["--progress"] : [];
 }
 
-/** `git <args>` with the network rules and deadline, stderr passed on; resolves with a tail of it. */
 export function netGitWatched(
 	cwd: string,
 	args: readonly string[],

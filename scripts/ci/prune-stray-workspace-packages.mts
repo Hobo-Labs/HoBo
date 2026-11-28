@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Remove top-level packages/* directories that are not HoBo packages.
- *
- * Partial checkouts and leftover deps-layer trees (for example after
- * feature-branch layout moves) can leave packages/code/ with only
- * node_modules or dist. Konsistent then reports missing scaffolding.
- */
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 

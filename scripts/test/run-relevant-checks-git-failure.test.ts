@@ -8,9 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const runner = join(root, "scripts/run-relevant-checks.ts");
-// The runner imports `./relevant-check-policy.js`, which only tsx maps to the
-// `.ts` source. Resolved here, because `--import tsx` would resolve from the
-// scratch directory the runner is started in.
 const tsx = import.meta.resolve("tsx");
 
 const scratch: string[] = [];
@@ -24,7 +21,6 @@ function emptyDir(): string {
 	return dir;
 }
 
-/** A repository with no commits and nothing staged. */
 function emptyRepo(): string {
 	const dir = emptyDir();
 	const init = spawnSync("git", ["init", "--quiet"], { cwd: dir });
@@ -49,7 +45,6 @@ function git(cwd: string, args: string[]) {
 	assert.equal(result.status, 0, result.stderr);
 }
 
-/** A repository with `count` commits, one file each. */
 function repoWithCommits(count: number): string {
 	const dir = emptyRepo();
 	for (let index = 0; index < count; index += 1) {
@@ -67,9 +62,6 @@ function runChecks(cwd: string, ...flags: string[]) {
 	});
 }
 
-// `agent:check` chooses every gate from the changed-file list, so a list it
-// could not read must stop it. It used to read a git failure as "no changed
-// files", print "ok", and run nothing. Every case here ends before a check runs.
 describe("agent:check when git cannot list the changed files", () => {
 	it("fails, naming the base, when the base does not resolve", () => {
 		const result = runChecks(emptyRepo(), "--base=origin/no-such-branch");
@@ -98,9 +90,6 @@ describe("agent:check when git cannot list the changed files", () => {
 	});
 
 	it("refuses a --base that is not a commit in staged mode, before choosing", () => {
-		// Staged mode lists the index and never diffs against the base, but it
-		// hands the base to the gates it selects: a corrupted one (the hook once
-		// passed `origin/main\`) reached them unchecked.
 		const repo = repoWithCommits(1);
 		writeFileSync(join(repo, "staged.txt"), "staged\n");
 		git(repo, ["add", "staged.txt"]);
@@ -111,8 +100,6 @@ describe("agent:check when git cannot list the changed files", () => {
 	});
 
 	it("still reports an empty but readable diff as nothing to check", () => {
-		// The control: nothing staged in a real repository is a genuine empty
-		// scope, not a failure to look.
 		const result = runChecks(emptyRepo(), "--staged");
 		assert.equal(result.status, 0, result.stdout + result.stderr);
 		assert.match(result.stdout, /nothing to validate for this scope/u);

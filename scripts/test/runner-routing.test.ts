@@ -275,8 +275,6 @@ describe("the routing slip, read without dependencies (M4)", () => {
 });
 
 describe("committed runnerRouting against the code's defaults (M8)", () => {
-	// The box daemon reads runnerRouting from its checkout (ADR-0181, decision 4)
-	// and falls back to DEFAULT_RUNNER_ROUTING when the block is absent.
 	const daemon = repoFile(
 		"packages/ci-gh-actions/scripts/isolated-worker-daemon-main.mts",
 	);
@@ -313,11 +311,8 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			box: BOX_ISOLATED_RUNNER_LABEL,
 		});
 		assert.equal(committed.labels.box, DEFAULT_RUNNER_LABELS.box);
-		// Pull requests' deps-image job keeps the fleet label, as the unset
-		// HOBO_CI_BOX_RUNNER variable left it.
 		assert.equal(committed.boxRunner, DEFAULT_BOX_RUNNER);
 		assert.equal(committed.boxRunner, false);
-		// The route job enrolls a local box only when the policy says so.
 		assert.match(
 			repoFile("scripts/ci/route-runner.mts"),
 			/const localEnrolled = settings\.localRunner;/u,
@@ -328,7 +323,6 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 
 	it("main gate: the plan's parallel cap and merge-queue reuse", () => {
 		assert.ok(committed);
-		// Reuse is on, as the unset HOBO_CI_MAIN_REUSE_MERGE_QUEUE variable left it.
 		assert.equal(committed.mainGate.reuseMergeQueue, DEFAULT_REUSE_MERGE_QUEUE);
 		assert.equal(
 			committed.mainWorkspaceParallelCap,
@@ -338,7 +332,6 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			committed.mainWorkspaceParallelCap,
 			mainWorkspaceParallelCap(undefined),
 		);
-		// The plan reads the cap from the committed policy, not an environment variable.
 		assert.equal(
 			mainWorkspaceParallelCap(committed),
 			committed.mainWorkspaceParallelCap,
@@ -361,7 +354,6 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			},
 		]);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
-		// ADR-0181 sets the stall limit at ten minutes.
 		assert.equal(committed.verdict.stallMs, 10 * 60_000);
 	});
 

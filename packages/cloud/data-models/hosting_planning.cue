@@ -87,7 +87,6 @@ package cloud
 	usages: [...#HostingUsageBound]
 	entitlements: [...#HostingEntitlement]
 	providerBudgets: [...#HostingBudgetSnapshot]
-	// Struct contents additionally pass core #BudgetPolicyRecord and parseBudgetPolicy.
 	budgetPolicy?: {...}
 }
 #HostingResourceCommitment: {

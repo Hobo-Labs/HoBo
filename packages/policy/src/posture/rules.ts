@@ -1,9 +1,3 @@
-// Observe-phase posture rules (ADR-0182 D25): a policy-IR rule profile. A
-// pack is a JSON document (`hobo.policy-ir/v1`, profile `hobo.posture/v1`)
-// of rules that match observed resources by kind and classification and
-// assert `require`/`forbid` clauses over declared attributes with a fixed
-// operator set. There is no expression language. `parsePosturePack` is the
-// one boundary: everything downstream works on the frozen, typed pack.
 import {
 	isJsonArray,
 	isJsonBoolean,
@@ -65,7 +59,6 @@ export type PostureClause =
 			value: string;
 	  }>;
 
-/** A literal value a repair Delta sets; only `mutate` rules carry fixes. */
 export type PostureFix = Readonly<{ field: string; value: string }>;
 
 export type PostureRule = Readonly<{
@@ -79,7 +72,6 @@ export type PostureRule = Readonly<{
 	forbid: readonly PostureClause[];
 	severity: PostureSeverity;
 	controls: readonly string[];
-	/** Only `inform-only` may be pinned by a pack or rule; enforcement comes from the Rail binding alone. */
 	remediation?: "inform-only";
 	fix: readonly PostureFix[];
 }>;
@@ -89,12 +81,10 @@ export type PosturePack = Readonly<{
 	profile: typeof POSTURE_PROFILE;
 	pack: string;
 	remediation?: "inform-only";
-	/** Attribute paths reconcilers must report for this pack (and only these). */
 	observeFields: readonly string[];
 	rules: readonly PostureRule[];
 }>;
 
-/** A typed refusal at the pack boundary: what failed, where, and how to fix it. */
 export class PosturePackError extends Error {
 	readonly code: string;
 	readonly path: string;
@@ -164,7 +154,6 @@ function list<T>(value: T, path: string): readonly unknown[] {
 	return value;
 }
 
-/** A scalar operand canonicalised to its string form (attributes are strings on the wire). */
 function scalar<T>(value: T, path: string): string {
 	let out: string;
 	if (isJsonString(value)) out = value;
@@ -368,7 +357,6 @@ function parseRule<T>(
 	return Object.freeze(remediation ? { ...rule, remediation } : rule);
 }
 
-/** Parse one posture pack document (a policy-IR observe-phase rule profile). Throws `PosturePackError`. */
 export function parsePosturePack<T>(input: T): PosturePack {
 	const source = object(input, "$");
 	if (source.schemaVersion !== POLICY_IR_SCHEMA_VERSION)
@@ -413,7 +401,6 @@ export function parsePosturePack<T>(input: T): PosturePack {
 	return Object.freeze(remediation ? { ...parsed, remediation } : parsed);
 }
 
-/** The attribute paths reconcilers must report for these packs: the sorted union of their `observeFields`. */
 export function observeFields(
 	packs: readonly PosturePack[],
 ): readonly string[] {

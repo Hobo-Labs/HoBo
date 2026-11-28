@@ -1,8 +1,3 @@
-/**
- * OpenPouch Instant Lane via HTTP (proven anon container competitor baseline).
- * POST https://openpouch.sh/api/deployments — gzip tarball, no API key = anonymous.
- * Docs: openpouch INSTANT-LANE.md — anon cgroup memory.max=256MiB.
- */
 import { type JsonObject } from "../../src/lib/json-inspect.js";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -18,7 +13,6 @@ import {
 export const OPENPOUCH_DEPLOY_URL = "https://openpouch.sh/api/deployments";
 export const OPENPOUCH_ANON_MEMORY_MAX_BYTES = 268_435_456;
 
-/** Gzipped tar of workDir via system `tar` (no new npm deps). */
 export async function gzipTarballOfDir(workDir: string): Promise<Buffer> {
 	const staging = await mkdtemp(path.join(tmpdir(), "hobo-op-tar-"));
 	const outFile = path.join(staging, "bundle.tgz");
@@ -100,7 +94,6 @@ export async function provisionOpenpouchHttp(
 		// SAFETY: assertion required at this I/O boundary.
 		parsed = JSON.parse(text) as JsonObject;
 	} catch {
-		/* keep raw */
 	}
 	if (!response.ok) {
 		throw new AnonContainerHostError(

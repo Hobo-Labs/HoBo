@@ -132,3 +132,7 @@ This package ships the architecture-guard evidence required by
 - `architecture/` — protobuf data shapes and CUE constraints for Providers Iac Build Adapters.
 - `architecture/pacts/` — PACT contract for the package boundary.
 - `architecture.md` — parse-don't-validate and event-architecture evidence.
+
+## Cascade reconciliation
+
+The `SAFETY:` type-assertion notes restored from main in `adopt-in-place-contract`, `build-dagger-provider-contract`, `build-wasm-provider-contract`, `execution-host-provider-contract`, `generateprovider-correctness-spike`, `generation-provider-loop-contract`, `hobo-realize-emission-contract`, `iac-cdktf-import-only-contract`, `iac-crossplane-backend-contract`, `iac-drift-refresh-fidelity-contract`, `iac-opentofu-backend-contract`, `iac-partial-apply-compensation-contract`, `iac-pulumi-backend-contract`, `iac-state-model-contract`, `malicious-provider-containment-contract`, `multi-cloud-shop-provider-e2e-contract`, `non-iac-driver-adapters-contract`, `provider-authoring-contract`, `provider-aws-contract`, `provider-azure-contract`, `provider-capability-manifest-contract`, `provider-cloudflare-contract`, `provider-default-definitions-contract`, `provider-fly-contract`, `provider-gcp-contract`, `provider-kubernetes-contract`, `provider-local-zero-infra`, `provider-vercel-contract`, `resource-pack-distribution-contract`, `vm-microvm-build-providers-contract` are absorbed without changing this rollup's evidence.

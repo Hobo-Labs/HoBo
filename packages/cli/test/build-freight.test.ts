@@ -38,10 +38,6 @@ import {
 	fakeFreightManifestCodec,
 } from "./cd-delivery-fakes.js";
 
-// `hobo build` writes `.hobo/freight.json` with the injected
-// `writeFreightManifest` and stores the bytes in the configured artifact
-// store, so `hobo up` records the build as LOCAL_BUILD Freight.
-
 const DECLARATION = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -113,7 +109,6 @@ function fieldOf(
 	return isJsonObject(value) ? value[key] : undefined;
 }
 
-/** A build fixture whose hobo.bindle.json is also a hobo.manifest/v1 declaration. */
 async function withDeclaredBuildProject(
 	callback: (projectRoot: string) => Promise<void>,
 ): Promise<void> {
@@ -176,7 +171,6 @@ describe("hobo build emits Freight", () => {
 			const parsed = fakeFreightManifestCodec.parse(written);
 			expect(parsed.ok).toBe(true);
 			if (!parsed.ok) return;
-			// Byte-identical to what the injected writer emits for that record.
 			expect(Buffer.from(fakeFreightManifestCodec.write(parsed.value))).toEqual(
 				Buffer.from(written),
 			);

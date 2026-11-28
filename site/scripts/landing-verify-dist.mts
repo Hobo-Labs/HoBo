@@ -1,27 +1,3 @@
-/**
- * The landing page's trail, checked against the BUILT site.
- *
- * The trail turns the landing page into a row of stops that fill one screen
- * between the header and the band. That only works if every stop's content
- * can actually be read there, at the sizes people use, so this serves `dist/`
- * statically (what Pages does) and checks, in a real browser:
- *
- *   1. fit: at 900x560, 1024x600, 1280x620, 1366x657 and 1440x900, for every
- *      stop: nothing starts above its scroll box, the box sits between the
- *      header and the band, and every link or button in it, once focused, is
- *      on screen and not covered by anything
- *   2. phone: at 390x844, every sign stands below the trail marker
- *   3. focus: moving on from the keyboard while reading a stop takes focus to
- *      the next stop's heading; a marker click leaves it on the marker
- *   4. links: a hash names a stop on arrival and on hashchange, and moving on
- *      records the stop in the URL
- *   5. no uncaught errors on the way
- *
- * Usage:
- *   node --import tsx scripts/landing-verify-dist.mts [--dist dist] [--port 0]
- *
- * Exit code 0 = the trail reads at every size checked; non-zero = do not publish.
- */
 import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -69,14 +45,6 @@ function check(label: string, ok: boolean, detail = ""): void {
 	if (!ok) failures.push(label);
 }
 
-/**
- * Wait until the trail has stopped: it says it is still, one stop is on (and
- * it is `at`, when given), the stop's sign has stood up and nothing finite is
- * still animating. A state, not a guessed duration, so a loaded runner only
- * makes the wait longer. On timeout the checks that follow report what is wrong.
- * The trail writes `data-travel` once a frame, so two frames pass first: a move
- * the last action began is on record before "still" is believed.
- */
 async function settle(page: Page, at = ""): Promise<void> {
 	await frames(page);
 	await page
@@ -94,27 +62,15 @@ async function settle(page: Page, at = ""): Promise<void> {
 		.catch(() => console.log(`     (the trail did not settle${at ? ` at ${at}` : ""} within 15s)`));
 }
 
-/** Wait for a page condition; on timeout the check that follows reports it. */
 async function until(page: Page, test: () => boolean): Promise<void> {
 	await page.waitForFunction(test, undefined, { polling: 50, timeout: 15_000 }).catch(() => undefined);
 }
 
-/** Two animation frames: the page has seen a scroll or a style change. */
 async function frames(page: Page): Promise<void> {
 	await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 }
 
-/**
- * Wheel gestures dispatched inside the page. Each group's events go back to
- * back in one task (zero gap, so they are one stream whatever the runner's
- * load); groups are `gapMs` apart by the page's own timer, and load can only
- * lengthen that gap. Synthetic events have no default action, so an event no
- * listener takes scrolls the way the browser would: the nearest box under the
- * pointer that can scroll that way, else the window.
- */
 async function wheel(page: Page, x: number, y: number, groups: readonly (readonly number[])[], gapMs = 0): Promise<void> {
-	// No named functions inside: the runner's transform would wrap them in a
-	// helper the page does not have.
 	await page.evaluate(
 		async (arg) => {
 			for (const [i, group] of arg.groups.entries()) {
@@ -137,7 +93,6 @@ async function wheel(page: Page, x: number, y: number, groups: readonly (readonl
 	);
 }
 
-/** Every stop at this size: what does not fit its box, and what focus cannot reach. */
 async function fitAt(page: Page, origin: string, width: number, height: number): Promise<void> {
 	await page.setViewportSize({ width, height });
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
@@ -184,10 +139,6 @@ async function fitAt(page: Page, origin: string, width: number, height: number):
 	}
 }
 
-/**
- * The comparison on a desktop: the card is its frame, so the table fits the
- * card with no sideways scroll and every cell's text inside its cell.
- */
 async function deskTable(page: Page, origin: string, width: number, height: number): Promise<void> {
 	await page.setViewportSize({ width, height });
 	await page.goto(`${origin}/HoBo/#compare`, { waitUntil: "networkidle" });
@@ -231,11 +182,6 @@ async function phone(page: Page, origin: string): Promise<void> {
 	}
 }
 
-/**
- * A finger dragged from (x, from) to (x, to), through the browser's own touch
- * handling. The trail judges a swipe by distance alone; the moves are spaced
- * like a finger's so the browser reads a drag, and load can only slow it.
- */
 async function swipe(page: Page, x: number, from: number, to: number): Promise<void> {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: from }] });
@@ -252,7 +198,6 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	const page = await context.newPage();
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
 	await settle(page);
-	// Find a stop whose sign in view is short: a tall one keeps swipes, by design.
 	const shortSign = () =>
 		page.evaluate(() => {
 			for (const b of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up")) {
@@ -268,8 +213,6 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 		await settle(page);
 		y = await shortSign();
 	}
-	// A swipe steps to the next sign, which may belong to the same stop: what
-	// has to change is where the trail is, not which stop is marked.
 	const where = () => page.evaluate(() => document.querySelector<HTMLElement>("[data-world]")?.style.transform ?? "");
 	const before = await where();
 	await swipe(page, 200, y, y - 260);
@@ -277,7 +220,6 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	const after = await where();
 	check("phone: a swipe over a short sign moves the trail", y > 0 && after !== before, `sign at y ${y}, ${before} → ${after}`);
 
-	// The code sign scrolls sideways, but an up-or-down swipe on it is the trail's.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
 	await settle(page);
@@ -313,18 +255,12 @@ async function phoneTouch(browser: Browser, origin: string): Promise<void> {
 	await context.close();
 }
 
-/**
- * The comparison on a phone sign: every column there, every header and cell
- * reachable by scrolling the table sideways inside its sign, no page-level
- * sideways scroll, and an up-or-down swipe that starts on it still the trail's.
- */
 async function phoneTable(browser: Browser, origin: string, width: number, height: number): Promise<void> {
 	const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true });
 	const page = await context.newPage();
 	await page.goto(`${origin}/HoBo/#compare`, { waitUntil: "networkidle" });
 	await settle(page);
 	const at = `${width}x${height}`;
-	// The sign holding the table, brought into view the way a reader would.
 	const table = () =>
 		page.evaluate(() => {
 			for (const wrap of document.querySelectorAll<HTMLElement>(".tst-world .tst-board.is-up .table-wrap")) {
@@ -355,15 +291,12 @@ async function phoneTable(browser: Browser, origin: string, width: number, heigh
 		if (!wrap) return { columns: 0, cells: 0, problems: ["no table on a sign in view"], pageWide: 0 };
 		const head = [...wrap.querySelectorAll<HTMLElement>("thead th")].filter((th) => getComputedStyle(th).display !== "none");
 		const cells = [...wrap.querySelectorAll<HTMLElement>("th, td")];
-		// The product column stays put; every other column scrolls in beside it.
 		const lead = wrap.querySelector<HTMLElement>("tr > :first-child")?.offsetWidth ?? 0;
 		for (const cell of cells) {
 			if (getComputedStyle(cell).display === "none" || cell.getBoundingClientRect().width === 0) {
 				problems.push(`hidden: ${cell.textContent?.trim()}`);
 				continue;
 			}
-			// Scroll the table, not the page, until this cell is inside it and
-			// nothing (the product column included) lies over it.
 			wrap.scrollLeft = cell.cellIndex === 0 ? 0 : Math.max(0, cell.offsetLeft - lead - 4);
 			const w = wrap.getBoundingClientRect();
 			const c = cell.getBoundingClientRect();
@@ -413,7 +346,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	check("focus: a marker click leaves focus on the marker", stayed.includes("tst-mark"), `focus on ${stayed}`);
 	check("links: moving on records the stop in the URL", new URL(page.url()).hash === "#vocabulary", page.url());
 
-	// Arrival is a fresh load, not a hash change on the page already open.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#roles`, { waitUntil: "networkidle" });
 	await settle(page);
@@ -422,12 +354,10 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.evaluate(() => {
 		location.hash = "#compare";
 	});
-	// The hashchange event comes in its own task: wait for the stop it names.
 	await settle(page, "compare");
 	const followed = await page.evaluate(() => document.querySelector("[data-trail-stop].is-on")?.id);
 	check("links: a hashchange goes to the stop it names", followed === "compare", `at ${followed}`);
 
-	// A nudged window (a rotated phone, a key that scrolled it) is still the trail.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/`, { waitUntil: "networkidle" });
 	await settle(page);
@@ -439,7 +369,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	const nudged = await page.evaluate(() => [...document.querySelectorAll("[data-trail-stop].is-on")].map((s) => s.id).join(","));
 	check("keys: a small scroll does not leave the trail inert", nudged === "why", `at ${nudged}`);
 
-	// One fast wheel burst is one step, and the stop it lands on starts at its heading.
 	await page.setViewportSize({ width: 1280, height: 620 });
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#how`, { waitUntil: "networkidle" });
@@ -460,12 +389,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	check("wheel: a fast burst is one step and lands at the new stop's heading", burst.at === "vocabulary" && burst.inView, JSON.stringify(burst));
 	await page.setViewportSize({ width: 1440, height: 900 });
 
-	// Two deliberate flicks are two steps. A quarter second apart, the quiet
-	// gap ends the first; the stop between (roles) fits at this size, so it
-	// makes no difference whether load stretches the gap past the hand-over.
-	// Back to back with no gap at all, the second's rise out of the first's
-	// tail ends it, and it lands mid hand-over on a stop (how) that is taller
-	// than its box here: a flick then steps on rather than reading it.
 	const flick = [40, 90, 120, 100, 70, 45, 25, 10];
 	for (const [gapMs, label, from, to] of [
 		[250, "a quarter second apart", "vocabulary", "ai-native"],
@@ -480,8 +403,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 		check(`wheel: two flicks ${label} are two steps`, flicked === to, `${from} → ${flicked}`);
 	}
 
-	// A wheel-up gesture from the footer brings the trail back to its last stop
-	// and never steps on past it, however long it runs.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
 	await settle(page, "get-started");
@@ -492,7 +413,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	const back = await page.evaluate(() => ({ at: [...document.querySelectorAll("[data-trail-stop].is-on")].map((n) => n.id).join(","), y: scrollY }));
 	check("wheel: a burst up from the footer lands on the last stop", back.at === "get-started" && back.y === 0, JSON.stringify(back));
 
-	// The last stop's Next goes on to the footer.
 	await page.goto("about:blank");
 	await page.goto(`${origin}/HoBo/#get-started`, { waitUntil: "networkidle" });
 	await settle(page, "get-started");
@@ -503,8 +423,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
 	await frames(page);
 
-	// Past the last stop the page lets go: the footer is a scroll away. One
-	// real wheel event, so the browser's own scrolling is what is checked.
 	await page.keyboard.press("End");
 	await settle(page, "get-started");
 	await page.mouse.move(700, 250);
@@ -514,7 +432,6 @@ async function focusAndLinks(page: Page, origin: string): Promise<void> {
 	check("scroll: past the last stop the wheel reaches the footer", below > 100, `scrollY ${below}`);
 	await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
 
-	// Leaving the trail (another design) leaves nothing of it behind.
 	await page.evaluate(() => {
 		document.documentElement.dataset.design = "broadsheet";
 	});

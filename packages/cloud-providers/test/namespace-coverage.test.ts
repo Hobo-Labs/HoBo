@@ -1,20 +1,3 @@
-/**
- * Every offering a provider's catalog can allocate must be reachable from this
- * package's namespace.
- *
- * This guard exists because the gap it catches actually happened: the AWS slot
- * factories were expanded from 6 to 19, and `src/aws.ts`'s hand-written
- * re-export list was not updated with them. Both packages' own tests stayed
- * green — the provider exported the factories, the catalog listed the products,
- * and nothing checked that the one-import surface could reach either. The bug
- * only surfaced when someone typed `aws.appRunner()` and got
- * "not a function".
- *
- * A hand-maintained re-export list will drift again, so the assertion is not
- * "the list matches a list" but the property that matters: for every productId
- * the provider's default catalog declares, some exported factory in this
- * namespace produces it.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -38,7 +21,6 @@ function isSlotFactory(value: NamespaceValue): value is SlotFactory {
 	return value instanceof Function;
 }
 
-/** A slot factory: zero-arg-callable, returns a parsed slot binding. */
 function productIdsFrom(namespace: NamespaceObject): Set<string> {
 	const found = new Set<string>();
 	const consider = (value: NamespaceValue): void => {
@@ -47,9 +29,6 @@ function productIdsFrom(namespace: NamespaceObject): Set<string> {
 		try {
 			produced = value();
 		} catch {
-			// Not a zero-arg slot factory (Yard() needs no args but returns a
-			// Yard; others may refuse). Anything that throws is not a factory
-			// we can enumerate, and is covered by its own package's tests.
 			return;
 		}
 		// SAFETY: slot factories return parsed binding objects by contract.
@@ -60,8 +39,6 @@ function productIdsFrom(namespace: NamespaceObject): Set<string> {
 
 	for (const value of Object.values(namespace)) {
 		if (value instanceof Object) consider(value);
-		// Factories grouped under a namespace object — `eks.deployment`,
-		// `rds.postgres`, `ecs.service` — are reachable only one level in.
 		if (value instanceof Object) {
 			for (const nested of Object.values(value)) {
 				if (nested instanceof Object) consider(nested);
@@ -107,8 +84,6 @@ describe("namespace reaches everything its catalog declares", () => {
 	}
 
 	it("aws reaches the offerings added when its catalog was widened", () => {
-		// The specific regression: these are the factories whose absence from
-		// the re-export list made `aws.appRunner()` a TypeError.
 		for (const factory of [
 			"appRunner",
 			"amplifyHosting",

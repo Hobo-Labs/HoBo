@@ -1,11 +1,3 @@
-/**
- * Consumer side of the ai-bdd process boundary (ADR-0172). Each interaction of
- * stage-gate-ai-bdd-report.pact.json is one ai-bdd command and how it ends
- * (exit code, whether a report is written, the report). The test plays each
- * one back through the stand-in ai-bdd (test/helpers/fake-ai-bdd.mts) and
- * runs the gate step that issues that command, in process, so the assertion
- * is about how the gate reads the provider, not about the pact's own text.
- */
 import { createHash } from "node:crypto";
 import {
 	mkdirSync,
@@ -45,7 +37,6 @@ interface Interaction {
 	readonly status: number;
 	readonly exitCode: number;
 	readonly report: JsonObject | undefined;
-	/** The `Run: <dir>` line a run that wrote a report prints on stdout, naming that run. */
 	readonly stdoutRunLine: string | undefined;
 }
 
@@ -91,7 +82,6 @@ interface GateReading {
 	readonly exit: number;
 }
 
-/** How the gate must read each exit code of each command (ADR-0172). */
 const EXPECTED = new Map<string, GateReading>([
 	["plans-fresh 0", { outcome: "passed", exit: 0 }],
 	["plans-fresh 4", { outcome: "failed", exit: 4 }],
@@ -116,7 +106,6 @@ function newDir(): string {
 	return dir;
 }
 
-/** The paths of every leaf in a JSON value, arrays written `[]`. */
 function leafPaths(node: JsonValue, prefix: string): string[] {
 	if (isJsonArray(node))
 		return node.flatMap((entry) => leafPaths(entry, `${prefix}[]`));
@@ -126,12 +115,6 @@ function leafPaths(node: JsonValue, prefix: string): string[] {
 	);
 }
 
-/**
- * The report ai-bdd writes for an interaction: a real report (the passed
- * fixture) with the fields the pact states laid over it. Objects merge key by
- * key and arrays entry by entry, so the pact names what the gate reads and the
- * fixture supplies every other field RunReport v1 requires.
- */
 function overlay(base: JsonValue, over: JsonValue): JsonValue {
 	if (isJsonArray(base) && isJsonArray(over)) {
 		if (over.length > base.length) {
@@ -194,7 +177,6 @@ describe("ai-bdd report consumer pact", () => {
 			}
 			let handed = "";
 			if (step === "evidence-intact") {
-				// verify-run checks the run acceptance-replay judged, which the runner hands over: put that run in place.
 				const runDir = join(
 					project,
 					".ai-bdd",
@@ -218,7 +200,6 @@ describe("ai-bdd report consumer pact", () => {
 				});
 			}
 			if (interaction.report === undefined && step === "replay") {
-				// An earlier run's report is on disk; after exit 2 or 4 it must not be read.
 				mkdirSync(join(project, ".ai-bdd", "report"), { recursive: true });
 				writeFileSync(
 					join(project, ".ai-bdd", "report", "report.json"),
@@ -230,7 +211,6 @@ describe("ai-bdd report consumer pact", () => {
 				run: {
 					exit: interaction.exitCode,
 					report: reportFile,
-					// The stand-in prints its own run's directory, as ai-bdd does; none when the pact names none.
 					printedRun:
 						interaction.stdoutRunLine === undefined ? "none" : undefined,
 				},
@@ -261,7 +241,6 @@ describe("ai-bdd report consumer pact", () => {
 				step === "replay" &&
 				(interaction.exitCode === 0 || interaction.exitCode === 1);
 			if (readsReport && reportFile !== undefined) {
-				// The stand-in writes the report as a run would: a run id of its own, started now.
 				const written = join(project, ".ai-bdd", "report", "report.json");
 				const digest = createHash("sha256")
 					.update(readFileSync(written))
@@ -283,7 +262,6 @@ describe("ai-bdd report consumer pact", () => {
 		for (const interaction of all) {
 			if (interaction.report === undefined) continue;
 			for (const path of leafPaths(interaction.report, "")) {
-				// An empty array in the pact is a leaf; the real report has entries there.
 				expect(
 					provided.has(path) ||
 						[...provided].some((p) => p.startsWith(`${path}[]`)),

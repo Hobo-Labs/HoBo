@@ -11,7 +11,6 @@ it("generates every local-runner interaction with Pact and verifies the shipped 
 	const directory = await mkdtemp(join(tmpdir(), "hobo-local-pact-"));
 	const http = process.env.HTTP_PROXY;
 	const https = process.env.HTTPS_PROXY;
-	// Pact JS's Node provider proxy ignores NO_PROXY. Only loopback is used here.
 	delete process.env.HTTP_PROXY;
 	delete process.env.HTTPS_PROXY;
 	try {

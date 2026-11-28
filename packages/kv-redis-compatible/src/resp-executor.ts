@@ -1,15 +1,3 @@
-/**
- * A `KvRedisExecutor` over the Redis serialization protocol (RESP) on TCP —
- * the binding for a self-hosted Valkey or Redis.
- *
- * Exported from `@hobo/kv-redis-compatible/resp` only, so a runtime that
- * binds the REST transport (the relay on Vercel) never loads a socket client.
- * The client is `ioredis`: pure JavaScript, no native addon, and it speaks to
- * Valkey unchanged because Valkey keeps the Redis protocol.
- *
- * A command-level error (`WRONGTYPE`, `NOSCRIPT`) is a returned error reply,
- * as the executor contract requires; a connection failure is thrown.
- */
 import type { EphemeralStatePort } from "@hobo/core";
 import { Redis } from "ioredis";
 
@@ -30,9 +18,7 @@ export type RespExecutorOptions = {
 	 * logged, echoed in an error, or stored on the executor.
 	 */
 	readonly url: string;
-	/** Fail a command after this long without a reply. Default 5 s. */
 	readonly commandTimeoutMs?: number;
-	/** Give up connecting after this long. Default 5 s. */
 	readonly connectTimeoutMs?: number;
 };
 
@@ -40,7 +26,6 @@ export type RespExecutor = KvRedisExecutor & {
 	close(): Promise<void>;
 };
 
-/** What `ioredis` hands back for a reply in its default (string) mode. */
 type RespWireValue =
 	| string
 	| number
@@ -70,8 +55,6 @@ export function createRespExecutor(options: RespExecutorOptions): RespExecutor {
 		commandTimeout: options.commandTimeoutMs ?? 5_000,
 		connectTimeout: options.connectTimeoutMs ?? 5_000,
 	});
-	// An unhandled 'error' event would crash the process; a failed command
-	// still rejects its own promise, which is where the caller learns of it.
 	client.on("error", () => {});
 
 	return {
@@ -82,8 +65,6 @@ export function createRespExecutor(options: RespExecutorOptions): RespExecutor {
 				const raw = (await client.call(verb, args)) as RespWireValue;
 				return { kind: "value", value: normalize(raw) };
 			} catch (error) {
-				// ioredis raises a server error reply as a `ReplyError`; anything
-				// else (a closed socket, a timeout) is a transport failure.
 				if (error instanceof Error && error.name === "ReplyError") {
 					return { kind: "error", message: error.message };
 				}
@@ -96,10 +77,6 @@ export function createRespExecutor(options: RespExecutorOptions): RespExecutor {
 	};
 }
 
-/**
- * Environment names a self-hosted binding is read from, in precedence order.
- * Only the names are part of the contract; values are passed to the client.
- */
 // public-contract: env names an operator sets to bind a self-hosted Valkey/Redis.
 export const REDIS_PROTOCOL_URL_ENV_NAMES = [
 	"VALKEY_URL",
@@ -107,12 +84,10 @@ export const REDIS_PROTOCOL_URL_ENV_NAMES = [
 ] as const;
 
 export type RedisProtocolEnv = {
-	/** Which variable supplied the URL — safe to log. */
 	readonly source: (typeof REDIS_PROTOCOL_URL_ENV_NAMES)[number];
 	readonly url: string;
 };
 
-/** The first configured Redis-protocol URL, or `undefined` when none is set. */
 export function resolveRedisProtocolEnv(
 	env: Readonly<Record<string, string | undefined>>,
 ): RedisProtocolEnv | undefined {
@@ -139,7 +114,6 @@ export type RespEphemeralStateOptions = RespExecutorOptions & {
 	readonly wrap?: (executor: KvRedisExecutor) => KvRedisExecutor;
 };
 
-/** `EphemeralStatePort` on a self-hosted Valkey or Redis over TCP. */
 export function createRespEphemeralState(
 	options: RespEphemeralStateOptions,
 ): RespEphemeralState {

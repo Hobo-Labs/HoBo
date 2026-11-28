@@ -1,7 +1,3 @@
-/**
- * FinOps metering hooks for ingest volume, storage bytes, and player access.
- * Emits advisory `replay.Metered` facts (compose with MeteringView / ADR-0039).
- */
 import { createReplayEvent, REPLAY_EVENTS } from "./events.js";
 
 export type ReplayMeterKind =

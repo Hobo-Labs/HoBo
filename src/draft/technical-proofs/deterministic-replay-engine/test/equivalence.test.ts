@@ -11,7 +11,6 @@ import {
 import type { EventEnvelope } from "../src/types.js";
 import { type JsonValue } from "../src/json.js";
 
-
 describe("equivalence harness", () => {
   it("proves deterministic folds across fuzzed stream interleavings", () => {
     for (let seed = 1; seed <= 64; seed += 1) {

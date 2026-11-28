@@ -20,7 +20,6 @@ type JsonValue =
 	| JsonObject;
 type JsonObject = Record<string, JsonValue>;
 
-/** A matrix that has been through JSON, as a stored or transmitted one would. */
 function documentOf(): JsonObject {
 	// SAFETY: JSON.stringify/parse round-trips the generated matrix as JSON.
 	return JSON.parse(

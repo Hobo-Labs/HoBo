@@ -1,7 +1,6 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import { type Readiness, ReadinessSchema } from "./_generated/readiness_pb.js";
 
-/** HoBo CI Cf targets Cloudflare's CI SDK; implements the native Workflow/Sandbox pipeline backend. */
 // public-contract: readiness consumers distinguish implemented adapters from unimplemented scaffolds.
 export const INTEGRATION_STATUS = "implemented";
 export const EXECUTION_AVAILABLE = true;
@@ -10,13 +9,11 @@ export const TARGET_SDK = "@cloudflare/ci";
 // public-contract: canonical upstream documentation for the planned integration.
 export const TARGET_DOCUMENTATION = "https://github.com/cloudflare/ci";
 
-/** These gates must be evidenced before registering an execution provider. */
 export const PENDING_GATES = Object.freeze([
 	"Deployment-specific binding of source, Workflow termination, and account-scoped budget reservations.",
 	"Live provider acceptance is outside local PACT validation.",
 ]);
 
-/** A refinement of the generated message; no parallel handwritten wire DTO. */
 export type IntegrationReadiness = Readonly<
 	Omit<Readiness, "status" | "executionAvailable" | "pendingGates">
 > & {
@@ -44,12 +41,10 @@ function implemented(message: Readiness): IntegrationReadiness {
 	});
 }
 
-/** Parse the protobuf JSON boundary once, then return the constrained view. */
 export function parseReadiness(json: string): IntegrationReadiness {
 	return implemented(fromJsonString(ReadinessSchema, json));
 }
 
-/** Readiness discovery performs no Cloudflare, network, or execution side effects. */
 export function getReadiness(): IntegrationReadiness {
 	return implemented(
 		create(ReadinessSchema, {

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const REQUIRED_ENVELOPE_KINDS = [
   "success",
   "plan-warning",

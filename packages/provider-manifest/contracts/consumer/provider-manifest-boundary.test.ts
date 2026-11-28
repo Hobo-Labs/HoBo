@@ -25,9 +25,6 @@ const pact = JSON.parse(
 	),
 ) as { readonly interactions: readonly Interaction[] };
 
-// The registry (consumer) hands this package a manifest document and expects
-// either the derived documents or a typed list of issues — never a partial
-// import. The pact is a hand-authored consumer expectation.
 describe("provider manifest lowering boundary", () => {
 	it.each(pact.interactions)("$description", ({ request, response }) => {
 		const result = parseProviderManifestJson(request.body);

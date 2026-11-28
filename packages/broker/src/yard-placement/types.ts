@@ -14,7 +14,6 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-/** Schema versions for yard-first placement records. */
 // public-contract: yard instance registration schema id.
 export const YARD_INSTANCE_SCHEMA = "hobo.yard-instance/v1" as const;
 // public-contract: yard inventory snapshot schema id.
@@ -53,10 +52,6 @@ export interface CampLayout {
 	readonly runtimeRequirements: readonly string[];
 }
 
-/**
- * Planning record comparing requested Yard to live instances / runtimes.
- * Not a topology primitive.
- */
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardLayout {
 	readonly providerId?: string;
@@ -81,7 +76,6 @@ export interface YardPlacementRequest {
 	readonly requestedLayout: YardLayout;
 	readonly bindleManifestHash: ContentHash;
 	readonly bindleRequirementsHash: ContentHash;
-	/** Request only — never authorizes generation. Broker policy is authoritative. */
 	readonly allowGenerationRequested: boolean;
 }
 
@@ -128,10 +122,6 @@ export interface YardInventorySnapshot {
 	readonly contentHash: ContentHash;
 }
 
-/**
- * Broker-approved runtime template capable of hosting/generating a Yard.
- * Not an app runtime backend and not a live Yard instance.
- */
 // domain-view: planning/placement domain type (wire form in broker.proto when present).
 export interface YardRuntimeRegistration {
 	readonly schemaVersion: typeof YARD_RUNTIME_SCHEMA;
@@ -264,7 +254,6 @@ export interface BindleDeploymentRequest {
 	readonly objective: string;
 	readonly spendEstimateUsd: number;
 	readonly ownerTenantId: string;
-	/** Resource requirements for residual placement under selected Yard provider. */
 	readonly resources: readonly {
 		readonly resourceId: string;
 		readonly port: string;

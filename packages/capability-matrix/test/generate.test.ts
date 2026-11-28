@@ -51,8 +51,6 @@ describe("bucket separation", () => {
 		]);
 		expect(cell.buckets.native.available).toEqual([]);
 		expect(cell.verdict).toBe("substrate-only");
-		// The declared realization survives the reclassification; only the
-		// bucket, which is the honesty axis, changes.
 		expect(cell.candidates[0]?.realization).toBe("native");
 		expect(cell.candidates[0]?.bucket).toBe("substrate");
 	});

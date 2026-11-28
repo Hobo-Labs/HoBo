@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * Does GitHub Pages need a deploy for this commit? Compares the commit
- * `gh-pages` was built from with `--head`, so a deploy that an earlier run
- * failed, skipped or never reached is picked up by the next one.
- */
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";

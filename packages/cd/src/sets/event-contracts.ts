@@ -1,12 +1,3 @@
-// Golden upcaster corpus for the event bodies this module appends: set.Created
-// and delta.*. Append-only: a body change needs a new version, a total
-// upcaster and a new pinned entry (ADR-0032). Field tags follow cd.proto.
-//
-// The journal body is the protobuf JSON of the generated record. The corpus
-// codec (`protobuf-lite`) has scalar, string-list and JSON-object fields only,
-// so `toCorpusBody` carries a repeated message (`changes`, `reasons`) as the
-// list of its members' canonical JSON. That is a lossless, deterministic view
-// of the same body; the contract test runs every appended body through it.
 import {
 	type CorpusBaseline,
 	createCorpusBaseline,
@@ -43,7 +34,6 @@ const SET_FIELDS: readonly EventFieldSpec[] = [
 	stringField("gateDecisionId", 10),
 	stringField("origin", 11),
 	stringField("resolvedSetDigest", 12),
-	// uint64 is a decimal string in protobuf JSON.
 	stringField("resolvedSetBytes", 13),
 	stringField("createdAt", 14),
 ];
@@ -57,7 +47,6 @@ const DELTA_FIELDS: readonly EventFieldSpec[] = [
 	stringsField("changes", 6, OPTIONAL),
 	stringsField("infrastructureDiff", 7, OPTIONAL),
 	stringField("openedBy", 8, OPTIONAL),
-	// bool proposal = 9 is omitted from protobuf JSON when false.
 	{ name: "proposal", tag: 9, type: "bool", required: false },
 	stringField("openedAt", 10, OPTIONAL),
 	stringField("intent", 11),
@@ -211,7 +200,6 @@ const REPEATED_MESSAGES: ReadonlySet<string> = new Set([
 	"reasons",
 ]);
 
-/** The corpus view of a journal body: repeated messages become canonical JSON strings. */
 export function toCorpusBody<T>(_type: string, data: T): EventBody {
 	const document = toJsonValue(data);
 	if (!isJsonObject(document)) return {};

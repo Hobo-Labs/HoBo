@@ -1,8 +1,3 @@
-/**
- * Example: Dapr runtime + pubsub.kafka component YAML (ports only).
- * Run: pnpm exec tsx examples/dapr-kafka.ts
- */
-
 import { runDaprKafkaPath } from "../src/scenarios.js";
 
 const result = await runDaprKafkaPath("demo");

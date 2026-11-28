@@ -78,7 +78,6 @@ describe("durable-agent", () => {
 		).rejects.toThrow("SIMULATED_HOST_CRASH");
 		expect(toolCalls).toBe(1);
 
-		// A brand-new engine over the SAME durable store resumes the run.
 		const restarted = createWorkflowEngine({ store: engine.store });
 		const handle = await restarted.resume(flaky, runId, {
 			orderId: "ord-9",
@@ -86,7 +85,6 @@ describe("durable-agent", () => {
 
 		expect(handle.status).toBe("completed");
 		expect(handle.result).toBe("written");
-		// The tool step was journaled on attempt 1 — replayed, not re-run.
 		expect(toolCalls).toBe(1);
 	});
 
@@ -111,7 +109,6 @@ describe("durable-agent", () => {
 		const engine = createWorkflowEngine();
 		const unauthorized = agent<null, unknown>({
 			name: "unauthorized-ops",
-			// No token:acme-cloud capability declared.
 			async run(ctx) {
 				return ctx.token({ provider: TOKEN_PROVIDER, scope: TOKEN_SCOPE });
 			},

@@ -1,0 +1,18 @@
+{
+  "checkMode": true,
+  "generatedPaths": [
+    ".hobo/generated/codegen-manifest.json",
+    ".hobo/generated/domain.pb.json",
+    "src/_generated/api-tree.d.ts",
+    "src/_generated/bindings.d.ts",
+    "src/_generated/domain.d.ts",
+    "src/_generated/domain.zod.ts",
+    "src/_generated/hooks.d.ts",
+    "src/_generated/steps.d.ts",
+    "src/_generated/with-options.d.ts",
+    "src/_generated/workflows.d.ts"
+  ],
+  "name": "hobo.codegen",
+  "parity": "cli",
+  "sourceDigest": "5942dd2a8edab14840a162914d58e63c06eb00d19218316c12c764ac3e726bb7"
+}

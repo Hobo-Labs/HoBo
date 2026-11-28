@@ -1,16 +1,3 @@
-/**
- * Tests for the ConnectivityHost in-process façade.
- *
- * The module sat at 1.6% statements and 0% branches. It is the surface PACT
- * consumer and provider tests are written against, which means its routing and
- * its defaulting *are* the contract those pacts encode — and neither was
- * exercised directly. A silently changed default here would move the contract
- * without moving a single pact file.
- *
- * Everything it needs is wired in memory by the factory, so these tests need no
- * network, no fixtures and no cleanup.
- */
-
 import { describe, expect, it } from "vitest";
 import {
 	CONNECTIVITY_HOST_PROVIDER_NAME,
@@ -47,9 +34,7 @@ describe("identity and routing", () => {
 	});
 
 	it("routes on method as well as path", async () => {
-		// The policy route is POST-only; a GET must not reach it.
 		expect((await get("/policy/evaluate")).status).toBe(404);
-		// The metering route is GET-only.
 		expect((await post("/metering/events")).status).toBe(404);
 	});
 
@@ -114,7 +99,6 @@ describe("named endpoints", () => {
 	});
 
 	it("reports an invalid endpoint as a 400 carrying the underlying reason", async () => {
-		// A whitespace-only resource sanitizes to an empty label.
 		const response = await get("/named-endpoints/local?resource=%20");
 		expect(response.status).toBe(400);
 		expect(response.body).toEqual({
@@ -163,8 +147,6 @@ describe("policy evaluation", () => {
 	});
 
 	it("defaults the resource tenant to the subject tenant", async () => {
-		// Same-tenant access is the permissive case; if the default leaked to a
-		// different tenant this would flip.
 		// SAFETY: assertion required at this I/O or test boundary.
 		const sameTenant = (await evaluate({ subjectTenant: "acme" })).body as {
 			effect: string;
@@ -180,12 +162,10 @@ describe("policy evaluation", () => {
 	});
 
 	it("adds a development env tag to whichever side omits one", async () => {
-		// Neither side carries env:, so both default to env:development and match.
 		// SAFETY: assertion required at this I/O or test boundary.
 		const bothDefaulted = (
 			await evaluate({ subjectTags: [], resourceTags: [] })
 		).body as { effect: string };
-		// The subject declares production; the resource inherits it, so they match.
 		// SAFETY: assertion required at this I/O or test boundary.
 		const inherited = (
 			await evaluate({
@@ -280,8 +260,6 @@ describe("DNS reconcile", () => {
 	});
 
 	it("refuses a gateway outside the allowed suffixes", async () => {
-		// The whole point of the allowlist: public DNS must never be pointed at a
-		// raw overlay IP or an untrusted host.
 		const response = await post("/dns/reconcile", {
 			gatewayHostname: "attacker.example.net",
 		});
@@ -329,7 +307,6 @@ describe("DNS suggest", () => {
 			gatewayHostname: "attacker.example.net",
 		});
 		expect(response.status).toBe(400);
-		// Same underlying refusal, different code — callers can tell which call failed.
 		expect(response.body).toEqual({
 			error: {
 				code: "DNS_SUGGEST_FAILED",

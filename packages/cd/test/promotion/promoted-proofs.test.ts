@@ -1,11 +1,3 @@
-// Promoted proof: champion-challenger-promotion-contract (HOBO-344), its
-// acceptance carried into CD promotion semantics. The can-deploy proof's
-// acceptance lives in gate.test.ts ("can-deploy (promoted proof)").
-//   shadow       → a candidate Rail in INFORM is evaluated, the enforced Rail serves
-//   gated        → promotion persists only through a certified gate decision
-//   provenance   → incomplete signed provenance is refused before persistence
-//   idempotent   → a repeated promotion changes nothing; it is reversible from the log
-//   prod → delta → a proposal-only principal yields a Delta proposal, never an apply
 //   region-scoped→ only the targeted Camp's desired state changes
 import { definePolicyRule, type PolicyPack } from "@hobo/contracts";
 import { describe, expect, it } from "vitest";

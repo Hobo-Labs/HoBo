@@ -134,10 +134,6 @@ export interface MessagingEvent {
 	readonly metadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/**
- * Backend-agnostic Messaging surface. Adapters: in-memory (tests), Kafka
- * provider, Dapr pubsub runtime.
- */
 export interface Messaging {
 	readonly backend: string;
 	readonly capabilities: MessagingCapabilities;
@@ -157,7 +153,6 @@ export interface Messaging {
 		options?: ConsumeOptions,
 	): Promise<readonly ConsumedMessage[]>;
 
-	/** Push-style handler registration (at-least-once redelivery on throw). */
 	subscribe(
 		topic: TopicName,
 		consumerGroup: ConsumerGroupId,
@@ -172,7 +167,6 @@ export interface Messaging {
 		reason?: string,
 	): Promise<void>;
 
-	/** Audit / control-plane fact log (replayable). */
 	events(): readonly MessagingEvent[];
 }
 
@@ -352,7 +346,6 @@ export function tenantScopedTopicName(
 ): TopicName {
 	const tenant = nonEmptyString(tenantId, "tenantId", MessagingParseError);
 	const name = nonEmptyString(topic, "topic", MessagingParseError);
-	// Multi-tenant default: physical topic is tenant-prefixed unless already scoped.
 	if (name.startsWith(`${tenant}.`) || name.startsWith(`${tenant}/`)) {
 		// SAFETY: assertion required at this I/O or test boundary.
 		return name as TopicName;
@@ -493,10 +486,6 @@ export function assertDeliverySupported(
 	}
 }
 
-/**
- * In-memory Messaging adapter — local/tests / hobo dev fallback.
- * At-least-once with optional exactly-once via idempotency keys when claimed.
- */
 export interface InMemoryMessagingOptions {
 	readonly tenantId?: string;
 	readonly capabilities?: Partial<MessagingCapabilities>;
@@ -515,7 +504,6 @@ interface StoredMessage {
 }
 
 interface GroupCursor {
-	/** offsets already acked per topic */
 	acked: Set<string>;
 	inflight: Map<
 		string,

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 
-/** Public web — calls private api via camp-injected services__api__http__0. */
 export const app = new Hono().get("/", async (c) => {
 	const name = c.req.query("name") ?? "";
 	const title = process.env.APP_TITLE?.trim() || "hello-bindle";

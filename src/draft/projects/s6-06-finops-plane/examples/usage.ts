@@ -21,8 +21,6 @@ import {
 } from "../src/index.ts";
 import { type JsonObject } from "../src/json.js";
 
-
-// 1) The committed end-to-end scenario runs with every acceptance bullet green.
 const scenario = loadFinOpsPlaneScenario();
 console.log(`scenario: ${scenario.id} (${scenario.meteringEvents.length} metering events)`);
 const result = runFinOpsPlaneScenario(scenario);
@@ -31,7 +29,6 @@ for (const [bullet, held] of Object.entries(result.acceptance)) {
 	console.log(`acceptance ${bullet}: ${held}`);
 }
 
-// 2) NFR-012: the plan estimate lands within +/-20% of recorded actual spend.
 console.log(
 	`plan vs actual: projected=$${result.planEstimate.projectedMonthlyUsd} actual=$${result.actualUsd} withinTolerance=${result.estimateWithinTolerance}`,
 );
@@ -51,14 +48,12 @@ assert.throws(
 );
 console.log("uncovered region rejected: eu-west-1 missing from cost.json coverage");
 
-// 4) Showback reconciles exactly against the MeteringView projection.
 const reconciliation = result.showbackReconciliation;
 console.log(
 	`showback reconciled=${reconciliation.reconciled} showbackTotal=$${reconciliation.showbackTotalUsd} meteringTotal=$${reconciliation.meteringTotalUsd}`,
 );
 assert.equal(reconciliation.showbackTotalUsd, reconciliation.meteringTotalUsd);
 
-// 5) Budget gate: under budget deploys; a hard-limit crossing denies with a violation.
 console.log(`gate under budget: effect=${result.allowGate.effect} blocksDeploy=${result.allowGate.blocksDeploy}`);
 const projection = projectShowbackFromEvents({
 	events: scenario.meteringEvents,
@@ -86,7 +81,6 @@ assert.equal(denyGate.blocksDeploy, true);
 assert.match(denyGate.violations.join("\n"), /projected spend 205 exceeds hard budget 200/);
 console.log(`gate over hard limit: effect=${denyGate.effect} violation="${denyGate.violations[0]}"`);
 
-// 6) Agent spend-cap soft breach routes to approval instead of a hard deny.
 const softGate = evaluateFinOpsDeployGate({
 	costEstimateUsd: 5,
 	meteringView: {

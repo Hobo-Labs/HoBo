@@ -1,11 +1,3 @@
-// Structural shapes of the @hobo/cd ports and records the CD suites exercise.
-//
-// @hobo/conformance does not depend on @hobo/cd (CD depends on the platform,
-// not the other way round), so these mirror the frozen contract in
-// packages/cd/src/ports.ts and cd.proto field-for-field, narrowed to what a
-// suite reads. Every real implementation is assignable to them. The enum
-// mirrors are pinned against the generated enums by the kit's drift test
-// (examples/cd-conformance-kit/test/shapes-drift.test.ts).
 import type {
 	ApplyResult,
 	EventPosition,
@@ -16,8 +8,6 @@ import type {
 	TrafficRoutingOfferingId,
 } from "@hobo/core";
 import type { CdReasonLike } from "./cd-kit.js";
-
-// ── Enum mirrors (numeric values of cd.proto) ───────────────────────────────
 
 export const CD_ARTIFACT_KIND = Object.freeze({
 	WASM_COMPONENT: 1,
@@ -117,8 +107,6 @@ export const CD_REFUSAL = Object.freeze({
 	enrollmentIncomplete: "enrollment-incomplete",
 } as const);
 
-// ── Shared records ───────────────────────────────────────────────────────────
-
 export type Outcome<T> =
 	| Readonly<{ ok: true; value: T }>
 	| Readonly<{ ok: false; reasons: readonly CdReasonLike[] }>;
@@ -171,8 +159,6 @@ export type SetRecordLike = Readonly<{
 	campId: string;
 	freightId: string;
 }>;
-
-// ── Ports (structural) ───────────────────────────────────────────────────────
 
 export type RealizeInputLike<TSet extends SetRecordLike, TResolved> = Readonly<{
 	campId: string;

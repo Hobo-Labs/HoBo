@@ -1,13 +1,3 @@
-/**
- * The type-mapping annex (ADR-0177 decision 10).
- *
- * Each engine declares how every canonical type it supports maps to a native
- * type, and how faithful the trip is in each direction. A cross-engine plan
- * composes source → canonical → target, and anything short of exact becomes a
- * finding the gate can see. This is what keeps "seamless" honest: a move is
- * seamless when the composed mapping is exact, and says so in the plan when
- * it is not.
- */
 import {
 	CANONICAL_TYPES,
 	type CanonicalType,
@@ -22,14 +12,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-/**
- * - `exact`: every canonical value round-trips byte for byte.
- * - `widening`: the native type accepts more than the canonical type; a value
- *   written through HoBo round-trips, a value written natively may not parse.
- * - `constrained`: round-trips only for values meeting a stated constraint; a
- *   violation is refused loudly at apply, never stored altered.
- * - `lossy`: a value can be silently altered. This fails the gate unless waived.
- */
 export const MAPPING_FIDELITIES = [
 	"exact",
 	"widening",
@@ -43,11 +25,8 @@ export type MappingFidelity = (typeof MAPPING_FIDELITIES)[number];
 export interface TypeMappingEdge {
 	readonly canonical: CanonicalType;
 	readonly native: string;
-	/** Canonical → native. */
 	readonly write: MappingFidelity;
-	/** Native → canonical. */
 	readonly read: MappingFidelity;
-	/** The constraint or the loss, in operator-readable words. */
 	readonly note: string;
 }
 
@@ -72,7 +51,6 @@ export interface MappingFinding {
 	readonly field: string;
 	readonly canonical: CanonicalType;
 	readonly fidelity: MappingFidelity | "unsupported";
-	/** Stable waiver key: `<code>:<dataset>.<field>`. */
 	readonly waiverKey: string;
 	readonly detail: string;
 }
@@ -134,7 +112,6 @@ export function parseTypeMappingAnnex(
 		if (!isJsonString(text))
 			invalid("edge.note must be a string", `${path}.note`);
 		if ((write !== "exact" || read !== "exact") && text === "") {
-			// A non-exact edge with no explanation is an undocumented loss.
 			invalid("a non-exact edge must explain itself in note", `${path}.note`);
 		}
 		return Object.freeze({ canonical, native, write, read, note: text });
@@ -174,13 +151,6 @@ const CODE_FOR: Readonly<
 	lossy: "MAPPING_LOSSY",
 });
 
-/**
- * Compose source → canonical → target for every field of a schema. Only
- * non-exact fields produce findings, and a type either engine cannot carry is
- * `MAPPING_UNSUPPORTED_TYPE` — never a silent pass.
- *
- * Pure: the same inputs always produce the same findings in the same order.
- */
 export function composeTypeMapping(
 	schema: DatasetSchema,
 	source: TypeMappingAnnex,
@@ -228,12 +198,10 @@ export function composeTypeMapping(
 	return Object.freeze(findings);
 }
 
-/** Findings that fail the selection gate unless their waiver key is present. */
 export function blockingMappingFindings(
 	findings: readonly MappingFinding[],
 	waivers: readonly string[],
 ): readonly MappingFinding[] {
-	// An unsupported type cannot be waived: there is nothing to store it in.
 	return findings.filter(
 		(finding) =>
 			finding.code === "MAPPING_UNSUPPORTED_TYPE" ||

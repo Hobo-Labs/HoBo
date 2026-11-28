@@ -1,15 +1,3 @@
-// Hosting-transition realizer (D6, WP7). Workload *versions* converge through
-// `createHostingTransitionCoordinator` (PREPARE/SHIFT/VERIFY/RESTORE/RETIRE/
-// SETTLE, observation-driven) with an injected HostingTransitionProvider; the
-// resolver hosting provider in @hobo/hobo is the production one (WP14/WP18).
-//
-// The coordinator is created per pass with the reconciler's lease fence as its
-// writer fence, so a stale reconciler cannot advance a transition (I4). A pass
-// proposes (idempotent by transition id), then advances at most `maxSteps`
-// steps; the coordinator itself waits for independent observation before any
-// phase advances, so "converged" is only ever reported from a SETTLED state
-// whose destination owns writes (I5). A restored or blocked transition is a
-// blocked observation with the coordinator's reason.
 import { create } from "@bufbuild/protobuf";
 import {
 	createHostingTransitionCoordinator,
@@ -32,7 +20,6 @@ import {
 import type { CdContext, RealizeInput, Realizer } from "../ports.js";
 import { reason } from "../reconcile/errors.js";
 
-/** The coordinator operations this realizer drives. */
 export type HostingCoordinator = Readonly<{
 	propose(input: HostingTransitionPlanInput): Promise<HostingTransitionState>;
 	reserve(transitionId: string): Promise<HostingTransitionState>;
@@ -48,21 +35,15 @@ export type HostingTransitionRealizerDeps = Readonly<{
 	tenant: string;
 	now: () => number;
 	authorize: HostingTransitionCoordinatorOptions["authorize"];
-	/**
-	 * The version transition a Set asks for, or undefined when the Set changes
-	 * no workload version (then this realizer has nothing to do).
-	 */
 	planFor: (
 		input: RealizeInput,
 	) =>
 		| HostingTransitionPlanInput
 		| undefined
 		| Promise<HostingTransitionPlanInput | undefined>;
-	/** Defaults to createHostingTransitionCoordinator. */
 	coordinator?: (
 		options: HostingTransitionCoordinatorOptions,
 	) => HostingCoordinator;
-	/** Coordinator steps per converge pass (default 8). */
 	maxSteps?: number;
 }>;
 
@@ -76,7 +57,6 @@ function isRead(action: HostingTransitionAction | undefined): boolean {
 	);
 }
 
-/** Reconcile status and reasons for one coordinator state. */
 export type TransitionVerdict = Readonly<{
 	status: ReconcileStatus;
 	reasons: readonly ReasonRecord[];
@@ -98,7 +78,6 @@ function blockedVerdict(message: string, subject: string): TransitionVerdict {
 	});
 }
 
-/** Map a coordinator state to reconcile status and reasons. */
 export function transitionStatus(
 	state: HostingTransitionState | undefined,
 ): TransitionVerdict {
@@ -217,7 +196,6 @@ export function createHostingTransitionRealizer(
 					)
 						state = await coordinator.dispatch(id);
 					else state = await coordinator.observe(id);
-					// No progress: the coordinator is waiting for its next observation time.
 					if (state.version === before && state.phase === phase) break;
 				}
 				return observationFor(input, plan, state);

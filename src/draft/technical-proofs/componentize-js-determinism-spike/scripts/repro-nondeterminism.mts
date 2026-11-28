@@ -1,8 +1,3 @@
-/**
- * HOBO-603 repro: three clean componentize-js builds with identical inputs.
- *
- *   pnpm --prefix src/draft/technical-proofs/componentize-js-determinism-spike repro
- */
 import { buildHelloBindleEvidence } from "../src/build.ts";
 
 const builds: Array<{ digest: string; bytes: number; inputsDigest: string }> = [];

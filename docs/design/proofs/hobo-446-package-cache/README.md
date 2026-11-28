@@ -9,7 +9,7 @@ tags: [hobo, design]
 
 HOBO-446 is proven by the focused M0 contract at
 [`src/draft/exp-proofs/dx/package-cache-scope-contract`](../../../../src/draft/exp-proofs/dx/package-cache-scope-contract/README.md)
-and the durable scope record at [package-cache.md](../../package-cache.md).
+and the durable scope record at [package-cache.md](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/package-cache.md).
 
 ## Acceptance Evidence
 

@@ -1,20 +1,12 @@
 import type { AcpAgentConnection, GovernedAcpClient } from "./types.js";
 import { ACP_PROTOCOL_VERSION } from "./types.js";
 
-// The conformance fixture: a deterministic in-process ACP agent proving the
-// governed session end to end WITHOUT any vendor SDK. On each prompt turn
-// it streams a message chunk, requests permission for its configured tool
-// call, executes (or records the refusal it was shown) and completes the
-// turn — honoring cancellation with the `cancelled` stop reason.
-
 export interface FixtureAgentOptions {
-	// The HoBo action the fixture's tool call performs.
 	readonly action?: string;
 	readonly sessionId?: string;
 }
 
 export interface FixtureAcpAgent extends AcpAgentConnection {
-	// What the fixture observed — lets tests assert the agent-visible side.
 	readonly observed: {
 		refusals: string[];
 		toolRuns: string[];
@@ -86,8 +78,6 @@ export function createFixtureAcpAgent(
 					},
 				});
 			} else {
-				// The structured refusal is VISIBLE to the agent: it selected the
-				// reject option the connector chose.
 				observed.refusals.push(action);
 			}
 			return { stopReason: "end_turn" };

@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Azure CloudProvider wire records. One constraint per
-// protobuf message in provider_azure.proto.
 
 #EquivalenceMapping: {
 	class:           string & !=""

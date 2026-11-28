@@ -1,16 +1,3 @@
-/**
- * Parse-don't-validate boundary for everything the host origin says.
- *
- * Three documents cross it — the host's capability report, the guest manifest,
- * and the component bytes — and each becomes a derived domain type here or
- * becomes an error. Downstream code never sees a response, a header bag, or a
- * `Uint8Array` it has to check again.
- *
- * The digest is the load-bearing one. A manifest is a claim about bytes;
- * `verifyComponentArtifact` is where the claim is settled, which is the only
- * reason the rest of the package may treat the bundle as the thing the
- * manifest described.
- */
 import {
 	BrowserWasmProviderError,
 	contractChanged,
@@ -79,7 +66,6 @@ function isPersistenceMode(value: string): value is PersistenceMode {
 	}
 }
 
-/** 64 KiB — the WebAssembly page. Memory limits are whole pages or nothing. */
 export const WASM_PAGE_BYTES = 65_536;
 export const MIN_MEMORY_LIMIT_BYTES = 16 * 1024 * 1024;
 export const MAX_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024;
@@ -125,13 +111,8 @@ export type HostFault = {
 	readonly guestId: string;
 };
 
-/** `(bytes) => "sha256-<hex>"`. Injected so the digest is never assumed. */
 export type DigestPort = (bytes: Uint8Array) => Promise<string>;
 
-/**
- * The Web Crypto digest, which is what a browser has. Node exposes the same
- * `crypto.subtle` on `globalThis`, so this is also what the tests run.
- */
 export function createWebCryptoDigest(
 	subtle: SubtleCrypto = globalThis.crypto.subtle,
 ): DigestPort {
@@ -163,8 +144,6 @@ function decodeJsonObject(body: Uint8Array, what: string): JsonObject {
 
 function requireSchema(record: JsonObject, schema: string, what: string): void {
 	if (record.schemaVersion !== schema) {
-		// A missing or different schema id is a contract change, not something
-		// to shrug at: the fields below are only meaningful under this one.
 		contractChanged(
 			`${what} declares schema ${redactHostText(String(record.schemaVersion), 64)} instead of ${schema}`,
 		);
@@ -200,8 +179,6 @@ function requireMemoryLimit(
 		);
 	}
 	if (value % WASM_PAGE_BYTES !== 0) {
-		// The engine rounds up to a whole page. Keeping the unrounded number
-		// would make every receipt disagree with the memory the guest got.
 		contractChanged(
 			`${what} field ${key} is not a whole number of ${WASM_PAGE_BYTES} byte pages`,
 		);
@@ -239,7 +216,6 @@ function requireWitIds(
 	});
 }
 
-/** Parse `GET /_hobo/host/capabilities`. */
 export function parseHostCapabilities(body: Uint8Array): HostCapabilities {
 	const record = decodeJsonObject(body, "host capabilities");
 	requireSchema(record, HOST_CAPABILITIES_SCHEMA, "host capabilities");
@@ -265,8 +241,6 @@ export function parseHostCapabilities(body: Uint8Array): HostCapabilities {
 	);
 	const persistence = requirePersistence(record, "host capabilities");
 	if (persistence === "opfs-sahpool" && !dedicatedWorkers) {
-		// OPFS sync access handles are worker-only. A host claiming durable
-		// storage without workers is describing something it cannot do.
 		contractChanged(
 			"host reports durable OPFS persistence without dedicated workers",
 		);
@@ -289,7 +263,6 @@ export function parseHostCapabilities(body: Uint8Array): HostCapabilities {
 	};
 }
 
-/** Parse `GET /_hobo/guests/{guestId}/manifest.json`. */
 export function parseGuestManifest(
 	body: Uint8Array,
 	expected: { readonly guestId: string },
@@ -302,8 +275,6 @@ export function parseGuestManifest(
 		contractChanged("guest manifest guestId is not an RFC 1123 label");
 	}
 	if (guestId !== expected.guestId) {
-		// Serving a different guest's manifest under this guest's path is
-		// exactly how the wrong component gets instantiated.
 		contractChanged(
 			`guest manifest describes ${guestId} but was served for ${expected.guestId}`,
 		);
@@ -387,7 +358,6 @@ export function parseGuestManifest(
 	};
 }
 
-/** Parse the host origin's error envelope. */
 export function parseHostFault(body: Uint8Array): HostFault {
 	const record = decodeJsonObject(body, "host fault");
 	requireSchema(record, HOST_FAULT_SCHEMA, "host fault");
@@ -414,13 +384,6 @@ export function parseHostFault(body: Uint8Array): HostFault {
 	};
 }
 
-/**
- * The component-model preamble: `\0asm`, version 0x0d, layer 0x01.
- *
- * A core module has the same four magic bytes and layer 0. Handing one to a
- * component instantiation fails deep inside the runtime with a message that
- * reads like a host bug, so it is caught here instead.
- */
 export function isComponentPreamble(bytes: Uint8Array): boolean {
 	if (bytes.byteLength < MIN_COMPONENT_BYTES) return false;
 	return (
@@ -435,12 +398,6 @@ export function isComponentPreamble(bytes: Uint8Array): boolean {
 	);
 }
 
-/**
- * Settle the manifest's claim about the bytes.
- *
- * Everything downstream is allowed to treat the bundle as "the component the
- * manifest described" precisely because this function ran and agreed.
- */
 export async function verifyComponentArtifact(input: {
 	readonly bytes: Uint8Array;
 	readonly headers: Readonly<Record<string, string>>;
@@ -454,9 +411,6 @@ export async function verifyComponentArtifact(input: {
 		?.trim()
 		.toLowerCase();
 	if (mediaType !== COMPONENT_MEDIA_TYPE) {
-		// `WebAssembly.compileStreaming` rejects anything else, so accepting a
-		// different type here would only move the failure later — and past the
-		// point where the diagnosis is obvious.
 		throw new BrowserWasmProviderError(
 			"BUNDLE_NOT_A_COMPONENT",
 			`the host served the bundle as ${redactHostText(mediaType ?? "", 64) || "no media type"}, not ${COMPONENT_MEDIA_TYPE}`,

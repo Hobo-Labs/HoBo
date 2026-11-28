@@ -1,16 +1,3 @@
-/**
- * The deterministic recipe compiler.
- *
- * Pure by construction: no clock, no network, no randomness, no environment,
- * no filesystem. The evaluation instant, the catalog snapshot, the evidence
- * snapshot, and the policy are all arguments, which is what makes a compiled
- * offer replayable years later and a signature over it meaningful.
- *
- * It builds no second matcher either — per-placement gating runs through
- * `selectCapabilityImplementation` from `@hobo/capability-profiles`, narrowed
- * to the product the recipe prefers.
- */
-
 import type { ConnectivityRegistry } from "@hobo/bindings";
 import type {
 	CapabilityProfileRegistry,
@@ -72,20 +59,13 @@ export type CompileRecipeInput = {
 	readonly recipe: SolutionRecipe;
 	readonly request: DeploymentRequest;
 	readonly registry: CapabilityProfileRegistry;
-	/**
-	 * A snapshot of the product catalog projected into selection shape.
-	 * `@hobo/cloud` produces these with `toSelectionCandidate`; this package
-	 * deliberately owns no catalog of its own.
-	 */
 	readonly catalog: readonly SelectionCandidate[];
-	/** Digest of that catalog, supplied by its owner (`profileCatalogHash`). */
 	readonly catalogDigest: string;
 	readonly connectivity: ConnectivityRegistry;
 	readonly policy: RecipePolicy;
 	readonly trustRequirement: TrustRequirement;
 	readonly evidence: readonly TrustEvidence[];
 	readonly verifier?: EvidenceVerifier;
-	/** Canonical evaluation instant. The compiler never reads a clock. */
 	readonly nowMs: number;
 };
 
@@ -98,7 +78,6 @@ export type RecipeCompilationAccepted = {
 	readonly claims: DerivedClaimFacts;
 	readonly guestLeases: readonly DerivedGuestLease[];
 	readonly portability: PortabilitySummary;
-	/** Permitted downgrades. Every one of these must reach the offer. */
 	readonly widenings: readonly WideningNotice[];
 	readonly trustEvidenceRefs: readonly string[];
 	readonly conformanceEvidenceRefs: readonly string[];
@@ -157,12 +136,10 @@ function implementationFor(
 		.filter((implementation) =>
 			registry.satisfies(implementation.profileId, requiredProfileId),
 		)
-		// Deterministic when a product implements both a profile and its child.
 		.sort((a, b) => a.profileId.localeCompare(b.profileId));
 	return matches[0];
 }
 
-/** Compile a recipe against a request. Pure; every effect belongs downstream. */
 export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 	if (!Number.isInteger(input.nowMs)) {
 		throw new RecipeCompileError(
@@ -182,8 +159,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		rejections.push(rejection);
 	};
 
-	// Sorting the catalog first makes lookup order independent of registration
-	// order, which the metamorphic tests assert.
 	const catalogById = new Map<string, SelectionCandidate>();
 	for (const candidate of [...input.catalog].sort((a, b) =>
 		a.definitionId.localeCompare(b.definitionId),
@@ -198,8 +173,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 	const placementByCapability = new Map<string, RecipePlacement>();
 	const yardById = new Map(recipe.yards.map((yard) => [yard.yardId, yard]));
 
-	// Gate 1: the recipe must cover every required capability exactly once and
-	// invent none. Recipe parsing already rejects a duplicate inside one recipe.
 	for (const placement of recipe.placements) {
 		placementByCapability.set(placement.capabilityRef, placement);
 		if (!capabilityByRef.has(placement.capabilityRef)) {
@@ -221,9 +194,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		}
 	}
 
-	// Gate 2: every placement resolves to a compatible, policy-admissible
-	// product. The consumable binding profiles come from the incoming edges so
-	// a producer nobody can consume is caught here rather than at deploy time.
 	const consumableByPlacement = new Map<string, Set<string>>();
 	for (const edge of recipe.edges) {
 		const profiles =
@@ -242,8 +212,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		const yard = yardById.get(placement.yardId);
 		if (yard === undefined) continue;
 
-		// The Bindle names the primitive; a recipe may choose the product but
-		// never reinterpret a queue slot as a bucket.
 		if (capability.primitive !== placement.primitive) {
 			reject({
 				code: "PROFILE_INCOMPATIBLE",
@@ -264,8 +232,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 			});
 			continue;
 		}
-		// The provider boundary must be explicit: a product from another
-		// provider inside this Yard is an ownership boundary nobody declared.
 		if (candidate.providerId !== yard.providerId) {
 			reject({
 				code: "ARCHITECTURE_UNSUPPORTED",
@@ -315,7 +281,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 			continue;
 		}
 
-		// No silent weakening of the required profile.
 		widenings.push(
 			...detectProfileWidening({
 				requirement: capability.requirement,
@@ -361,7 +326,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		candidateByPlacement.set(placement.placementId, candidate);
 	}
 
-	// Gate 3: every required product carries fresh, signed, non-failed evidence.
 	const requiredProducts = [
 		...new Set(
 			recipe.placements.map((placement) => placement.productDefinitionId),
@@ -385,8 +349,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 			: undefined),
 	});
 	for (const reason of trustBundle.reasons) {
-		// The three trust-only reasons all mean the same thing to a compiler:
-		// there is no usable evidence for this product.
 		const code: RejectionCode =
 			reason.code === "EVIDENCE_ABSENT" ||
 			reason.code === "EVIDENCE_UNSIGNED" ||
@@ -396,8 +358,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		reject({ code, detail: `${reason.subjectId}: ${reason.detail}` });
 	}
 
-	// Gate 4: every declared edge resolves to a connectivity implementation the
-	// consumer's runtime can actually use, and the producer emits its binding.
 	const bindings: ResolvedBinding[] = [];
 	for (const edge of recipe.edges) {
 		const consumer = recipe.placements.find(
@@ -416,8 +376,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 			producerResource === undefined ||
 			producerCandidate === undefined
 		) {
-			// The placement itself already failed; a second rejection for the
-			// edge would be noise.
 			continue;
 		}
 		const consumerYard = yardById.get(consumer.yardId);
@@ -489,8 +447,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		});
 	}
 
-	// Gate 5: every declared dependency that crosses a Yard has an edge. A
-	// cross-provider hop nobody wired is the failure this catches.
 	const edgeByPair = new Set(
 		recipe.edges.map(
 			(edge) => `${edge.fromPlacementId}\u0000${edge.toPlacementId}`,
@@ -510,7 +466,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		});
 	}
 
-	// Gate 6: whole-solution claim, cost, and disclosure ceilings.
 	const claims = deriveClaimFacts(
 		recipe,
 		resourceByPlacement,
@@ -552,8 +507,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 			detail: `sponsored exposure ${sponsoredCostMinorUnits} exceeds the policy cap ${policy.maximumSponsoredCostMinorUnits}`,
 		});
 	}
-	// A recipe that deploys no code has no source to disclose; only a recipe
-	// that runs something owes the caller an answer about what it runs.
 	const deploysSource = recipe.placements.some(
 		(placement) => placement.runtimeModel !== undefined,
 	);
@@ -569,8 +522,6 @@ export function compileRecipe(input: CompileRecipeInput): RecipeCompilation {
 		});
 	}
 
-	// Gate 7: no silent widening. A downgrade is only survivable when policy
-	// explicitly permits it; permitted ones then have to reach the offer.
 	widenings.push(
 		...detectSemanticWidenings(request.requestedSemantics, recipe.delivers),
 	);
@@ -658,9 +609,6 @@ function resolutionDigestBody(args: {
 	readonly sponsoredCostMinorUnits: number;
 	readonly trustBundleDigest: string;
 }): CanonicalValue {
-	// Deliberately excludes the catalog digest: an unrelated catalog addition
-	// must not change a resolution that did not depend on it. The offer carries
-	// the catalog digest separately, and acceptance binds to both.
 	return {
 		topologyDigest: args.topologyDigest,
 		recipeId: args.recipeId,
@@ -779,9 +727,6 @@ function deriveClaimFacts(
 		});
 	}
 
-	// One provider can bundle its own resources; two cannot. Crossing a
-	// provider boundary downgrades the whole bundle to a best-effort saga,
-	// which is exactly the fact a caller needs disclosed before accepting.
 	const atomicity: ClaimAtomicity =
 		items.length === 0
 			? "single-resource"

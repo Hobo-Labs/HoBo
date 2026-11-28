@@ -1,20 +1,3 @@
-// Ownership checks for posture enforcement (ADR-0182 D25, I22). Posture
-// never fights delivery: before a noncompliant finding is remediated, the
-// fields its rule reads and sets are compared with what the Camp's current
-// Set declares.
-//
-//   conflict   the Set declares a value the rule rejects, or the fix would
-//              overwrite a Set-owned value: `ownership-conflict`, nothing
-//              mutates, and the gate refuses Deltas that keep it;
-//   drift      the Set declares a compliant value but the target differs:
-//              the reconciler re-applies the Set (drift), posture does not;
-//   unowned    no failing field or fix field is Set-owned: a gated
-//              `posture-remediate` Delta sets the fix values;
-//   retained   a fix field is owned by a controller on the target side;
-//   no-fix     the rule declares no fix (it can only inform);
-//   set-unavailable  the current Set could not be read (fail closed).
-//
-// Pure: no clock, no I/O.
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
@@ -43,11 +26,9 @@ export type Ownership =
 
 export type OwnershipVerdict = Readonly<{
 	ownership: Ownership;
-	/** Clause or fix fields whose Set-declared value the rule contradicts. */
 	conflicting: readonly string[];
 }>;
 
-/** Plan fields a posture rule may name directly; everything else is a realization parameter path. */
 const PLAN_FIELDS = [
 	"provider",
 	"port",
@@ -68,7 +49,6 @@ function scalarText(value: JsonValue | undefined): string | undefined {
 type PlanResource = ResolvedDeploymentSet["plan"]["resources"][number];
 type Parameters = NonNullable<PlanResource["realizationParameters"]>;
 
-/** The value a Set declares for `resource.field`, as the string a reconciler would report; undefined when unowned. */
 export function setValue(
 	resolved: ResolvedDeploymentSet,
 	resource: string,
@@ -88,7 +68,6 @@ export function setValue(
 	return scalarText(cursor);
 }
 
-/** Classify one noncompliant finding against the Camp's current Set. */
 export function classifyOwnership(
 	input: Readonly<{
 		rule: PostureRule;
@@ -125,7 +104,6 @@ export function classifyOwnership(
 		.filter((c) => c.outcome !== "pass")
 		.map((c) => c.field);
 	const ownedFailing = failing.some((field) => Object.hasOwn(declared, field));
-	// A fix that would overwrite a Set-owned value fights the Set even when that value looks compliant.
 	for (const fix of rule.fix) {
 		if (
 			Object.hasOwn(declared, fix.field) &&
@@ -143,11 +121,6 @@ export function classifyOwnership(
 	return { ownership: "unowned", conflicting: [] };
 }
 
-/**
- * The open ownership conflicts a Delta keeps: the resource stays in the
- * resolved Set and the Delta does not change it (I22). The gate refuses such a
- * Delta until the declaration changes.
- */
 export function keptConflicts(
 	input: Readonly<{
 		conflicts: readonly PostureFindingRecord[];
@@ -178,11 +151,6 @@ function setPath(
 	return { ...target, [head]: setPath(next, rest, value) };
 }
 
-/**
- * The resolved plan a `posture-remediate` Delta proposes: the fix values
- * written into the resource's realization parameters. Used by the planning
- * adapter that resolves the Delta; posture itself never applies it.
- */
 export function applyPostureFixes(
 	resolved: ResolvedDeploymentSet,
 	resource: string,

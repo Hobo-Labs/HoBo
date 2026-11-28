@@ -34,7 +34,7 @@ Now every lane delivers through `@hobo/cd`:
 |---|---|
 | `hobo up` / `down` | `LOCAL_BUILD` Freight promoted into the deployment Camp; an in-process conductor converges it. `down` is a teardown Delta. `UpResult`/`DownResult` are unchanged. |
 | `hobo deploy *` | The CD command surface (`packages/hobo/CD.md`). |
-| Broker `deliver` | A neutral `DeliveryPolicy` (`reconciler_mode`, optional `publisher`); the deprecated `argo` engine maps to a `@hobo/cd-gitops` publisher ([upgrade notes](./delivery-policy-upgrade.md)). |
+| Broker `deliver` | A neutral `DeliveryPolicy` (`reconciler_mode`, optional `publisher`); the deprecated `argo` engine maps to a `@hobo/cd-gitops` publisher ([upgrade notes](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/delivery-policy-upgrade.md)). |
 | Pipelines, MCP, agents | The same modules; MCP tools are derived from the CLI verbs. |
 
 ## Concepts
@@ -116,7 +116,7 @@ mid-stage. Overrides are governed, expire, and are audited. Rollback is allowed
 by default.
 
 If the Freight's declaration changes data shape, promotion is sequenced with
-[Trails](./data-engines-continuous-migration.md): `expand`, then the hosting
+[Trails](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md): `expand`, then the hosting
 transition, then soak, then `contract`. Rollback past a completed `contract` is
 refused, and the refusal names the compensating `expand` (D11).
 

@@ -33,11 +33,6 @@ import {
 	type TopologyScope,
 } from "./types.js";
 
-// Parse, don't validate: untrusted policy/request documents cross exactly one
-// parser boundary here and come out as refined domain types (types.ts). Every
-// constraint mirrors data-models/broker.cue so a value that violates the CUE
-// invariants never exists past this module.
-
 export class BrokerParseError extends Error {
 	readonly code: string;
 
@@ -127,7 +122,6 @@ export function parsePlacementPolicy(
 	const pinnedProviderId = optionalString(
 		raw.pinnedProviderId ?? raw.pinned_provider_id,
 	);
-	// Dependent constraint (broker.cue): pinned objective names its provider.
 	if (objective === "pinned" && pinnedProviderId === undefined) {
 		throw new BrokerParseError(
 			"pinned-provider-required",
@@ -166,7 +160,6 @@ export function parseBillingPolicy(
 		"invalid-billing-policy",
 		"quotaLimit",
 	);
-	// Cross-field invariant (broker.cue): consumed quota never exceeds limit.
 	if (quotaUsed > quotaLimit) {
 		throw new BrokerParseError(
 			"quota-overflow",
@@ -223,13 +216,6 @@ function parseDeliveryPublisher(
 	};
 }
 
-/**
- * Neutral delivery policy (ADR-0182 D14). `reconcilerMode` and an optional
- * `publisher` are read. The deprecated `engine` is read only when no
- * `reconcilerMode` is present, and then only to map it: `argo` becomes the
- * `argo-cd` publisher (its `gitops_repo` the publisher repository) and
- * `in-proc` the in-process conductor. `destination_namespace` is never read.
- */
 export function parseDeliveryPolicy(
 	input: JsonValue | undefined,
 ): NeutralDeliveryPolicy {
@@ -299,11 +285,6 @@ export function parseDeliveryPolicy(
 	};
 }
 
-/**
- * The neutral form of any held delivery policy: a parsed policy is returned
- * as is; a legacy literal is mapped exactly as `parseDeliveryPolicy` maps the
- * deprecated wire fields (argo → argo-cd publisher, in-proc → conductor).
- */
 export function normalizeDeliveryPolicy(
 	policy: DeliveryPolicy,
 ): NeutralDeliveryPolicy {
@@ -349,12 +330,6 @@ export function parseBrokerPolicySet(
 			);
 		}
 	}
-	// Required, and refused by name. This used to read `raw.billing ?? {}`,
-	// which looked like a default but threw every time it was taken — `{}` has
-	// no quota, and quota is required — so the operator saw "quota must be a
-	// non-empty string" for a billing block they never wrote. There is no honest
-	// default here: a quota is the name of a policy someone chose, and inventing
-	// one would be inventing policy. The refusal now names the missing block.
 	if (raw.billing === undefined) {
 		throw new BrokerParseError(
 			"invalid-policy-set",
@@ -437,10 +412,6 @@ export function parseBrokerRequest(
 			"empty-requirements: a broker request must place at least one resource",
 		);
 	}
-	// Required, and refused by name. `raw.scope ?? {}` read as a default but
-	// threw every time it was taken — `{}` has no bindleId, and a request must
-	// name the bindle it places into. The refusal now says that, instead of
-	// surfacing as a field error about a scope block nobody wrote.
 	if (raw.scope === undefined) {
 		throw new BrokerParseError(
 			"invalid-request",
@@ -465,8 +436,6 @@ export function parseBrokerRequest(
 	};
 }
 
-// Content-address the policy state so every receipt/rejection pins the exact
-// policies that produced it (same discipline as the registry catalogHash).
 export function policyHashOf(policies: BrokerPolicySet): PolicyHash {
 	const canonical = JSON.stringify(
 		cloneAsJson(policies),
@@ -490,10 +459,6 @@ function flatten(
 	return out;
 }
 
-// Scope-kind specificity: bindle overrides camp overrides yard overrides
-// junction for choice-shaped fields, while restrictive fields (denied
-// providers, explicit-camp lockdown) ACCUMULATE outward-in — a junction
-// broker admin's lockdown cannot be overridden by a narrower policy.
 const SPECIFICITY = {
 	junction: 0,
 	yard: 1,
@@ -523,7 +488,6 @@ export function effectivePlacementPolicy(
 	let merged: PlacementPolicy = applicable[0] as PlacementPolicy;
 	for (const layer of applicable.slice(1)) {
 		merged = {
-			// The narrower layer wins choice-shaped fields...
 			id: layer.id,
 			scopeKind: layer.scopeKind,
 			objective: layer.objective,
@@ -540,7 +504,6 @@ export function effectivePlacementPolicy(
 				layer.allowedRegions.length > 0
 					? layer.allowedRegions
 					: merged.allowedRegions,
-			// ...restrictions accumulate and can never be relaxed inward.
 			deniedProviders: [
 				...new Set([...merged.deniedProviders, ...layer.deniedProviders]),
 			],

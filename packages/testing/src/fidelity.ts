@@ -31,13 +31,11 @@ export const FIDELITIES: readonly Fidelity[] = Object.freeze([
 	"camp-only",
 ]);
 
-/** Kinds the in-process lane structurally cannot exercise. */
 export const CAMP_ONLY_KINDS: readonly string[] = Object.freeze([
 	"container",
 	"wasm-component",
 ]);
 
-/** Kinds whose collected entrypoint can be served over loopback HTTP. */
 export const HTTP_SERVED_KINDS: readonly string[] = Object.freeze([
 	"api",
 	"service",
@@ -49,10 +47,6 @@ export function isHttpServedKind(kind: string): boolean {
 	return HTTP_SERVED_KINDS.includes(kind);
 }
 
-/**
- * Fidelity of one handle in the in-process lane. `served` is true only when a
- * real fetch handler was resolved *and* a listener was opened for it.
- */
 export function inProcessFidelity(kind: string, served: boolean): Fidelity {
 	if (CAMP_ONLY_KINDS.includes(kind)) return "camp-only";
 	if (served && isHttpServedKind(kind)) return "simulated";

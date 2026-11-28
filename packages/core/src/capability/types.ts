@@ -1,5 +1,3 @@
-/** Derived from packages/core/data-models/capability_enforcement.proto + .cue */
-
 import type { JsonObject } from "../json.js";
 
 export type CapabilityDenialCode =

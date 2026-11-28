@@ -1,7 +1,3 @@
-/**
- * Gate-executed example for draft:artifacts.
- * Demonstrates ports-only authoring over native Kafka messaging.
- */
 import { runNativeKafkaPath } from "../src/scenarios.js";
 
 const result = await runNativeKafkaPath("example");

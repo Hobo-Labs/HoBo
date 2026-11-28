@@ -7,11 +7,6 @@ import { describe, expect, it } from "vitest";
 
 import { createCanDeployCommand } from "../src/index.js";
 
-// `hobo can-deploy` runs the real @hobo/contracts can-deploy engine over the
-// project's manifest: with no declared contracts it is compatible by
-// construction; a candidate that drops a field a deployed consumer depends on is
-// reported as a breaking change.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -75,8 +70,6 @@ const deployed = createBoundaryContract({
 		providedFields: ["id", "tenantId"],
 	},
 });
-// The candidate drops `tenantId` from what it provides — a breaking change for
-// the deployed consumer that requires it.
 const breakingCandidate = createBoundaryContract({
 	id: "orders",
 	version: "2.0.0",

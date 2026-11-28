@@ -55,7 +55,6 @@ describe("git workspace (real git)", () => {
 			path: "a.txt",
 			kind: "content",
 			markerSize: 7,
-			// The whole file on each side, for the checks and a structured merge.
 			base: BASE,
 			ours: BASE.replace("two", "TWO ours"),
 			theirs: BASE.replace("two", "TWO theirs"),
@@ -145,7 +144,6 @@ describe("git workspace (real git)", () => {
 		expect(
 			repos.git(repos.remote, "log", "-1", "--format=%an|%B", commit),
 		).toContain("hobo-ci-agent|Merge theirs into ours");
-		// Only the resolved path differs from the tree git produced.
 		expect(
 			repos.git(
 				repos.agent,
@@ -193,7 +191,6 @@ describe("git workspace (real git)", () => {
 				`refs/hobo-agent/commits/${today}/${first}`,
 			),
 		).toBe(first);
-		// Dated by its newer parent.
 		expect(repos.git(repos.agent, "log", "-1", "--format=%ct", first)).toBe(
 			repos.git(repos.agent, "log", "-1", "--format=%ct", theirs),
 		);
@@ -202,14 +199,12 @@ describe("git workspace (real git)", () => {
 	it("fetches what still exists when a listed pull request is gone, and prunes what it no longer needs", async () => {
 		const ours = repos.commit("ours", { "a.txt": BASE.replace("one", "ONE") });
 		const workspace = await fetched({ ours: 1 });
-		// An old commit ref, from more than a week ago.
 		repos.git(
 			repos.agent,
 			"update-ref",
 			`refs/hobo-agent/commits/2020-01-01/${ours}`,
 			ours,
 		);
-		// Pull request 2 was listed but closed since: its ref no longer exists.
 		await workspace.fetch([
 			"refs/heads/main",
 			"refs/pull/1/head",
@@ -222,7 +217,6 @@ describe("git workspace (real git)", () => {
 				"refs/hobo-agent/fetched/pull/1/head",
 			),
 		).toBe(ours);
-		// A fetch that no longer lists #1 drops its ref; the stale commit ref goes too.
 		await workspace.fetch(["refs/heads/main"]);
 		const refs = repos.git(
 			repos.agent,
@@ -231,7 +225,6 @@ describe("git workspace (real git)", () => {
 			"refs/hobo-agent/",
 		);
 		expect(refs.split("\n")).toEqual(["refs/hobo-agent/fetched/heads/main"]);
-		// The base branch is required: a missing one still fails.
 		await expect(workspace.fetch(["refs/heads/gone"])).rejects.toThrow(
 			"git fetch failed",
 		);
@@ -276,7 +269,6 @@ describe("git workspace (real git)", () => {
 		});
 		await workspace.push(commit, "refs/heads/ours");
 		expect(repos.remoteRef("refs/heads/ours")).toBe(commit);
-		// Moving the branch back to an older commit would rewrite it.
 		await expect(workspace.push(ours, "refs/heads/ours")).rejects.toThrow(
 			"git push failed",
 		);

@@ -1,7 +1,3 @@
-// Event bodies on `cd-fanout-<id>` (D21). Each body is a JSON object whose
-// record fields are protobuf JSON of the frozen cd.proto messages; this module
-// is the only place they are written and parsed. A body that does not parse
-// is skipped by the fold (never guessed at).
 import type { JsonObject, JsonValue } from "@bufbuild/protobuf";
 import {
 	DepartureAction,
@@ -26,7 +22,6 @@ import {
 	jsonStrings,
 } from "./journal.js";
 
-/** What happened to one Camp of a fan-out. */
 export type SlotOutcome =
 	| "requested"
 	| "bound"
@@ -56,7 +51,6 @@ export type StartedFact = Readonly<{
 	departure: DepartureAction;
 	windows: readonly string[];
 	idempotencyKey: string;
-	/** Camps of the node's previous decision that this one drops (D21 departure). */
 	departing: readonly string[];
 	atMs: number;
 }>;
@@ -95,7 +89,6 @@ export type DepartedFact = Readonly<{
 	campId: string;
 	action: DepartureAction;
 	promotionId: string;
-	/** Data resources left in place and recorded (ORPHAN_DATA), or every resource (ORPHAN). */
 	kept: readonly string[];
 	reasons: readonly ReasonRecord[];
 	atMs: number;
@@ -128,7 +121,6 @@ const DEPARTURE_ACTIONS: readonly DepartureAction[] = [
 	DepartureAction.ORPHAN_DATA,
 ];
 
-/** Protobuf JSON enum name, e.g. DEPARTURE_ACTION_ORPHAN_DATA. */
 function departureName(action: DepartureAction): string {
 	return `${DEPARTURE_PREFIX}${DepartureAction[action] ?? "UNSPECIFIED"}`;
 }
@@ -142,7 +134,6 @@ function departureOf(value: JsonValue | undefined): DepartureAction {
 	return DepartureAction.UNSPECIFIED;
 }
 
-// ── Started ────────────────────────────────────────────────────────────────
 export function startedBody(fact: StartedFact): JsonObject {
 	return {
 		fanoutId: fact.fanoutId,
@@ -181,7 +172,6 @@ export function parseStarted<T>(value: T): StartedFact | undefined {
 	};
 }
 
-// ── Progressed ─────────────────────────────────────────────────────────────
 export function progressedBody(fact: ProgressedFact): JsonObject {
 	return {
 		campId: fact.campId,
@@ -210,7 +200,6 @@ export function parseProgressed<T>(value: T): ProgressedFact | undefined {
 	};
 }
 
-// ── Halted / Resumed / Completed / RolledBack ─────────────────────────────
 export function haltedBody(fact: HaltedFact): JsonObject {
 	return {
 		reason: encode(ReasonRecordSchema, fact.reason),
@@ -266,7 +255,6 @@ export function parseStatusFact<T>(value: T): StatusFact {
 	};
 }
 
-// ── camp.Departed ──────────────────────────────────────────────────────────
 export function departedBody(fact: DepartedFact): JsonObject {
 	return {
 		fanoutId: fact.fanoutId,
@@ -294,7 +282,6 @@ export function parseDeparted<T>(value: T): DepartedFact | undefined {
 	};
 }
 
-// ── failover bodies (read by the fan-out's effective-decision view) ───────
 export type FailoverFact = Readonly<{
 	failover: FailoverRecord;
 	stationId: string;
@@ -302,13 +289,9 @@ export type FailoverFact = Readonly<{
 	approved: boolean;
 	approvedBy: string;
 	decisionId: string;
-	/** Station cutover plan id once traffic was shifted. */
 	routingPlanId: string;
-	/** True once the source was purged (IMMEDIATE purges early). */
 	purged: boolean;
-	/** Concurrency budget for rebalance moves (the node's fan-out limit); 0 for failovers. */
 	limit: number;
-	/** When the saga was admitted (REPLACING); grace runs from here. */
 	startedAtMs: number;
 	atMs: number;
 }>;

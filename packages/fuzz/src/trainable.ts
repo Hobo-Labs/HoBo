@@ -1,8 +1,3 @@
-/**
- * Property oracles over trainable functions and their blessed gold seeds.
- * Gold suites exact-match examples; silver suites run these checks.
- */
-
 import type { FuzzValue } from "./manifest.js";
 import { hasPrototypePollution } from "./manifest.js";
 import { type InvariantVerdict, verdict } from "./model.js";

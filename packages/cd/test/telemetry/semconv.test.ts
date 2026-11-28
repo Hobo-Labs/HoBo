@@ -1,7 +1,3 @@
-// WP19 Accept: "Span attributes validate against the semconv registry snapshot
-// pinned in the test", plus the R8 lock: STANDARDS.lock.json, SEMCONV and the
-// snapshot name the same release. Golden test: the promotion trace of a
-// recorded journal is byte-stable.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PromotionState } from "../../src/_generated/cd_pb.js";

@@ -1,6 +1,3 @@
-// Typed failure modes of the CD composition root. Every
-// refusal carries a stable code plus a remediation an operator or agent can
-// act on; nothing here decides delivery, it only refuses to wire badly.
 import { create } from "@bufbuild/protobuf";
 import { type ReasonRecord, ReasonRecordSchema } from "../_generated/cd_pb.js";
 import type { Refusal } from "../ports.js";

@@ -1,8 +1,3 @@
-/**
- * Typed RPC membrane between the UI thread and the SQLite Worker.
- * Implementation-specific SQLite handles never cross this boundary.
- */
-
 import {
 	isJsonBoolean,
 	isJsonObject,

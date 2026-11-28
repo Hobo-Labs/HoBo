@@ -77,7 +77,7 @@ primitives, which is why it fits estates Kubernetes does not.
 | `runtime-portability` | Multiple task drivers, so the same scheduler covers heterogeneous workloads |
 | `reconciliation` | Allocation lifecycle and rescheduling |
 
-[`lineage.md`](../design/lineage.md) records Nomad as a **pillar, pivoted**: the heterogeneous
+[`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Nomad as a **pillar, pivoted**: the heterogeneous
 scheduling and federation intent are taken, realized through the wasmCloud lattice and the
 Junction/Yard/Camp hierarchy rather than through a Nomad cluster.
 
@@ -322,7 +322,7 @@ nomad-pack destroy prometheus
 
 ## Better-together / integration posture
 
-- **Borrow** — recorded in [`lineage.md`](../design/lineage.md): heterogeneous scheduling and
+- **Borrow** — recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md): heterogeneous scheduling and
   federation intent. Worth adding explicitly — **constraint / affinity / spread as a declarative
   placement vocabulary** is a well-designed language for expressing placement preferences, and HoBo's
   matching inputs would benefit from being that legible.
@@ -347,7 +347,7 @@ nomad-pack destroy prometheus
 
 - [Nomad documentation](https://developer.hashicorp.com/nomad/docs) — jobspec, task drivers, scheduling, constraints, federation, Nomad Pack
 - [hashicorp/nomad](https://github.com/hashicorp/nomad) — source and current licence
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Nomad as a pivoted pillar
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Nomad as a pivoted pillar
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current licence terms and post-acquisition roadmap were not

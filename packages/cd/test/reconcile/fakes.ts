@@ -1,9 +1,4 @@
 /* oxlint-disable anti-slop/no-conditional-empty-object-spread, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// Test fakes owned by WP7: an in-memory DurableEventStore with
-// the SQLite journal's CAS, idempotency, owner-epoch fencing and subscription
-// lease/checkpoint semantics on an injected clock; a DesiredStateReader over
-// the spec stream; a target-modelling Realizer that counts mutating calls; and
-// a recording TelemetrySink.
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -92,7 +87,6 @@ export const asReconciler = (id: string): ReconcilerId => id as ReconcilerId;
 
 export type FakeStore = DurableEventStore & {
 	readonly log: readonly PositionedEvent[];
-	/** Called before each append's CAS check; lets a test crash or interleave. */
 	beforeAppend?:
 		| ((
 				streamId: string,
@@ -326,8 +320,6 @@ function matches(filter: StreamFilter, event: EventEnvelope): boolean {
 	return true;
 }
 
-// ── Sets and resolved sets ─────────────────────────────────────────────────
-
 export type ResourceSpec = Readonly<{
 	name: string;
 	port?: string;
@@ -393,7 +385,6 @@ export function setFor(
 	});
 }
 
-/** A DesiredStateReader over set.Created events on the spec stream (tails like WP4). */
 export type FakeDesired = DesiredStateReader & {
 	readonly blobs: Map<string, ResolvedDeploymentSet>;
 	publish(
@@ -500,8 +491,6 @@ export function createFakeDesired(
 	return reader;
 }
 
-// ── Realizer modelling a target ────────────────────────────────────────────
-
 export type TargetResource = {
 	hash: string;
 	kind: string;
@@ -518,9 +507,7 @@ export type FakeRealizer = Realizer & {
 	observes: number;
 	mutatingCalls: string[];
 	lastKeep: readonly string[];
-	/** Resources whose converge leaves drift in place (flapping). */
 	stuck: Set<string>;
-	/** Make the next converge throw after applying (crash between execute and observe). */
 	crashAfterApply: boolean;
 	failConverge?: string | undefined;
 	ignoreKeep: boolean;

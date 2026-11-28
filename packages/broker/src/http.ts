@@ -15,14 +15,6 @@ import {
 	type ResolutionReceipt,
 } from "./types.js";
 
-// The hosted authority surface: the same resolve/scale/deliver pipeline
-// exposed over HTTP so the broker can run as the hosted Meta-cloud Broker
-// (the M4 direction) and be fronted by the Gateway, the CLI, or MCP. The
-// handler is a pure request→response function — `serveBroker` binds it to
-// node:http — and the resolve route is PROVIDER-verified against
-// contracts/pacts/broker_resolution.pact.json (contracts/provider/), so the
-// hosted surface and the consumer contract can never drift apart.
-
 export interface BrokerHttpRequest {
 	method: string;
 	path: string;
@@ -72,8 +64,6 @@ function parseHttpResolutionReceipt(value: JsonObject): ResolutionReceipt {
 	};
 }
 
-// Status mapping mirrors the resolution pact: 200 resolved, 402 when the
-// leading rejection reason is billing-plane, 403 for every other rejection.
 function rejectionStatus(plane: string | undefined): number {
 	return plane === "billing" ? 402 : 403;
 }
@@ -167,8 +157,6 @@ export function createBrokerHttpHandler(
 	};
 }
 
-// Bind the handler to a real node:http server for hosted operation. Returns
-// the server so the host controls lifecycle (and tests can close it).
 export function serveBroker(
 	broker: HoboBroker,
 	options: { port?: number } = {},

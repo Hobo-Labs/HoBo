@@ -92,7 +92,6 @@ const server = await serve(DIST, PORT);
 // SAFETY: assertion required at this I/O boundary.
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-// 1. Catalog is real: entries carry actual Bindle source + runtime descriptors.
 const catalogRes = await fetch(`${origin}/HoBo/examples/index.json`);
 check("catalog: /HoBo/examples/index.json responds", catalogRes.ok);
 // SAFETY: assertion required at this I/O boundary.
@@ -109,8 +108,6 @@ check(
 	),
 );
 
-// 2. The browser WIT runtime ships with the artifact (unless deliberately
-// stripped, in which case in-page examples are known-inert and we say so).
 const manifestRes = await fetch(`${origin}/HoBo/examples/runtime/manifest.json`);
 if (STRIPPED) {
 	console.log("· runtime: HOBO_PAGES_STRIP_WIT=1 — skipping runtime + browser flow");
@@ -131,11 +128,8 @@ if (STRIPPED) {
 		check("runtime: all manifest assets ship", failures.length === 0);
 	}
 
-	// 3+4. Real visitor flow in a real browser against the static artifact.
 	let browser: Browser | null = null;
 	try {
-		// PLAYWRIGHT_CHROMIUM_PATH covers hosts whose installed browser revision
-		// does not match this playwright version (e.g. /opt/pw-browsers/chromium).
 		const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH;
 		browser = await chromium.launch(
 			executablePath ? { executablePath } : {},
@@ -154,8 +148,6 @@ if (STRIPPED) {
 					?.disabled,
 		);
 		await deployStations.click();
-		// Remote yards fail per-target on a static host; the pool must still
-		// come up with the in-page browser-wasm station.
 		await page.waitForFunction(() => {
 			const state = document.querySelector("[data-deploy-state]")?.textContent;
 			return state === "stations-ready" || state === "failed";
@@ -188,8 +180,6 @@ if (STRIPPED) {
 		const shipState = await page.locator("[data-deploy-state]").textContent();
 		const shipTerminal =
 			(await page.locator("[data-terminal]").textContent()) ?? "";
-		// "live" requires the station's postMessage "ready", which fires only
-		// after the WIT component answered a real invoke — this is the proof.
 		check(
 			"ship: hello-world WIT component live on the static artifact",
 			shipState === "live",

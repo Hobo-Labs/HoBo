@@ -13,7 +13,6 @@ export function memoryAdmitHeadroom(
 	return availableMb - safeCommitted - requiredMb >= reserveMb + volatilityMb;
 }
 
-/** How many `requiredMb` jobs fit with one host reserve + volatility margin. */
 export function memoryAdmitParallelCount(
 	availableMb: number | undefined,
 	requiredMb: number,

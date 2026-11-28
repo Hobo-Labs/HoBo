@@ -64,8 +64,6 @@ describe("CI deps image mounted-job contract", () => {
 				{ stdio: "ignore" },
 			);
 		};
-		// Nested docker needs the host bind path: in job containers _hobo_work may
-		// not be the same directory as HOBO_CI_HOST_JOB_DIRECTORY on the host.
 		const temporary = mkdtempSync(
 			join(hostCurrentJob ?? tmpdir(), "hobo-deps-mount-"),
 		);

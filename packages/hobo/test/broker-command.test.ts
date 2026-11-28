@@ -139,7 +139,6 @@ describe("hobo broker — the Conductor on the CLI", () => {
 			ticket: { engine: string };
 			events: Array<{ type: string }>;
 		};
-		// The running machine IS the provider — zero-cost local catalog.
 		expect(data.catalog).toBe("local-host");
 		expect(data.receipt.placements[0]?.providerId).toBe(
 			"@hobo/provider-local-host",
@@ -221,7 +220,6 @@ describe("hobo broker — the Conductor on the CLI", () => {
 		expect(config.policyEngine).toBe("builtin");
 		expect(String(config.policyHash)).toMatch(/^sha256:/);
 
-		// A second --init refuses to clobber the existing config.
 		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await command.run({
 			args: ["config"],
@@ -251,8 +249,6 @@ describe("hobo broker — the Conductor on the CLI", () => {
 				policyEngine: { kind: "opa", endpoint: "http://opa.local:8181" },
 			}),
 		);
-		// The injected fetch plays a Rego deny — proving the configured engine
-		// is actually on the resolve path.
 		const command = createBrokerCommand({
 			catalog,
 			fetchFn: async () => ({

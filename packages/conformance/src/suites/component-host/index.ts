@@ -19,6 +19,7 @@ import {
 	REFERENCE_WASI_ROUND_TRIP,
 } from "./reference.js";
 
+// public-contract: stable exported contract literal
 export const COMPONENT_HOST_CONFORMANCE_SCHEMA =
 	"@hobo/conformance/component-host/v1";
 

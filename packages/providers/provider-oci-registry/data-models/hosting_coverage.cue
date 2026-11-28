@@ -1,4 +1,3 @@
-// CUE constraints for hosting_coverage.proto (ADR-0182 I14).
 package provider_oci_registry
 
 import "list"
@@ -32,9 +31,7 @@ import "list"
 
 #TrafficCoverage: {
 	kind: "other"
-	// A registry routes no workload traffic: nothing present, no fallback.
 	offerings: []
 	fallbacks: []
-	// So the whole portable vocabulary (17 ids) is declared absent.
 	absent: [...#AbsentTrafficOffering] & list.MinItems(17) & list.MaxItems(17)
 }

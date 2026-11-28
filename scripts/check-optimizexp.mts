@@ -1,25 +1,3 @@
-/**
- * OptimizeXP drift-protection gate (`pnpm run optimizexp:check`).
- *
- * Hard-fail lanes (reusing the skill harness — import/spawn, never duplicate):
- *   a. Persona schema validation across the global tree (`.optimizexp/personas/`)
- *      and project-local trees (`packages/<pkg>/.optimizexp/personas/`) via the
- *      skill's `generate-persona.mts --mode validate` CLI (the harness modules
- *      execute `main()` on import, so they are spawned, not imported).
- *   b. Feature-quality/template lint over `.optimizexp/features/**` (plus
- *      project-local feature trees) via `checkGherkinQuality` from the skill's
- *      `lib/feature-quality.mts` — bans template-only "exercise the surface"
- *      Gherkin and missing `@persona:`/`@interface:` tags.
- *
- *   c. `validate-bus` over `.optimizexp/bus/entries/` via the review-loop CLI,
- *      including council bus/state cross-checks through the consensus helper.
- *      The 282 legacy entries that predated the current scorecard-evidence
- *      contract were archived to `.optimizexp/bus-archive/` (not scanned), so
- *      this lane is a hard fail. New runs are additionally gated per-run by
- *      `assert-complete` inside the review loop itself.
- *
- * Usage: node --import tsx scripts/check-optimizexp.mts
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -51,7 +29,6 @@ type PersonaReport = {
 	personas: { id: string; path: string; scope: string; problems: string[] }[];
 };
 
-/** Lane (a): persona schema validation. */
 function checkPersonas(): string[] {
 	const generatePersona =
 		".agents/skills/optimizexp/harness/generate-persona.mts";
@@ -76,7 +53,6 @@ function checkPersonas(): string[] {
 		.map((p) => `${p.path}: ${p.problems.join("; ")}`);
 }
 
-/** Feature-folder roots mirroring `.optimizexp/cucumber.yaml` path globs. */
 function featureDirs(): string[] {
 	const roots = [
 		".optimizexp/features",
@@ -101,7 +77,6 @@ function featureDirs(): string[] {
 	return dirs;
 }
 
-/** Lane (b): feature-quality/template lint. */
 function checkFeatureQuality(): string[] {
 	const problems: string[] = [];
 	const dirs = featureDirs();
@@ -117,7 +92,6 @@ function checkFeatureQuality(): string[] {
 	return problems;
 }
 
-/** Lane (c): bus validation (hard fail). */
 function checkBus(): string[] {
 	const reviewLoop =
 		".agents/skills/optimizexp/workflows/cross-agent/review-loop.mts";
@@ -146,7 +120,6 @@ function checkBus(): string[] {
 	return (report.problems ?? []).map((p) => `bus: ${p}`);
 }
 
-/** Project-local .optimizexp roots (packages/<pkg>/.optimizexp with config). */
 function projectOptimizexpRoots(): string[] {
 	const out: string[] = [];
 	for (const parent of ["site", "packages", "examples"]) {
@@ -169,11 +142,6 @@ function readJson<T>(file: string): T | null {
 	}
 }
 
-/**
- * Lane (d): scenario ↔ product binding. When a project's optimizexp config
- * declares `productBinary`, every feature folder must actually invoke it —
- * persona scenarios that only run repo scripts are filename decoration.
- */
 function checkProductBinding(): string[] {
 	const problems: string[] = [];
 	let features = 0;
@@ -249,12 +217,6 @@ function checkCatalogCoverage(): string[] {
 	return problems;
 }
 
-/**
- * Lane (f): run-claim audit. Runs claiming completion (pareto-equilibrium,
- * plateau, …) must be backed by a committed minimal evidence bundle — scores
- * chain with matching sha256s and reviewable cited evidence. Also exposed as
- * `pnpm run optimizexp:lint-runs`.
- */
 function checkRuns(): string[] {
 	const tracked = new Set(
 		(

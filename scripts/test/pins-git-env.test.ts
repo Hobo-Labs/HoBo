@@ -1,11 +1,3 @@
-/**
- * The repository-locating variables the pins drop from every git they run
- * are git's own `local_repo_env` (what `git rev-parse --local-env-vars`
- * prints), plus GIT_NAMESPACE. GIT_CONFIG_PARAMETERS and GIT_CONFIG_COUNT
- * from that list are kept on purpose: they configure git, as git itself
- * passes them to a submodule. GIT_CONFIG is dropped like the rest: it only
- * redirects the `git config` command.
- */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { describe, it } from "node:test";

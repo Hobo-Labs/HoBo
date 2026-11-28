@@ -5,10 +5,6 @@ import {
 	SqliteJournal,
 } from "../../src/index.js";
 
-/**
- * Consumer-side boundary evidence: DurableEventStore commit + fence + position.
- * Provider implementations (runtime-local, runtime-browser) must satisfy the same shapes.
- */
 describe("storage-sqlite journal consumer boundary", () => {
 	it("commits events with positions and rejects stale expectedSeq", async () => {
 		const journal = new SqliteJournal(createMemoryNodeSqliteDriver(), {

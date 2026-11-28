@@ -120,7 +120,6 @@ auth:
 	});
 });
 
-// Each billing model the manifest can express, rated by the real kernel.
 describe("lowered catalogs rate through @hobo/pricing", () => {
 	it("hardware, metered: 2.5 GPU-hours at 1.80/hour", () => {
 		expect(
@@ -145,14 +144,12 @@ describe("lowered catalogs rate through @hobo/pricing", () => {
 	});
 
 	it("service: flat monthly fee plus graduated storage", () => {
-		// 25 + (10 free) + (40 * 0.12)
 		expect(
 			billed(lowering(), "pg-flex", "standard", { storage: ["50", "GB"] }),
 		).toBe("29.8");
 	});
 
 	it("ai, token pricing: per-million rates are pro-rata", () => {
-		// 1.5M input * 3.00 + 0.2M output * 15.00
 		expect(
 			billed(lowering(), "llm-large", "pay-as-you-go", {
 				"input-tokens": ["1500000", "token"],
@@ -182,7 +179,6 @@ describe("lowered catalogs rate through @hobo/pricing", () => {
 	});
 
 	it("materials: whole packages round partial usage up", () => {
-		// 0.6 kg -> 3 quarter-kilogram spools
 		expect(
 			billed(lowering(), "print-farm", "per-spool", {
 				filament: ["0.6", "kg"],

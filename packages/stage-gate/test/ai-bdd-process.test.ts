@@ -1,8 +1,3 @@
-/**
- * runAiBdd on its own (ADR-0172): how one ai-bdd command is stopped. The
- * release-gate suites drive it through the gate; these give it commands that
- * misbehave in one way each.
- */
 import { execFile, spawn, spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -55,7 +50,6 @@ describe("runAiBdd stops a command that outlives its bound", () => {
 		const took = Date.now() - started;
 		expect(run.timedOut).toBe(true);
 		expect(run.status).toBeNull();
-		// It was asked first, and killed only when it did not go.
 		expect(run.tail).toContain("SIGTERM ignored");
 		expect(took).toBeGreaterThanOrEqual(1900);
 		expect(took).toBeLessThan(10_000);
@@ -67,7 +61,6 @@ describe("runAiBdd settles when the command exits", () => {
 		const started = Date.now();
 		const run = await runAiBdd(
 			{
-				// It exits at once, leaving a detached child that inherited its stdout and stderr.
 				command: nodeCommand(
 					"const c = require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: 'inherit' }); console.log('holder ' + c.pid); c.unref()",
 				),
@@ -91,7 +84,6 @@ describe("runAiBdd settles when the command exits", () => {
 
 describe("the check once ai-bdd has settled", () => {
 	it("exits at once: no timer of the run keeps its process alive", async () => {
-		// check-acceptance.mts prints its evidence line last; nothing should be left to wait for after it.
 		const dir = mkdtempSync(join(tmpdir(), "hobo-active-resources-"));
 		const activeFile = join(dir, "active.json");
 		const check = spawn(
@@ -110,7 +102,6 @@ describe("the check once ai-bdd has settled", () => {
 					...process.env,
 					HOBO_AI_BDD_CMD: JSON.stringify(nodeCommand("process.exit(0)")),
 					HOBO_AI_BDD_PROJECT: tmpdir(),
-					// The run's own timer: 30 s here, so one left armed holds the process far longer than a teardown takes.
 					HOBO_AI_BDD_TIMEOUT_MS: "30000",
 					ACTIVE_RESOURCES_FILE: activeFile,
 				},
@@ -121,7 +112,6 @@ describe("the check once ai-bdd has settled", () => {
 		check.stdout.on("data", () => {
 			printedAt = Date.now();
 		});
-		// 10 s after the evidence line is far past any teardown under load; a process still alive then is held.
 		const watchdog = setInterval(() => {
 			if (printedAt > 0 && Date.now() - printedAt > 10_000) {
 				check.kill("SIGKILL");
@@ -131,7 +121,6 @@ describe("the check once ai-bdd has settled", () => {
 			const ended = await new Promise((done) =>
 				check.on("exit", (status, signal) => done({ status, signal })),
 			);
-			// No wall clock: the resources that kept the loop alive when the line was written.
 			expect(existsSync(activeFile)).toBe(true);
 			// SAFETY: report-active-resources.mts writes a JSON array of strings.
 			const active = JSON.parse(readFileSync(activeFile, "utf8")) as string[];
@@ -150,11 +139,6 @@ describe("runAiBdd on Linux, where a group can hold only zombies", () => {
 	it.runIf(process.platform === "linux")(
 		"is done with a group whose only member is a zombie its parent never reaps",
 		async () => {
-			// The inner shell leaves `sleep 0.1` in ai-bdd's group, then moves itself to a
-			// session of its own (setsid) as a node process that never waits for it, and
-			// writes $READY once /proc shows the sleep a zombie. ai-bdd (the outer shell)
-			// exits only then, so the group holds one zombie, as under a PID 1 or
-			// subreaper that does not reap, and no live member for the stop to end early.
 			const ready = join(
 				tmpdir(),
 				`hobo-zombie-only-${process.pid}-${Date.now()}.ready`,
@@ -183,8 +167,6 @@ describe("runAiBdd on Linux, where a group can hold only zombies", () => {
 			try {
 				expect(existsSync(ready)).toBe(true);
 				expect(run.status).toBe(0);
-				// Not the 5 s grace: a zombie is not a member to wait for. Counted from
-				// $READY, so the member's own startup is not the stop's time.
 				expect(finished - statSync(ready).mtimeMs).toBeLessThan(3000);
 			} finally {
 				killQuietly(Number(/holder (\d+)/u.exec(run.tail)?.[1] ?? 0));
@@ -197,10 +179,6 @@ describe("runAiBdd on Linux, where a group can hold only zombies", () => {
 	it.runIf(process.platform === "linux" && HAS_PYTHON3)(
 		"kills a member whose main thread exited while its other threads run, although /proc shows it Z",
 		async () => {
-			// The member ignores SIGTERM, says so in $READY, starts a thread that writes the
-			// marker 3 s later, and ends its main thread (pthread_exit): /proc shows Z with
-			// num_threads 2. ai-bdd (the shell) exits once $READY is there, so the stop's
-			// SIGTERM never comes before the member ignores it, however slowly it starts.
 			const marker = join(
 				tmpdir(),
 				`hobo-leader-exit-${process.pid}-${Date.now()}`,
@@ -229,7 +207,6 @@ describe("runAiBdd on Linux, where a group can hold only zombies", () => {
 			);
 			const took = Date.now() - started;
 			try {
-				// Past the moment the thread would have written the marker, had it lived.
 				await new Promise((done) =>
 					setTimeout(done, Math.max(0, started + 4000 - Date.now())),
 				);
@@ -249,11 +226,9 @@ describe("runAiBdd on Linux, where a group can hold only zombies", () => {
 
 const HAS_PYTHON3 = spawnSync("python3", ["-c", ""]).status === 0;
 
-/** The shell's wait for its member to write $READY (20 s at most), then its exit. */
 const UNTIL_READY =
 	'i=0; until [ -e "$READY" ] || [ $i -ge 400 ]; do sleep 0.05; i=$((i+1)); done; exit 0';
 
-/** Ignores SIGTERM, writes $READY, starts a thread that writes $MARKER after 3 s, and ends its main thread. */
 const LEADER_EXIT_PY = [
 	"import ctypes, os, signal, threading, time",
 	"signal.signal(signal.SIGTERM, signal.SIG_IGN)",
@@ -265,7 +240,6 @@ const LEADER_EXIT_PY = [
 	"ctypes.CDLL(None).pthread_exit(None)",
 ].join("\n");
 
-/** Waits for the zombie its argv names (a child of this process, which never waits for it), then writes $READY. */
 const ZOMBIE_PARENT_JS = [
 	"const fs = require('node:fs');",
 	"const state = () => {",
@@ -306,9 +280,7 @@ describe("stopRunningAiBdd, as the check calls it on its own SIGINT or SIGTERM",
 		);
 		// SAFETY: stop-ai-bdd.mts prints one StopOutcome as JSON.
 		const outcome = JSON.parse(stdout) as StopOutcome;
-		// The signal the check got, not SIGTERM in its place.
 		expect(outcome.tail).toContain("got SIGINT");
-		// The group was gone at once: the 20 s grace was not waited out.
 		expect(outcome.stopMs).toBeLessThan(5000);
 		expect(outcome).toMatchObject({
 			afterStatus: null,

@@ -71,9 +71,6 @@ const ORIGINS = Object.freeze({
 	),
 });
 
-// Three observations a minute apart-ish: a probe every 20 s across a 60 s
-// window, every attempt must answer 200, and the verification gives up
-// (FAIL, never PASS) after five minutes.
 function probe(origin: string, name: "healthz" | "readyz") {
 	return {
 		name,
@@ -97,12 +94,6 @@ function verification(
 	};
 }
 
-/**
- * The relay's HoBo CI source (the record `hoboSelfDeliverySources` in
- * `@hobo/cd/compose` builds for the relay): passing runs of HoBo's CI, the
- * relay bundle output (a HOBO_CI subscription takes no branch filter). Until CI publishes that output the relay's
- * Freight is pushed by `hobo ci deploy`.
- */
 export const sources = [
 	{
 		schemaVersion: "hobo.cd.source/v1",

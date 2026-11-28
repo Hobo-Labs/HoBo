@@ -3,9 +3,6 @@ import type { JsonObject } from "./json.js";
 // public-contract: the provider target id `.with(...)` option blocks carry.
 export const HOSTINGER_PROVIDER_TARGET = "hostinger";
 
-// A `type` alias (not an interface) so it keeps an implicit index signature
-// and stays assignable to @hobo/core's opaque `TypedOptionBlock`
-// (Record<string, unknown>) on ResourcePlan.options (ADR-0156).
 export type TypedOptionBlock = {
 	providerId: string;
 	port: string;
@@ -14,9 +11,6 @@ export type TypedOptionBlock = {
 	options: JsonObject;
 };
 
-// The provider-specific options pattern (sdk-api.md "the core promise"): typed,
-// additive annotations that are inert for non-resolved providers — one Bindle
-// targets many clouds unedited.
 export const hostinger = {
 	with: {
 		vps(options: JsonObject = {}): TypedOptionBlock {

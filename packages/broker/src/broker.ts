@@ -50,19 +50,10 @@ import {
 	type ScaleDirective,
 } from "./types.js";
 
-// The HoBo Broker actor. It consumes brokering commands (resolve, scale,
-// deliver), runs the wrapped enforcement planes in order — connectors,
-// gatekeeper (policy + contracts + quota), billing, placement — and emits
-// decision facts. It coordinates durable state through those events; it never
-// mutates a query read model directly. Read models are folds over the emitted
-// facts (see foldBrokerDecisions), with snapshot/restore for the read store.
-
 export interface BrokerResolution {
 	outcome: "resolved" | "rejected";
 	receipt?: ResolutionReceipt;
 	rejection?: ResolutionRejection;
-	// Ed25519 detached signature over the receipt/rejection's canonical JSON,
-	// present when the broker is configured with a signing key.
 	signature?: ResolutionSignature;
 	events: BrokerEvent[];
 }
@@ -76,14 +67,8 @@ export interface HoboBrokerDeps {
 	billingPlane?: BillingPlane;
 	deliveryPlane?: DeliveryPlane;
 	signingKey?: ResolutionSigningKey;
-	/**
-	 * Optional approved provider/catalog ceiling applied in addition to the
-	 * active Rail (not a substitute for Station occupancy).
-	 */
 	environment?: BrokerEnvironment;
-	/** Station occupancy — required. Conductor holds no durable Connection state. */
 	stationId: string;
-	/** Active Rail content hash — required on every resolve. */
 	railHash: string;
 }
 
@@ -114,8 +99,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 			"rail-inactive: Conductor requires active railHash (hobo station rails activate)",
 		);
 	}
-	// Parse, don't validate: the policy document crosses the parser boundary
-	// once; from here on the broker only ever sees the refined domain types.
 	const policies = parseBrokerPolicySet(cloneAsJson(deps.policies));
 	const policyHash = policyHashOf(policies);
 	const gatePlane =
@@ -188,8 +171,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}),
 			];
 
-			// Plane 0 — connector registry: required connector kinds must be
-			// registered and enabled before the broker will act on their behalf.
 			if (policies.requiredConnectorKinds.length > 0) {
 				const missing = deps.connectors?.missingKinds(
 					policies.requiredConnectorKinds,
@@ -207,8 +188,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}
 			}
 
-			// Plane 0.5 — admin controls: the Broker Environment must be approved
-			// and its pinned catalog snapshot must match the live catalog.
 			if (deps.environment !== undefined) {
 				if (!deps.environment.approved) {
 					return reject(
@@ -241,8 +220,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				}
 			}
 
-			// Placement policy selection: the broker only acts on configured
-			// policy — no applicable placement policy means no placement.
 			const effective = effectivePlacementPolicy(policies, request.scope);
 			if (effective === undefined) {
 				return reject(
@@ -258,7 +235,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
-			// Junction-governance lockdown: explicit Camps required.
 			if (
 				effective.requireExplicitCamps &&
 				request.scope.campId === undefined
@@ -277,10 +253,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				);
 			}
 
-			// Plane 1 — the Gatekeeper composition (policy pack + contract
-			// compatibility + obligations + quota), imported and RUN from
-			// @hobo/contracts. Its policy.Decided / gatekeeper.Decided facts are
-			// appended to this resolution's event list.
 			const gate = await gatePlane.evaluate({
 				request: toPolicyDecisionRequest(policies.brokerId, request),
 				costQuota: {
@@ -309,7 +281,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				return reject(request, reasons, events);
 			}
 
-			// Plane 2 — billing enforcement beyond quota: budget + spend cap.
 			const billing = billingPlane.authorize({
 				spendEstimateUsd: request.spendEstimateUsd,
 				billing: policies.billing,
@@ -320,9 +291,6 @@ export function createBroker(deps: HoboBrokerDeps): HoboBroker {
 				return reject(request, billing.reasons, events);
 			}
 
-			// Plane 3 — placement: match every requirement against the provider
-			// catalog under the effective policy, ranked by its objective. The
-			// approved environment's provider list bounds eligibility first.
 			const environmentProviders = deps.environment?.approvedProviders;
 			const definitions =
 				environmentProviders !== undefined && environmentProviders.length > 0
@@ -476,8 +444,6 @@ function placeRequirement(
 	};
 }
 
-// Min-cost objective (same objective the Yard Planner ranks by): lowest
-// marginal price wins; provider id is the deterministic tie-break.
 function rankByCost(
 	definitions: readonly BrokerCatalogDefinition[],
 ): BrokerCatalogDefinition[] {
@@ -554,7 +520,6 @@ export function parseScaleDirective(
 			"invalid-scale-directive: replicas must be an integer >= 0",
 		);
 	}
-	// Dependent constraint (broker.cue): scale-to-zero means zero replicas.
 	if (direction === "zero" && replicas !== 0) {
 		throw new BrokerParseError(
 			"invalid-scale-directive",
@@ -565,8 +530,6 @@ export function parseScaleDirective(
 	return { resourceId, direction: direction as ScaleDirection, replicas };
 }
 
-// ---- Broker decision read model ----
-
 export interface BrokerDecisionRow {
 	requestId: string;
 	outcome: "resolved" | "rejected";
@@ -574,9 +537,6 @@ export interface BrokerDecisionRow {
 	reasonCodes: string[];
 }
 
-// Materialized view over the broker's decision facts: a pure fold, so the
-// projection rebuilds from the event store from zero. Snapshot/restore below
-// persist the current rows to a read store for cached current reads.
 export function foldBrokerDecisions(
 	events: Iterable<{ type: string; data?: unknown }>,
 ): BrokerDecisionRow[] {

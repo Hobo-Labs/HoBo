@@ -1,11 +1,3 @@
-/**
- * Target architectures a pack may declare.
- *
- * The set is closed on purpose. An open string would let a manifest claim
- * `linux/riscv64` with an amd64 digest behind it, and nothing downstream would
- * be able to tell. Values use the `os/arch[/variant]` spelling from the OCI
- * image specification's platform object.
- */
 import { PackError } from "./errors.js";
 
 export const PACK_ARCHITECTURES = [

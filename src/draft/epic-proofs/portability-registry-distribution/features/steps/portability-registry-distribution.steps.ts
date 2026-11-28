@@ -1,11 +1,3 @@
-/**
- * Executable step definitions for portability-registry-distribution.feature.
- *
- * Drives the epic's real reference simulation
- * (services/portability-registry-reference.ts) and asserts install
- * verification, digest pinning, yank response, and air-gap import outcomes it
- * produces. Mirrors, trust verifiers, and importers stay in-memory fixtures.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 
@@ -18,8 +10,6 @@ function simulation(): Promise<Simulation> {
 	simulationPromise ??= runPortabilityRegistrySimulation();
 	return simulationPromise;
 }
-
-// --- Scenario: Install a certified provider listing ------------------------
 
 let installSim: Simulation | undefined;
 
@@ -53,8 +43,6 @@ Then(
 		assert.equal(installSim?.install.selectedByMatching, false);
 	},
 );
-
-// --- Scenario: Discover, resolve, and fetch only digest-identical artifacts
 
 let resolutionSim: Simulation | undefined;
 
@@ -95,7 +83,6 @@ Then(
 			"mirror-cheap",
 			"mirror-fast",
 		]);
-		// Dependency-confusion attempt fails closed before any mirror cost ranking.
 		assert.equal(resolutionSim?.dependencyConfusion.ok, false);
 		assert.equal(
 			resolutionSim?.dependencyConfusion.reason,
@@ -103,8 +90,6 @@ Then(
 		);
 	},
 );
-
-// --- Scenario: Yank a compromised listing ----------------------------------
 
 let yankSim: Simulation | undefined;
 
@@ -135,8 +120,6 @@ Then(
 		assert.equal(yankSim?.yankObligations[0].type, "policy.ObligationCreated");
 	},
 );
-
-// --- Scenario: Import a signed offline bundle ------------------------------
 
 let offlineSim: Simulation | undefined;
 

@@ -20,11 +20,6 @@ import {
 } from "../src/index.js";
 import type { JsonValue } from "../src/json.js";
 
-// S1-19: `hobo dev` boots a runtime-local Camp, collects + links the Bindle,
-// serves it locally, and live-tails the component-host events through the
-// Streamer — fully offline, no network. The ≤ 60 s cold budget is modeled as an
-// assertion on the in-process boot time.
-
 // SAFETY: `const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
 const KV_INTERFACE = "wasi:keyvalue/store@0.2.0" as InterfaceId;
 // SAFETY: `const HTTP_INCOMING = "wasi:http/incoming-handler@0.2.0" as InterfaceId;` is required at this I/O or test boundary.
@@ -44,9 +39,6 @@ const HELLO_BINDLE = {
 	},
 };
 
-// Build a DevRuntime backed by the real runtime-local component host + Streamer.
-// The hello-bindle guest reads a greeting from a KV provider and returns it —
-// proving an end-to-end offline serve with a linked import.
 function makeDevRuntime(): DevRuntime {
 	const events: ComponentHostEvent[] = [];
 	const componentHost = createRuntimeLocalComponentHost({
@@ -167,7 +159,6 @@ describe("hobo dev boots a runtime-local Camp offline", () => {
 			expect(envelope.data.withinColdBudget).toBe(true);
 			expect(envelope.data.coldBudgetMs).toBe(60_000);
 			expect(envelope.data.bootMs).toBeLessThan(60_000);
-			// Live-tailed component-host lifecycle through the Streamer.
 			expect(envelope.data.events).toEqual([
 				"component.Loaded",
 				"link.Established",

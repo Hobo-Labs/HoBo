@@ -67,7 +67,6 @@ describe("@hobo/events subscription-gateway boundary consumer contract", () => {
 			);
 			const observed = await sub.awaitSeq(result.seq);
 
-			// The recorded push carries a per-stream seq and a result count.
 			expect(observed.seq).toBe(interaction.request.body.seq["order:1001"]);
 			expect(observed.value.length).toBe(interaction.request.body.resultCount);
 

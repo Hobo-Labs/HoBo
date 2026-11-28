@@ -1,5 +1,3 @@
-// Barrel for the @hobo/cd conformance suites. Re-exported
-// from the package root; see README.md in this folder for the runbook.
 export {
 	ARTIFACT_STORE_ASSERTIONS,
 	ARTIFACT_STORE_SUITE,

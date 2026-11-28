@@ -1,5 +1,3 @@
-// adapters/traffic.ts: TrafficShifter over the real Station cutover
-// (executeRoutingCutover), against an in-memory TrafficRoutingPort.
 import {
 	runTrafficShifterConformance,
 	type TrafficShifterLike,
@@ -46,7 +44,6 @@ import {
 const tenantId = parseTenantId(TENANT);
 const SERVICE = "web";
 
-/** Routing state a provider would hold: the last fully realized plan is active. */
 class MemoryRoutingPort implements TrafficRoutingPort {
 	readonly provider = "simple" as const;
 	readonly applied: RoutingPlan[] = [];
@@ -54,7 +51,6 @@ class MemoryRoutingPort implements TrafficRoutingPort {
 	activeId: string | undefined;
 	degradeAbove = 101;
 
-	/** Acknowledge `full` at or above this candidate weight but leave the old split routing. */
 	stuckAbove = 101;
 
 	async apply(plan: RoutingPlan): Promise<ApplyResult> {
@@ -728,7 +724,7 @@ describe("rollout over Station cutover (end to end)", () => {
 
 	it("§10 provider reports success, traffic still split: non-converged until the deadline, then rolled back", async () => {
 		const r = await rollout((port) => {
-			port.stuckAbove = 100; // the final flip is acknowledged but never routes
+			port.stuckAbove = 100;
 		});
 		let snapshot = await r.orchestrator.run(r.plan, r.cdctx);
 		expect(snapshot.status).toBe("running");

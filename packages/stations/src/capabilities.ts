@@ -1,13 +1,3 @@
-/**
- * Station capabilities: the formal type behind the "PAM is a Station
- * capability" / "Session Replay is a Station capability" / "Station
- * sidecars" prose (ADR-0133 / ADR-0137 / ADR-0155). A capability is a
- * declared, schema-versioned facility a Station offers its occupants;
- * a manifest is the audited match of a declared set against evidence
- * observed on the occupying host. Matching is fail-closed: a declared
- * capability with no observation is missing, never assumed present.
- */
-
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isJsonObject, isJsonString } from "./json.js";
@@ -20,38 +10,27 @@ export const STATION_CAPABILITY_SCHEMA = "hobo.station-capability/v1" as const;
 export const STATION_CAPABILITY_MANIFEST_SCHEMA =
 	"hobo.station-capability-manifest/v1" as const;
 
-/** Closed capability vocabulary — one row per facility family a Station can offer. */
 export type StationCapabilityKind =
-	| "runtime" // language/host runtime (node, wasm host)
-	| "vcs" // version control the isolation backends require
-	| "isolation-backend" // rift / worktree (ADR-0139 platform matrix)
-	| "model-server" // local SLM endpoint (the $0 path)
-	| "toolchain" // hermetic shell toolchain (devenv/nix)
-	| "harness" // registered coding harnesses (agents init)
-	| "sidecar" // Station sidecars (dashboard / Evidence / evals)
-	| "pam" // Privileged Access Gateway (ADR-0133)
-	| "replay"; // Session Replay (ADR-0137)
+	| "runtime"
+	| "vcs"
+	| "isolation-backend"
+	| "model-server"
+	| "toolchain"
+	| "harness"
+	| "sidecar"
+	| "pam"
+	| "replay";
 
-/**
- * Where the capability claim comes from:
- * - "default": default-supplied by the platform itself (present unless an
- *   observation explicitly reports it absent);
- * - "discovered": claimed only from host evidence (fail-closed without it);
- * - "declared": operator-declared (still requires evidence to match).
- */
 export type StationCapabilityProvenance = "default" | "discovered" | "declared";
 
 export type StationCapability = Readonly<{
 	schema: typeof STATION_CAPABILITY_SCHEMA;
-	/** `capability:<kind>:<slug>` — stable id evidence and manifests key on. */
 	id: string;
 	kind: StationCapabilityKind;
 	slug: string;
 	title: string;
 	provenance: StationCapabilityProvenance;
-	/** Required capabilities gate explicit occupancy init; optional ones degrade. */
 	required: boolean;
-	/** How to obtain the capability when it is missing. */
 	remediation?: string;
 	metadata: Readonly<Record<string, string>>;
 }>;
@@ -99,10 +78,6 @@ function deepFreeze<T>(value: T): T {
 	return Object.freeze(value);
 }
 
-/**
- * Declare one Station capability. Parse-don't-validate: a bad spec throws
- * here, never later inside matching or persistence.
- */
 export function stationCapability(
 	spec: StationCapabilitySpec,
 ): StationCapability {
@@ -138,11 +113,9 @@ export function stationCapability(
 	});
 }
 
-/** One piece of host evidence about a declared capability. */
 export type StationCapabilityObservation = Readonly<{
 	capabilityId: string;
 	present: boolean;
-	/** Auditable evidence rows, e.g. "bin:/usr/bin/git", "http:127.0.0.1:11434". */
 	evidence: readonly string[];
 	detail?: string;
 }>;
@@ -159,7 +132,6 @@ export type MatchedStationCapability = Readonly<{
 export type StationCapabilityManifest = Readonly<{
 	schema: typeof STATION_CAPABILITY_MANIFEST_SCHEMA;
 	stationId: string;
-	/** True when every required capability matched. */
 	ok: boolean;
 	capabilities: readonly MatchedStationCapability[];
 	missingRequired: readonly string[];
@@ -167,12 +139,6 @@ export type StationCapabilityManifest = Readonly<{
 	generatedAt: string;
 }>;
 
-/**
- * Match a declared capability set against host observations.
- * Fail-closed: "discovered"/"declared" capabilities with no observation are
- * missing. "default" provenance is present-by-construction unless an
- * observation explicitly reports absence.
- */
 export function matchStationCapabilities(input: {
 	readonly stationId: string;
 	readonly declared: readonly StationCapability[];
@@ -225,7 +191,6 @@ export function matchStationCapabilities(input: {
 	});
 }
 
-/** Manifest location beside the Station's event log (discovery parallel to sidecars.json). */
 export function stationCapabilitiesPath(
 	hoboHome: string,
 	stationId: string,

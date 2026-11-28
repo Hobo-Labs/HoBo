@@ -1,17 +1,6 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Netlify TrafficRouting offerings (ADR-0143/0144; ADR-0182 I14).
- *
- * The audit against `@hobo/connectivity` found no Netlify profile and no
- * Netlify adapter. Every static deploy HoBo delivers is immutable and keeps
- * its own permalink, so the Station's in-process router can weight between
- * two deploys: that is the one offering realized. Netlify's own split testing
- * splits by git branch, and HoBo delivers immutable deploys rather than
- * branches, so it is declared absent rather than faked. `provider` is `other`:
- * the core union has no Netlify member and `@hobo/core` is not edited.
- */
 export const NETLIFY_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
@@ -32,7 +21,6 @@ const NO_DNS =
 const ALREADY_PUBLIC =
 	"Netlify deploys are already public; a funnel overlay has nothing to publish";
 
-/** Offerings Netlify cannot realize, declared absent rather than preview. */
 export const NETLIFY_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(

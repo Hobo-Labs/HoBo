@@ -1,32 +1,3 @@
-/**
- * Does `ResourceIntent` survive as a distinct shape, or is it a projection of
- * the request manifest?
- *
- * `@hobo/manifest-declaration` answered **yes, it survives**, with `placement`
- * as the decisive field. This file is a *second* answer, deliberately reached
- * from different sources, because agreeing with an inherited conclusion by
- * restating it is not checking it.
- *
- * Three independent lines, in increasing order of how hard they are to argue
- * with:
- *
- * 1. **The wire contracts, not the TypeScript.** The declaration's answer reads
- *    `.ts` declarations. The schema is the contract in this repo, so the same
- *    question is asked of the four `data-models/*.proto` files.
- * 2. **The parse boundary, at runtime.** Not "these files do not contain the
- *    token `placement`" — a grep says nothing about what the code does. The
- *    projection is actually performed: an intent's fields are handed to
- *    `parseCapabilityRequirement`, and what comes back is inspected.
- * 3. **The evaluator's inputs.** A relational constraint needs an operand. If
- *    the request manifest's evaluator cannot see a sibling node, no projection
- *    onto it can carry one.
- *
- * The result is agreement, and one correction: the request manifest does not
- * *refuse* the surviving fields, it **silently drops** them. That is a worse
- * failure than a refusal and a stronger argument for the shape surviving, since
- * a projection that loses fields without saying so is exactly the decomposition
- * defect this package exists to catch.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -38,7 +9,6 @@ const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (relative: string): string =>
 	readFileSync(`${REPO_ROOT}${relative}`, "utf8");
 
-/** Field names of a proto message, by message name. */
 function protoFields(source: string, message: string): readonly string[] {
 	const opener = new RegExp(`\\bmessage\\s+${message}\\s*\\{`, "u");
 	const match = opener.exec(source);
@@ -128,8 +98,6 @@ describe("the wire contracts, read instead of the TypeScript", () => {
 });
 
 describe("the projection, performed rather than argued about", () => {
-	// A real intent with everything the question turns on: a graph identity, an
-	// edge, an objective, and a relational placement constraint.
 	const INTENT = parseResourceIntent({
 		name: "sessions",
 		port: "kv",
@@ -161,8 +129,6 @@ describe("the projection, performed rather than argued about", () => {
 	});
 
 	it("loses all four to the capability requirement — silently, without a refusal", () => {
-		// The only projection that exists: the required profiles are the ask, and
-		// everything else is offered alongside to see whether it is carried.
 		// SAFETY: deliberately off-contract input; the test asserts the parser drops
 		// the fields it does not know rather than relying on their types.
 		const projected = parseCapabilityRequirement({
@@ -173,13 +139,9 @@ describe("the projection, performed rather than argued about", () => {
 			placement: INTENT.placement,
 		} as never);
 
-		// This is the correction to the inherited answer. The boundary does not
-		// refuse these — it drops them, and a caller that projected an intent this
-		// way would get a requirement back that looks fine and has lost the graph.
 		for (const field of ["name", "deps", "objective", "placement"]) {
 			expect(Object.hasOwn(projected, field)).toBe(false);
 		}
-		// And the parse did happen, so the assertion above is not about a throw.
 		expect(projected.requiredProfiles.map((p) => p.profileId)).toEqual([
 			"data.postgres/v1",
 		]);
@@ -187,11 +149,6 @@ describe("the projection, performed rather than argued about", () => {
 });
 
 describe("the evaluator has no operand for a relational constraint", () => {
-	// `placement.affinities` and `placement.spread` constrain a node relative to
-	// *another node in the same plan*. Selection is evaluated against a catalog
-	// of candidates; there is no channel through which a sibling could be seen,
-	// so projecting the constraint would mean inventing one — a change to the
-	// request manifest, not a projection of the declaration.
 	const SELECTION = read("packages/capability-profiles/src/selection.ts");
 	const PLACEMENT = read("packages/cloud/src/planner/placement.ts");
 

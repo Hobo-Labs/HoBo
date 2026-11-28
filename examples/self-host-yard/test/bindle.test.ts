@@ -87,9 +87,6 @@ describe("self-host-yard bindle", () => {
 		expect(second.manifestHash).toBe(first.manifestHash);
 		expect(second.manifest).toEqual(first.manifest);
 
-		// The committed hobo.bindle.json (what `hobo plan`/`up`/`down` read from
-		// this project dir) is exactly the source compile — one manifest, two
-		// representations, and it still parses through the manifest boundary.
 		// SAFETY: assertion to `ON.parse( await readFile(new URL("../hobo.bindle.json", import.meta.url), "utf8"), ) as unknown; ` is required at this boundary.
 		const artifact = JSON.parse(
 			await readFile(new URL("../hobo.bindle.json", import.meta.url), "utf8"),

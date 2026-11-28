@@ -6,7 +6,6 @@ import { createHoboDevLoop } from "../../hobo-dev-loop-contract/src/dev-loop.js"
 import { createSagaEngine } from "../../choreography-saga-engine-contract/src/choreography-saga-engine.js";
 import { type JsonValue, type JsonObject } from "./json.js";
 
-
 export const COLD_BOOT_BUDGET_MS = 60_000;
 export const EVENT_LOG_FILE = "events.jsonl";
 export const TIMING_ARTIFACT = "offline-timing.json";

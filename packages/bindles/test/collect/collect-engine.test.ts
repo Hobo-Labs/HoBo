@@ -16,9 +16,6 @@ import {
 
 const COMPONENT_HOST = { kind: "wasmtime", version: "46.0.1" } as const;
 
-// The hello-bindle: a data resource + a service bound to it. The same
-// declarations run two ways — enumerated statically for compileBindleManifest,
-// and run in collection mode for collectBindleManifest.
 function helloTarget(): CollectionTarget {
 	return {
 		bindleId: "hello-bindle",

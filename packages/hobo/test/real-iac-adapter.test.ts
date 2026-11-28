@@ -14,12 +14,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
-// E2E proof that the composed `hobo up`/`down` drives the REAL @hobo/iac-pulumi
-// adapter via the REAL @hobo/provider-cloudflare `realize()` — no mock
-// IacProvider. We inject a SPY that wraps the real adapter (so the real code path
-// runs) and records the declarative `hobo.iac-program/v1` programs handed to it;
-// each recorded program must pass the adapter's own `validateIacProgram`.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -42,8 +36,6 @@ interface SpyAdapter extends PulumiAutomationAdapter {
 	readonly destroyed: unknown[];
 }
 
-// Wrap the REAL adapter; delegate every call to it (real code path) while
-// recording the exact program each method received.
 function spyOnRealAdapter(): SpyAdapter {
 	// SAFETY: assertion required at this I/O or test boundary.
 	const real = createPulumiAutomationAdapter() as PulumiAutomationAdapter;
@@ -125,10 +117,6 @@ describe("composed hobo up/down drives the REAL @hobo/iac-pulumi adapter", () =>
 				"sessions",
 			]);
 
-			// The real adapter's apply ran once per resource (3), and every program
-			// handed to it is a valid `hobo.iac-program/v1` program that the
-			// adapter's own validateIacProgram accepts (i.e. it came from the real
-			// provider.realize(), not the kernel's shape-A execution descriptor).
 			expect(adapter.applied.length).toBe(3);
 			expect(adapter.previewed.length).toBeGreaterThanOrEqual(3);
 			for (const program of adapter.applied) {
@@ -143,8 +131,6 @@ describe("composed hobo up/down drives the REAL @hobo/iac-pulumi adapter", () =>
 				expect((program as { provider: string }).provider).toBe("pulumi");
 			}
 
-			// Observable adapter effect: applied outputs (real per-resource-stack
-			// bindings) flowed back and were recorded on the deployment.
 			const down = envelope(
 				(await cli.run(["down", "--json"], { cwd })).stdout,
 			);
@@ -156,7 +142,6 @@ describe("composed hobo up/down drives the REAL @hobo/iac-pulumi adapter", () =>
 				"sessions",
 			]);
 
-			// down tore each resource down through the real adapter's destroy.
 			expect(adapter.destroyed.length).toBe(3);
 			for (const program of adapter.destroyed) {
 				expect(() => validateIacProgram(program)).not.toThrow();

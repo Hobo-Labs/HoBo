@@ -1,6 +1,3 @@
-// Architecture guards for the component host (I8, I9, R2): no ambient
-// network, DNS, environment or randomness; no shell or process escape hatch;
-// generated record types only.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";

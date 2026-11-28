@@ -9,8 +9,6 @@ const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(packageRoot, "../..");
 const daemon = join(packageRoot, "scripts/isolated-worker-daemon.mts");
 
-// Each case starts a Node process that loads the daemon's import graph from
-// source; under a full parallel test run that takes longer than the default.
 describe("isolated-worker-daemon.mts startup imports", {
 	timeout: 60_000,
 }, () => {
@@ -35,7 +33,6 @@ describe("isolated-worker-daemon.mts startup imports", {
 	it("resolves @hobo/ci-gh-actions under node --experimental-strip-types", () => {
 		const combined = run({});
 		expect(combined).not.toMatch(/ERR_MODULE_NOT_FOUND/u);
-		// The store is SQLite, so the first missing input is the GitHub App.
 		expect(combined).toMatch(/missing HOBO_CI_GITHUB_APP_ID/u);
 	});
 
@@ -54,7 +51,6 @@ describe("isolated-worker-daemon.mts startup imports", {
 			{
 				cwd: repoRoot,
 				encoding: "utf8",
-				// No pnpm on PATH, and not inside a turbo task.
 				env: { PATH: empty, HOME: empty, NODE_OPTIONS: "" },
 			},
 		);

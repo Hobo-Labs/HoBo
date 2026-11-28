@@ -1,6 +1,3 @@
-// CampPolicy (ADR-0182 D24, I23): Rail bindings folded from the Camp spec
-// stream, written by promotion only. INFORM sets the candidate; ENFORCE swaps
-// the enforced Rail and clears the candidate; restore rolls back.
 import { create, toJson } from "@bufbuild/protobuf";
 import type { JsonObject } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -56,7 +53,6 @@ function harness() {
 
 type Harness = ReturnType<typeof harness>;
 
-/** Record that the Rail Freight qualified on an INFORM node (the I23 precondition). */
 async function qualifyOnInform(
 	h: Harness,
 	freight: ReturnType<typeof railFreight>,
@@ -115,7 +111,6 @@ describe("CampPolicy: inform then enforce", () => {
 		expect(bound.ok).toBe(true);
 		const binding = await h.policy.binding(PROD);
 		expect(binding?.candidateRailDigest).toBe(RAIL_A);
-		// No enforced binding yet: the Station's active Rail still decides.
 		expect(binding?.enforcedRailDigest).toBe("");
 		expect(governingRailDigest(binding, RAIL_B)).toBe(RAIL_B);
 		expect(h.authorizer.calls.map((c) => c.action)).toEqual(["rail.promote"]);
@@ -167,7 +162,6 @@ describe("CampPolicy: inform then enforce", () => {
 		if (refused.ok) return;
 		expect(refused.reasons[0]?.code).toBe(SHADOW_REQUIRED);
 		expect(refused.reasons[0]?.remediation).toMatch(/INFORM/u);
-		// Qualification on an ENFORCE node does not count as shadowing.
 		await qualifyOnInform(h, freight, PolicyMode.ENFORCE);
 		const still = await h.policy.bind(
 			{
@@ -243,7 +237,6 @@ describe("CampPolicy: inform then enforce", () => {
 		const events = h.store.events(CD_STREAMS.campSpec(PROD));
 		expect(events.map((e) => e.type)).toEqual([CD_EVENTS.PolicyBindingChanged]);
 		const body = events[0]?.data;
-		// Exactly the protobuf JSON of the record: what WP4's spec fold decodes.
 		expect(body).toEqual(
 			toJson(
 				PolicyBindingRecordSchema,
@@ -297,7 +290,6 @@ describe("CampPolicy: rollback restores the previous digest", () => {
 		expect(binding?.enforcedRailDigest).toBe(RAIL_A);
 		expect(binding?.candidateRailDigest).toBe("");
 		expect(h.authorizer.calls.at(-1)?.action).toBe("rollback");
-		// Repeating the restore is a no-op.
 		const again = await h.policy.restore(
 			{ campId: PROD, promotionId: promotion("p3") },
 			h.ctx,

@@ -1,7 +1,3 @@
-// Parse-don't-validate boundary of the CD read API (WP12). A raw request
-// becomes a `CdReadRoute` whose ids, enums and positions are already parsed;
-// nothing past this module re-checks a string. Paths that are not read
-// routes parse to `{kind: "feed"}` and go to the delivery feed unchanged.
 import type { EventPosition } from "@hobo/core";
 import {
 	type CampConditionType,
@@ -22,7 +18,6 @@ import type {
 } from "../ports.js";
 import { serviceRefusal } from "./errors.js";
 
-/** A path segment: 1–256 printable chars, no slash, not `.`/`..`. */
 export type PathName = string & { readonly __brand: "cd.service.PathName" };
 
 export type ConditionFilter = Readonly<{
@@ -86,7 +81,6 @@ const PATTERNS: readonly (readonly [RegExp, string])[] = [
 	[/^\/v1\/cd\/stream$/, "stream"],
 ];
 
-/** Route names as metric attributes (no ids, bounded cardinality). */
 export const READ_ROUTE_NAMES = Object.freeze(PATTERNS.map(([, name]) => name));
 
 const PRINTABLE = /^[\x21-\x7e]+$/;
@@ -276,7 +270,6 @@ function asCamp(o: Outcome<PathName>): Outcome<CampId> {
 	return o as Outcome<CampId>;
 }
 
-/** Parse a raw `/v1/cd/` request into a read route, or `feed` for everything else. */
 export function parseReadRequest(request: FeedRequest): Outcome<ParsedRequest> {
 	const url = new URL(request.path, "http://cd.invalid");
 	const path = url.pathname;
@@ -420,7 +413,6 @@ function parseRoute(
 			};
 		}
 		default: {
-			// stream
 			const lastEventId =
 				header(request, "last-event-id") ?? q.get("after") ?? undefined;
 			const after =

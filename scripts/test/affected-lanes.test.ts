@@ -445,7 +445,6 @@ describe("main-gate scope", () => {
 				mode: "filtered",
 				filters: ["--filter=./packages/ci"],
 			});
-			// Bumping or dropping one is the same kind of edit.
 			assert.equal(
 				lanes(TOML.replace('betterleaks = "1.10.1"', 'betterleaks = "1.11.0"'))
 					.mode,
@@ -476,7 +475,6 @@ describe("main-gate scope", () => {
 				lanes(withSyft.replace('HOBO_MISE = "1"', 'HOBO_MISE = "0"')).mode,
 				"all",
 			);
-			// A CI-only name outside [tools] is not a pin.
 			assert.equal(lanes(`${TOML}\n[env]\nsyft = "1"\n`).mode, "all");
 			assert.equal(
 				lanesWithRoots(["mise.toml"], {
@@ -506,7 +504,6 @@ describe("main-gate scope", () => {
 				scope(LOCK.replace("sha256:aaaa", "sha256:cccc")),
 				"repo-wide",
 			);
-			// The lock is CI-only but the manifest moved a real tool.
 			assert.equal(
 				scope(LOCK, TOML.replace('node = "24"', 'node = "26"')),
 				"repo-wide",
@@ -520,19 +517,16 @@ describe("main-gate scope", () => {
 					present,
 					rootReader({ "mise.lock": { base, head } }),
 				).mode;
-			// The node block follows syft's; its header carries a comment.
 			const commented = `${SYFT_LOCK}\n${LOCK.replace("[[tools.node]]", "[[tools.node]] # pinned")}`;
 			assert.equal(
 				scope(commented, commented.replace("24.22.2", "24.23.0")),
 				"repo-wide",
 			);
-			// `syft.plugin` is another tool, not syft.
 			const plugin = `${LOCK}\n[[tools."syft.plugin"]]\nversion = "1"\n`;
 			assert.equal(
 				scope(plugin, plugin.replace('version = "1"', 'version = "2"')),
 				"repo-wide",
 			);
-			// [tools] ends at `[env] # shell`: the key below it is an env var.
 			const env = `${TOML.replace("[env]", "[env] # shell")}syft = "1"\n`;
 			assert.equal(
 				lanesWithRoots(["mise.toml"], {

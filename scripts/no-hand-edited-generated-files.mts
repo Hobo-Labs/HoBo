@@ -20,7 +20,6 @@ const generator = files.some(
 		/^packages\/ci-vercel\/scripts\/generate-(assets|proxy-bundle|offers)\.mts$/.test(
 			file,
 		) ||
-		// The relay's offer manifests: `generate-offers.mts` lowers them.
 		/^packages\/ci-vercel\/offers\/[^/]+\.provider\.yaml$/.test(file) ||
 		/^src\/draft\/technical-proofs\/s0-04-protobuf-cue-codegen\/packages\/schema-tools\/(src\/(?!_generated\/)|package\.json)/.test(
 			file,
@@ -34,8 +33,6 @@ const generator = files.some(
 );
 if (schema || generator) process.exit(0);
 
-// A change to the relay's inputs accounts for its own generated asset only;
-// it must not authorize unrelated generated files in the same commit.
 const relayAsset = "packages/ci-vercel/src/_generated-assets/relay-assets.ts";
 const relayInput = files.some(
 	(file) =>
@@ -45,15 +42,6 @@ const relayInput = files.some(
 if (relayInput && generated.every((file) => file === relayAsset))
 	process.exit(0);
 
-// Catch-up case: output for a schema that landed in an *earlier* commit.
-//
-// The staged-source check above is a proxy for the property that actually
-// matters — "generated output matches its sources" — and the proxy cannot
-// express a commit that only emits missing output. Rather than widen it into an
-// allowlist, verify the real property: the codegen checker regenerates into a
-// scratch tree and reports DRIFT if anything on disk differs from what the
-// current schemas produce. CLEAN means these files are exactly what the
-// generator emits, which is the whole point of the guard.
 const protobufOutputs = generated.every((file) =>
 	/^packages\/[^/]+\/src\/_generated\//.test(file),
 );
@@ -86,10 +74,6 @@ if (protobufOutputs) {
 		`Generated protobuf outputs staged without a source change, and codegen reports ${status || "an unreadable result"}.`,
 	);
 }
-// The sandbox proxy bundle is built from the relay's own sources, so a source
-// change regenerates it with no generator or schema change to stage. Same
-// answer as above: check the real property. The generator's --check rebuilds
-// the bundle and fails unless the file on disk is exactly what it emits.
 const proxyBundle =
 	"packages/ci-vercel/src/_generated-assets/sandbox-proxy-bundle.ts";
 if (generated.every((file) => file === proxyBundle)) {

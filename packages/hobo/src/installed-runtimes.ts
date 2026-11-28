@@ -1,7 +1,3 @@
-/**
- * Durable set of Camp host runtimes enabled on this HOBO_HOME yard.
- * Written by `hobo add runtime-*`; read by broker placement hard-fail.
- */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -14,6 +10,7 @@ import {
 	runtimeInstallIdToHost,
 } from "./runtime-catalog.js";
 
+// public-contract: stable exported contract literal
 export const INSTALLED_RUNTIMES_SCHEMA = "hobo.installed-runtimes/v1" as const;
 
 export interface InstalledRuntimesState {
@@ -31,7 +28,6 @@ export function loadInstalledRuntimes(
 ): InstalledRuntimesState {
 	const path = installedRuntimesPath(hoboHome);
 	if (!existsSync(path)) {
-		// Bootstrap: local only until operator installs more.
 		return {
 			schemaVersion: INSTALLED_RUNTIMES_SCHEMA,
 			runtimes: ["runtime-local"],

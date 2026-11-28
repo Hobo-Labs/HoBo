@@ -267,7 +267,6 @@ describe("receipt signing surface", () => {
 		const canonical = canonicalResolutionJson(receipt);
 		assert.ok(canonical.includes("bundle-1"));
 		assert.ok(canonical.includes("reauthorization-required"));
-		// Tampering with claim evidence changes the signed bytes.
 		const tampered = canonicalResolutionJson({
 			...receipt,
 			guest: { ...guest, claimActionCount: 0 },

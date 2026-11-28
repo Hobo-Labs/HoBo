@@ -1,22 +1,9 @@
-/**
- * Git fixtures for the sibling-pin tests: a hermetic git environment, a
- * throwaway "remote" repository, a work tree whose submodule has not been
- * initialised yet, and a clone to lend objects.
- *
- * Nothing here touches the network or the user's git configuration.
- */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type GitConfig = readonly (readonly [string, string])[];
 
-/**
- * git with the user's configuration (signing, hooks, identity) switched off, a
- * fixed identity, and the file transport allowed so a local repository can be
- * a submodule remote. Child processes inherit it, so the script under test
- * sees exactly the same git.
- */
 export function gitEnv(
 	extra: NodeJS.ProcessEnv = {},
 	more: GitConfig = [],
@@ -64,15 +51,9 @@ export function git(
 export interface Remote {
 	readonly dir: string;
 	readonly url: string;
-	/** Full commit ids, oldest first. */
 	readonly shas: readonly string[];
 }
 
-/**
- * A repository with three commits, each rewriting the same four files. Two
- * made with different labels share no commit, so a test can have a second
- * upstream whose history is not the first one's.
- */
 export function makeRemote(parent: string, label = "revision"): Remote {
 	const dir = join(parent, "remote");
 	mkdirSync(dir, { recursive: true });
@@ -99,9 +80,7 @@ export interface PinsFileOptions {
 	readonly path?: string;
 	readonly repo?: string;
 	readonly sparse?: readonly string[] | null;
-	/** Pin the gitlink at this commit instead of one of the remote's (it need not exist there). */
 	readonly gitlink?: string;
-	/** Raw JSON of the manifest's `assets` section. */
 	readonly assets?: string;
 }
 
@@ -125,11 +104,6 @@ export function pinsJson(
 	return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-/**
- * A work tree shaped like a fresh clone: `external/lib` is a gitlink at
- * `remote.shas[pinned]`, `.gitmodules` names the remote, and the submodule has
- * not been initialised.
- */
 export function makeWork(
 	parent: string,
 	remote: Remote,
@@ -151,7 +125,6 @@ export function makeWork(
 	);
 	git(stage, ["add", "-A"]);
 	if (options.gitlink !== undefined) {
-		// After `add -A`, which would re-read the submodule's own HEAD.
 		git(stage, [
 			"update-index",
 			"--cacheinfo",
@@ -164,7 +137,6 @@ export function makeWork(
 	return work;
 }
 
-/** A full clone to lend objects: `--reference` against it needs no download. */
 export function makeReference(parent: string, remote: Remote): string {
 	const dir = join(parent, "reference");
 	git(parent, ["clone", "-q", "--no-hardlinks", remote.dir, dir]);

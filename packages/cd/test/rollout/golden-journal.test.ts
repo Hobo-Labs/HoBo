@@ -1,12 +1,3 @@
-// Golden journal corpus for every event body WP10 appends: rollout.Lowered and
-// the rollout.* ledger on cd-rollout-<id>, plus the engine command ledger on
-// cd-rollout-engine-<id>. A second, frozen corpus holds the same streams under
-// the ledger's first type names (`cd.rollout.*`, which no durable journal
-// accepts); it must keep folding and replaying through the upcaster. Two guarantees: a stream recorded today
-// still folds and replays to its recorded outcome (old bodies stay readable),
-// and the orchestrator still writes byte-identical bodies for the same inputs
-// (no silent body drift). Refresh deliberately with UPDATE_GOLDEN=1 and review
-// the diff.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +27,6 @@ const legacyCorpusPath = resolve(
 	here,
 	"golden/rollout-journal.legacy-cd-rollout.json",
 );
-// The durable journal's event-type rule (@hobo/core EVENT_TYPE_PATTERN).
 const STORABLE = /^[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9]*$/;
 
 type GoldenEvent = Readonly<{

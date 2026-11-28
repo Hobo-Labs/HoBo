@@ -1,7 +1,6 @@
 import { BuildError } from "./errors.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BUILD_MANIFEST_SCHEMA = "hobo.build-manifest/v1" as const;
 export const DEFAULT_SOURCE_DATE_EPOCH = "2026-01-01T00:00:00.000Z";
 

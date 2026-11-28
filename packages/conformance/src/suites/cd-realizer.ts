@@ -1,5 +1,3 @@
-// Realizer conformance (ADR-0182 D5/D6, I5, I9, I12). A Realizer drives one
-// Camp toward a desired Set and reports only what it observed.
 import {
 	abortedSignal,
 	type CdConformanceReport,
@@ -33,24 +31,18 @@ export const REALIZER_ASSERTIONS = Object.freeze([
 ] as const);
 export type RealizerAssertion = (typeof REALIZER_ASSERTIONS)[number];
 
-/** The target a realizer drives, as the harness controls and inspects it. */
 export interface RealizerTarget {
-	/** Count of mutating calls the target has received. */
 	mutations(): number;
-	/** Make the next apply fail with a provider error. */
 	failNextApply?(): void;
-	/** Make the next apply report success while changing nothing. */
 	lieOnNextApply?(): void;
 }
 
 export interface RealizerHarness<TSet extends SetRecordLike, TResolved, TCtx> {
 	readonly subject: string;
-	/** A fresh realizer bound to a fresh target. */
 	create(): Promise<{
 		realizer: RealizerLike<RealizeInputLike<TSet, TResolved>, TCtx>;
 		target: RealizerTarget;
 	}>;
-	/** A desired-state input for the bound target. `signal` overrides the default live signal. */
 	input(signal?: AbortSignal): RealizeInputLike<TSet, TResolved>;
 	ctx(): TCtx;
 }

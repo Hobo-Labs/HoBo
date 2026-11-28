@@ -1,12 +1,3 @@
-/**
- * Whole-solution trust gates.
- *
- * {@link evaluateTrust} answers "may this one adapter be selected". A compiler
- * that resolves a multi-provider deployment needs the same answer for a *set*
- * of products at one instant, plus a single digest it can pin into a receipt.
- * This module adds exactly that, and a bridge into the selection-level
- * {@link TrustPolicy} so the two layers cannot drift apart.
- */
 import type { TrustPolicy } from "@hobo/capability-profiles";
 
 import { sha256Of } from "./canonical.js";
@@ -25,12 +16,6 @@ import {
 // public-contract: aggregate trust gate result schema identifier consumed by selection.
 export const TRUST_BUNDLE_SCHEMA_VERSION = "hobo.trust-bundle-verdict/v1";
 
-/**
- * Why evidence is or is not usable right now.
- *
- * `absent` and `unparseable` deliberately share the shape of `expired`: the
- * caller never has to remember which flavour of missing it is looking at.
- */
 export type EvidenceFreshnessState =
 	| "fresh"
 	| "absent"
@@ -45,17 +30,9 @@ export type EvidenceFreshness = {
 	readonly detail: string;
 	readonly ageMs?: number;
 	readonly expiresAtMs?: number;
-	/** Milliseconds of validity left. Never negative. */
 	readonly remainingMs?: number;
 };
 
-/**
- * Freshness on its own, without the rest of the requirement.
- *
- * Split out because a compiler frequently wants to say "this product's
- * evidence went stale" as a distinct fact from "this product failed a check",
- * and because the answer is a pure function of two instants and a window.
- */
 export function evaluateEvidenceFreshness(
 	evidence: TrustEvidence | undefined,
 	nowMs: number,
@@ -109,7 +86,6 @@ export function evaluateEvidenceFreshness(
 }
 
 export type TrustBundleSubject = {
-	/** How the caller names this product. Usually a product definition id. */
 	readonly subjectId: string;
 	readonly evidence?: TrustEvidence;
 };
@@ -126,7 +102,6 @@ export type TrustBundleReason = TrustReason & { readonly subjectId: string };
 // parallel-type-allowed: the whole-solution answer, produced only by evaluateTrustBundle so that bundleDigest is always the digest of these exact subjects; hobo.trust.v1.TrustBundleVerdict is its wire projection.
 export type TrustBundleVerdict = {
 	readonly schemaVersion: typeof TRUST_BUNDLE_SCHEMA_VERSION;
-	/** True only when every subject is selectable. One bad product sinks it. */
 	readonly selectable: boolean;
 	readonly evaluatedAtMs: number;
 	readonly verifierId: string;
@@ -138,18 +113,10 @@ export type TrustBundleVerdict = {
 export type TrustBundleInput = {
 	readonly subjects: readonly TrustBundleSubject[];
 	readonly requirement: TrustRequirement;
-	/** Canonical evaluation instant. This function never reads a clock. */
 	readonly nowMs: number;
 	readonly verifier?: EvidenceVerifier;
 };
 
-/**
- * Evaluate every product a solution depends on at one instant.
- *
- * Subjects are evaluated in sorted order and the reasons are flattened with
- * their subject attached, so the digest is a statement about the whole
- * solution's trust posture rather than about iteration order.
- */
 export function evaluateTrustBundle(
 	input: TrustBundleInput,
 ): TrustBundleVerdict {
@@ -162,8 +129,6 @@ export function evaluateTrustBundle(
 	const subjects: TrustBundleSubjectVerdict[] = [];
 	const reasons: TrustBundleReason[] = [];
 	for (const subject of ordered) {
-		// A duplicated subject would double-count reasons and make the digest
-		// depend on how many times a caller listed the same product.
 		if (seen.has(subject.subjectId)) continue;
 		seen.add(subject.subjectId);
 		const verdict = evaluateTrust(
@@ -218,18 +183,9 @@ export function evaluateTrustBundle(
 }
 
 export type TrustPolicyBridgeOptions = {
-	/** Sponsor exposure ceiling in minor units. Zero unless stated. */
 	readonly sponsorBudgetMinorUnits?: number;
 };
 
-/**
- * Project an operator's {@link TrustRequirement} onto the selection-level
- * {@link TrustPolicy}.
- *
- * Selection and trust evaluate different inputs — a catalog candidate versus a
- * signed evidence record — but they must not disagree about the ceiling. This
- * is the single place the two are reconciled.
- */
 export function trustPolicyFromRequirement(
 	requirement: TrustRequirement,
 	options: TrustPolicyBridgeOptions = {},
@@ -241,8 +197,6 @@ export function trustPolicyFromRequirement(
 		maximumClaimActions: requirement.maximumClaimActions,
 		maximumEvidenceAgeMs: requirement.maximumEvidenceAgeMs,
 		requireExportProfile: requirement.requireExportProfile,
-		// A budget of zero is not permission to spend: sponsorship stays denied
-		// unless the requirement allows it *and* a budget was funded.
 		allowSponsor: requirement.allowSponsor && sponsorBudgetMinorUnits > 0,
 		allowPack: requirement.allowPack,
 		allowBridge: requirement.allowBridge,

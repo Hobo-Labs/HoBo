@@ -31,10 +31,6 @@ function decoratorContext<T>(bag: DecoratorBag): T {
 	return bag as never;
 }
 
-// ---------------------------------------------------------------------------
-// Granular decorators, stage-3 call shape — all decorators optional.
-// ---------------------------------------------------------------------------
-
 test("stage-3: @intent/@returns + bare @trainable class compose and register", async () => {
 	class Program {
 		trainableMethod(name?: string): string {
@@ -52,8 +48,6 @@ test("stage-3: @intent/@returns + bare @trainable class compose and register", a
 		name: "trainableMethod",
 		metadata,
 	});
-	// Applied as decorators in app code; invoked programmatically here in
-	// TC39 evaluation order (method decorators, then the class decorator).
 	returns("Hello World! or Hello, <name>! when supplied")(
 		Program.prototype.trainableMethod,
 		methodContext,
@@ -79,7 +73,7 @@ test("stage-3: @intent/@returns + bare @trainable class compose and register", a
 		record.fact.output.returns?.description,
 		"Hello World! or Hello, <name>! when supplied",
 	);
-	assert.deepEqual(record.fact.rubric, {}); // optional — none declared
+	assert.deepEqual(record.fact.rubric, {});
 	const run = resolveDeclared<string | undefined, string>(
 		"Program.trainableMethod",
 	);
@@ -120,8 +114,6 @@ test("stage-3: bare @trainable class with NO other decorators infers everything"
 	);
 });
 
-// A field's example is kept as given; the manifest lowers it with
-// JSON.stringify when the method registers, as it always has.
 function pendingParam(method: string, name: ReturnType<typeof description>) {
 	return {
 		[PENDING_GROUNDINGS]: new Map([
@@ -152,7 +144,6 @@ test("a field's example reaches the options as given and is lowered to JSON at r
 	const record = getTrainable("Greeter.greet");
 	assert.ok(record);
 	assert.equal(record.options.params?.name?.example, example);
-	// JSON.stringify drops the function member.
 	assert.equal(record.fact.params.name?.exampleJson, '{"name":"Ada"}');
 });
 
@@ -226,11 +217,6 @@ test("description() doubles as a FieldDescription value for stage-3 params maps"
 	);
 });
 
-// ---------------------------------------------------------------------------
-// Ambient declarations: `export declare class` never runs decorators —
-// scanDeclaredTrainables honors the exact syntax statically.
-// ---------------------------------------------------------------------------
-
 const AMBIENT = `
 @trainable
 export declare class Program {
@@ -299,7 +285,6 @@ test("generateDeclaredRegistrations emits a grounded, runnable defineGrounding",
 	assert.match(generated, /defineGrounding\(/);
 	assert.match(generated, /"methodRef": "Program\.trainableMethod"/);
 
-	// The stub imports only names @hobo/runtime exports, so it compiles.
 	const runtime = await import("../src/index.js");
 	const imported = generated.match(
 		/^import \{ ([^}]+) \} from "@hobo\/runtime";$/mu,
@@ -309,7 +294,6 @@ test("generateDeclaredRegistrations emits a grounded, runnable defineGrounding",
 		assert.ok(Object.hasOwn(runtime, name), `@hobo/runtime exports ${name}`);
 	}
 
-	// The generated options object must actually register: evaluate it.
 	const optionsJson = generated.slice(
 		generated.indexOf("defineGrounding(") + "defineGrounding(".length,
 		generated.lastIndexOf(");"),

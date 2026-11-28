@@ -18,16 +18,12 @@ import {
 } from "./budget-fence-settlement.js";
 import { isJsonNumber, isJsonString } from "./json.js";
 
-/** Local durable authority: one shared SQLite file, synchronous transactions,
- * atomic journal/head CAS. Multiple local processes/connections may admit;
- * distributed hosts need a transactional adapter to their shared database. */
 export function createSqliteBudgetAdmissionAuthority(options: {
 	path: string;
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
 	unpricedScopeTrust?: IacUnpricedScopeTrust;
 	iacPricedSettlementTrust?: IacPricedSettlementTrust;
-	/** Trusted server clock; caller-supplied command timestamps cannot revive evidence. */
 	now?: () => string;
 }): BudgetAdmissionAuthority & {
 	configure(

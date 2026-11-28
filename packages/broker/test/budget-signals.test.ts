@@ -197,8 +197,6 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 		return { fold, appended };
 	}
 
-	// usage 50 -> 95 (cross 0.8) -> credit to 75 (recover 0.8) -> 105
-	// (re-cross 0.8, cross 1.0): four distinct signal identities.
 	const first = await runPipelineOnce();
 	assert.deepEqual(
 		first.fold.signals.map((signal) => [
@@ -215,13 +213,10 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 	);
 	assert.equal(first.appended, 4);
 
-	// Second replay of the same journal: recorded signals are seen, nothing
-	// new is emitted or appended.
 	const second = await runPipelineOnce();
 	assert.equal(second.fold.signals.length, 0);
 	assert.equal(second.appended, 0);
 
-	// Golden materialized budget state after replay.
 	assert.deepEqual(second.fold.state, {
 		tenantId: "tenant-a",
 		budgetUsd: 100,
@@ -232,8 +227,6 @@ test("milestone: replaying the journal twice emits each threshold signal exactly
 		crossed: { "0.8": true, "1": true },
 	});
 
-	// Even a blind re-append of the first fold's signals is journal-deduped
-	// via meta.idempotencyKey.
 	const revision = journal.getStreamHead(stream)?.revision ?? 0;
 	const blind = await journal.append(
 		stream,

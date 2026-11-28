@@ -2,10 +2,6 @@ syntax = "proto3";
 
 package hobo.sdk.resilience_semantics_annex.v1;
 
-// Data shapes for the HOBO-516 resilience semantics annex. These mirror the
-// fixtures and case results produced by `src/resilience-semantics-annex.mjs`
-// so the executable conformance facts have a language-neutral schema for the
-// later SDK conformance lane.
 
 message ResilienceSemanticsSpec {
   string version = 1;
@@ -19,8 +15,6 @@ message RetryPlan {
   string seed = 3;
 }
 
-// One ordered domain fact (event) in a resilience scenario, e.g.
-// effect.Attempted, provider.Failed, retry.Scheduled, workflow.Terminal.
 message ResilienceFact {
   string type = 1;
   uint32 attempt = 2;

@@ -1,12 +1,3 @@
-/**
- * The ephemeral-state suite against a real Valkey or Redis over RESP/TCP.
- *
- * Runs when a server binary is available: `HOBO_VALKEY_SERVER_BIN`, or
- * `valkey-server` / `redis-server` on PATH. Skipped otherwise, so the suite
- * does not need the binary; the same cases run on the in-memory engine in
- * `ephemeral-state.test.ts`. This is the lane that checks the Lua scripts
- * themselves — the in-memory engine only mirrors them.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { type AddressInfo, createServer, Socket } from "node:net";
 

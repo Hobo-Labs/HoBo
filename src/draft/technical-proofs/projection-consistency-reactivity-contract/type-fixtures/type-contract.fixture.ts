@@ -59,8 +59,6 @@ const changeFeedProjection = declareProjection({
 const changeFeedLiteralTrue: true = changeFeedProjection.reactive;
 assertReactiveProjection(changeFeedProjection);
 
-// A strong cross-Camp projection's tradeoff warning preserves the declared level
-// and surfaces it via the typed `preservedLevel` field (never silently downgraded).
 const strongCrossCamp = declareProjection({
   name: "GlobalAccountBalance",
   readModel: "AccountBalance",

@@ -1,5 +1,3 @@
-// Pattern selection: deterministic, gated, lexicographic, and never silently
-// downgraded. Every assertion here is about the decision record — no data moves.
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -40,7 +38,6 @@ const SCHEMA: DatasetSchema = parseDatasetSchema({
 
 const PERMANENT: readonly CustodyRole[] = ["source", "target", "event-log"];
 
-/** One custody point per role; a bounded copy gets a deadline. */
 function points(
 	roles: readonly CustodyRole[],
 	regions: Partial<Record<CustodyRole, string>> = {},
@@ -54,7 +51,6 @@ function points(
 	}));
 }
 
-/** A verdict over a path that names the given roles and nothing else. */
 function verdictOver(roles: readonly CustodyRole[]) {
 	return evaluateCustodyPath({
 		path: parseCustodyPath({ points: points(roles) }),
@@ -63,8 +59,6 @@ function verdictOver(roles: readonly CustodyRole[]) {
 	});
 }
 
-// Every place any pattern puts data, so the custody gate is not what decides
-// the cases that are about something else.
 const OK = verdictOver(CUSTODY_ROLES);
 
 const DENIED = evaluateCustodyPath({
@@ -95,12 +89,6 @@ function fresh(...engines: string[]): ConformanceEvidence[] {
 
 type Omissible = "source" | "target" | "schema";
 
-/**
- * A request that selects `snapshot-and-tail`, with overrides. `without` names
- * members to leave out: under `exactOptionalPropertyTypes` an absent member
- * is not the same as one set to `undefined`, and the selector is given the
- * former.
- */
 function request(
 	overrides: Partial<SelectionRequest> = {},
 	without: readonly Omissible[] = [],
@@ -252,7 +240,6 @@ describe("selectMigrationPattern", () => {
 					reason.code === "PORT_MISSING" && reason.detail.includes("capture"),
 			),
 		);
-		// With a budget that covers the copy, offline-copy is what remains.
 		const patient = selectMigrationPattern(
 			request({
 				source: engine("alpha", { omit: ["capture"] }),
@@ -385,7 +372,6 @@ describe("selectMigrationPattern", () => {
 				source: withNative("alpha"),
 				target: withNative("alpha"),
 				evidence: fresh("alpha"),
-				// Require nothing the hub alone could offer, so realization decides.
 				constraints: { maxWriteFreezeMs: 5_000, requiredRollback: "none" },
 			}),
 		);
@@ -394,8 +380,6 @@ describe("selectMigrationPattern", () => {
 		);
 		assert.equal(natives.length, 1);
 		assert.equal(natives[0]?.profile, "migration.alpha.replicate/v1");
-		// The hub still wins here because it brings a reverse tail: rollback
-		// strength orders before realization.
 		assert.equal(decision.selected?.realization, "hub");
 		const noReverse = selectMigrationPattern(
 			request({
@@ -440,13 +424,10 @@ describe("selectMigrationPattern", () => {
 					candidate.pattern === "snapshot-and-tail" &&
 					candidate.realization === "native",
 			);
-		// The transport ports are the engine's business: not needed natively.
 		const transportFree = native(["snapshot", "capture"], ["apply", "capture"]);
 		assert.equal(transportFree?.eligible, true);
 		assert.equal(transportFree?.reverseTail, false);
 		assert.equal(transportFree?.rollbackInSoak, "to-snapshot");
-		// The fence and the digest are not: whoever carries the records, the
-		// cutover is still fenced and verified by the executor.
 		const unfenced = native(["fence"], []);
 		assert.equal(unfenced?.eligible, false);
 		assert.deepEqual(
@@ -480,8 +461,6 @@ describe("selectMigrationPattern", () => {
 		assert.equal(decision.selected?.pattern, "stream-handoff");
 	});
 
-	// ── gates that used to fail open on malformed input ──────────────────────
-
 	test("evidence is judged by its most recent entry, and the worst at that instant — never by the first match", () => {
 		const entry = (
 			outcome: ConformanceEvidence["outcome"],
@@ -491,7 +470,6 @@ describe("selectMigrationPattern", () => {
 			selectMigrationPattern(
 				request({ evidence: [...alpha, ...fresh("beta")] }),
 			);
-		// The same two runs at the same instant, in either order.
 		for (const evidence of [
 			[entry("pass"), entry("fail")],
 			[entry("fail"), entry("pass")],
@@ -502,14 +480,12 @@ describe("selectMigrationPattern", () => {
 			assert.deepEqual(codes(decision), ["EVIDENCE_FAILED"]);
 		}
 		const yesterday = "2026-11-09T00:00:00.000Z";
-		// A later failure outvotes an earlier pass, wherever it sits in the list.
 		assert.deepEqual(codes(decide(entry("fail"), entry("pass", yesterday))), [
 			"EVIDENCE_FAILED",
 		]);
 		assert.deepEqual(codes(decide(entry("pass", yesterday), entry("fail"))), [
 			"EVIDENCE_FAILED",
 		]);
-		// A later pass is the engine fixed and re-run.
 		assert.equal(
 			decide(entry("fail", yesterday), entry("pass")).selected?.pattern,
 			"snapshot-and-tail",
@@ -518,8 +494,6 @@ describe("selectMigrationPattern", () => {
 			decide(entry("pass"), entry("fail", yesterday)).selected?.pattern,
 			"snapshot-and-tail",
 		);
-		// The most recent run decides freshness too: an old pass beside it
-		// neither helps nor hurts.
 		assert.deepEqual(
 			codes(
 				decide(
@@ -553,7 +527,6 @@ describe("selectMigrationPattern", () => {
 			"EVIDENCE_POSTDATED",
 			"EVIDENCE_POSTDATED",
 		]);
-		// One microsecond is after now; a real pass beside it does not rescue it.
 		const beside = selectMigrationPattern(
 			request({
 				evidence: [
@@ -572,7 +545,7 @@ describe("selectMigrationPattern", () => {
 
 	test("evidence whose checkedAt is not a strict RFC 3339 instant cannot be shown fresh", () => {
 		for (const checkedAt of [
-			"2026-11-10T00:00:00", // no offset: local time to Date.parse
+			"2026-11-10T00:00:00",
 			"2026-11-09",
 			"Mon, 09 Nov 2026 00:00:00 GMT",
 			"2026-11-09T00:00:00+99:99",
@@ -614,7 +587,6 @@ describe("selectMigrationPattern", () => {
 				);
 			}
 		}
-		// Zero is an estimate, and it fits a zero budget.
 		assert.equal(
 			selectMigrationPattern(
 				request({
@@ -651,15 +623,12 @@ describe("selectMigrationPattern", () => {
 				/now must be an RFC 3339 instant with an explicit offset/u,
 			);
 		}
-		// One instant in another spelling is the same decision.
 		assert.equal(
 			selectMigrationPattern(request({ now: "2026-11-10T09:00:00+09:00" }))
 				.digest,
 			selectMigrationPattern(request()).digest,
 		);
 	});
-
-	// ── the verdict must cover what the pattern creates ──────────────────────
 
 	test("a verdict over only source and target selects nothing: every pattern creates a copy it did not judge", () => {
 		const twoEnds = verdictOver(["source", "target"]);
@@ -674,7 +643,6 @@ describe("selectMigrationPattern", () => {
 				"CUSTODY_INCOMPLETE: snapshot-and-tail (hub) creates relay, capture-log, retiring-source; the custody path behind the verdict names no such point",
 			],
 		);
-		// Every authority and change: nothing is selectable on two ends alone.
 		for (const [authority, change, without] of [
 			["authoritative", "placement", []],
 			["authoritative", "paradigm", []],
@@ -724,22 +692,17 @@ describe("selectMigrationPattern", () => {
 					},
 				}),
 			);
-		// No capture log named: nothing that tails can be chosen. offline-copy
-		// has a reverse tail here, so it retains the target's log too.
 		const noLog = without("capture-log");
 		assert.equal(noLog.selected, undefined);
 		assert.deepEqual(codes(noLog), ["CUSTODY_INCOMPLETE"]);
 		assert.deepEqual(codes(noLog, "log-pivot"), ["CUSTODY_INCOMPLETE"]);
 		assert.deepEqual(codes(noLog, "offline-copy"), ["CUSTODY_INCOMPLETE"]);
-		// No retiring source named: log-pivot keeps its source, so it survives.
 		const noRetiring = without("retiring-source");
 		assert.deepEqual(codes(noRetiring), ["CUSTODY_INCOMPLETE"]);
 		assert.deepEqual(codes(noRetiring, "offline-copy"), ["CUSTODY_INCOMPLETE"]);
 		assert.equal(noRetiring.selected?.pattern, "log-pivot");
-		// No relay named: the hub carries every record through the runner.
 		const noRelay = without("relay");
 		assert.equal(noRelay.selected, undefined);
-		// A staging artifact is never implied.
 		assert.equal(
 			without("staging-artifact").selected?.pattern,
 			"snapshot-and-tail",
@@ -758,8 +721,6 @@ describe("selectMigrationPattern", () => {
 					},
 				],
 			});
-		// No relay on the path. The native transfer carries no record through
-		// the runner, so it alone is covered.
 		const noRelay = selectMigrationPattern(
 			request({
 				change: "placement",
@@ -776,7 +737,6 @@ describe("selectMigrationPattern", () => {
 			),
 			["CUSTODY_INCOMPLETE"],
 		);
-		// offline-copy without a reverse tail retains no change log at all.
 		const noReverse = selectMigrationPattern(
 			request({
 				target: engine("beta", { omit: ["capture"] }),

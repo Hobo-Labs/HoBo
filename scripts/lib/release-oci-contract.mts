@@ -55,7 +55,6 @@ export type ImageConfigExpectation = {
 	labels: string[];
 };
 
-/** Semver for `org.opencontainers.image.version` (matches `build-release-oci-image.mts`). */
 export function releaseOciLabelVersion(
 	env: NodeJS.ProcessEnv = process.env,
 ): string {
@@ -69,7 +68,6 @@ export function expectedConfig(
 	manifest: ReleaseOciManifest,
 	image: ReleaseOciImage,
 	revision: string,
-	/** Semver label value — use `releaseOciLabelVersion()`, not raw `HOBO_RELEASE_VERSION`. */
 	version: string,
 ): ImageConfigExpectation {
 	const repo = ghcrRepository(manifest, image);

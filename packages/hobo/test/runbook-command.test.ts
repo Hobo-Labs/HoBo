@@ -15,10 +15,6 @@ import {
 	RUNBOOK_EXECUTOR_REASON,
 } from "../src/runbook-command.js";
 
-// `hobo runbook <file>` executes an ordered sequence of HoBo diagnostic steps
-// against the live deployment (the shared runtime), then reports per-step
-// outcomes. Read-only steps make it replayable.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -91,7 +87,6 @@ describe("createRunbookCommand", () => {
 				"verify",
 				"doctor",
 			]);
-			// inspect reflects the real deployment run just before.
 			const inspect = result.data.steps.find(
 				(s: { verb: string }) => s.verb === "inspect",
 			);
@@ -124,7 +119,6 @@ describe("createRunbookCommand", () => {
 	});
 
 	it("reports a failed runbook when a step fails", async () => {
-		// `claim` with no account fails — the runbook surfaces it.
 		const runbook = {
 			name: "bad",
 			steps: [{ verb: "doctor" }, { verb: "claim" }],
@@ -199,8 +193,6 @@ describe("createRunbookCommand", () => {
 	});
 });
 
-// The CD RunbookExecutor (WP6, D4): RUNBOOK hooks run the same runbook
-// documents through the same composed CLI; `hobo runbook` is unchanged.
 describe("createRunbookExecutor", () => {
 	function fakeCli(statuses: Record<string, { ok: boolean; status: string }>) {
 		const calls: string[][] = [];

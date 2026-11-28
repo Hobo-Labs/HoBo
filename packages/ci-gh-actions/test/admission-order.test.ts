@@ -9,7 +9,6 @@ import {
 import type { GithubTransport } from "../src/github.js";
 import { run } from "./fixtures.js";
 
-/** The run fields admission reads; a run id with no entry answers 404. */
 type RunEntry = Readonly<{ event: string; startedAt: string | null }>;
 
 function transport(runs: ReadonlyMap<number, RunEntry>) {
@@ -72,7 +71,6 @@ it("looks each run up once and retries a failed lookup next tick", async () => {
 	const { github, calls } = transport(runs);
 	const order = createAdmissionOrder(github);
 	const items = [ref(2), ref(1), ref(1, 11)];
-	// The unknown run waits behind the pull request it cannot be ranked against.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
 	).toEqual([1, 11, 2]);
@@ -239,8 +237,6 @@ it("admits a run's longest expected job first, inside the rank and run order", a
 		ref(1, 13),
 		ref(1, 12),
 	];
-	// Newer push run 2 leads the older run 1; both outrank the pull request.
-	// Inside run 1, the 85 s job leads and the job with no history (14) goes last.
 	expect(
 		(await order(items, (item) => item)).map((item) => item.jobId),
 	).toEqual([21, 12, 13, 11, 14, 31]);

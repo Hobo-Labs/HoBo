@@ -10,10 +10,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// HOBO-711: the AWS provider is `hobo add`-able through the M0 catalog, and
-// once installed+approved the Planner matches ports the base (cloudflare)
-// provider does not advertise — database resolves to @hobo/provider-aws.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -29,10 +25,6 @@ const LEDGER_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
 	resources: {
-		// This catalog test asks only for a database. Comparing compute offers
-		// from both providers requires a separate normalized hosting quote.
-		// `hobo:database` lowers to the bare `database` port — advertised by the
-		// AWS equivalence table (RDS PostgreSQL), not by the cloudflare base set.
 		ledger: { type: "data.v1", port: "hobo:database" },
 	},
 };
@@ -51,7 +43,6 @@ describe("hobo add aws (composed catalog entry)", () => {
 		);
 
 		try {
-			// Unsatisfiable before install: the base provider set has no database.
 			const before = envelope(
 				(await cli.run(["plan", "--json"], { cwd: dir })).stdout,
 			);
@@ -74,7 +65,6 @@ describe("hobo add aws (composed catalog entry)", () => {
 			);
 			expect(ledger.provider).toBe("@hobo/provider-aws");
 
-			// The registry read view agrees: installed + approved, six ports.
 			const registry = envelope(
 				(await cli.run(["registry", "--json"], { cwd: dir })).stdout,
 			);

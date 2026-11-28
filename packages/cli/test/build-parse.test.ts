@@ -1,25 +1,3 @@
-/**
- * Build-manifest and service-declaration parsing.
- *
- * Pure parse-don't-validate boundary: everything downstream of these functions
- * gets a typed value or an error with a stable code, never a half-checked
- * record. So the branches worth pinning are the refusals, and three of them do
- * real work:
- *
- *   - **Paths must stay inside the project.** An absolute path, a Windows
- *     drive letter, or a `..` segment in a manifest writes outside the tree a
- *     build was asked to touch. This runs on manifests that can arrive from a
- *     repository, so it is a boundary, not a lint.
- *   - **Digests must be well-formed.** A build manifest exists to make an
- *     artifact identifiable; a malformed digest makes the manifest a claim
- *     rather than a record.
- *   - **An OCI artifact must say why it fell back.** Containers are the escape
- *     hatch from the wasm-component path, and an escape hatch that does not
- *     record its reason is how a fallback becomes the silent default.
- *
- * Normalization is pinned alongside, because `component` collapsing to `wasm`
- * in two separate places is exactly the kind of duplicated rule that drifts.
- */
 import { describe, expect, it } from "vitest";
 
 import { BuildError } from "../src/build/errors.js";
@@ -72,7 +50,7 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it.each([null, undefined, "api", 42, []])("rejects %s", (raw) => {
-		if (Array.isArray(raw)) return; // arrays are objects; covered separately
+		if (Array.isArray(raw)) return;
 		expect(() => parseServiceDeclaration(raw)).toThrow(BuildError);
 	});
 
@@ -94,8 +72,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("names the offending service in the error detail", () => {
-		// The detail is what a CLI renders; a message alone would not say which
-		// of twenty services failed.
 		try {
 			parseServiceDeclaration({ name: "Bad" });
 			expect.unreachable();
@@ -155,9 +131,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("reports an unknown language for an extensionless entrypoint", () => {
-		// Found by this test: `slice(lastIndexOf("."))` returns the last
-		// *character* when there is no dot, so "Makefile" inferred the language
-		// "e". Guarding the no-dot case is also what makes "unknown" reachable.
 		expect(
 			parseServiceDeclaration({ name: "api", entrypoint: "Makefile" }).language,
 		).toBe("unknown");
@@ -170,8 +143,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("collapses the component runtime to wasm", () => {
-		// Two names for one thing downstream; collapsing here means nothing
-		// downstream has to know both.
 		expect(
 			parseServiceDeclaration({ name: "api", runtime: "component" }).runtime,
 		).toBe("wasm");
@@ -231,7 +202,6 @@ describe("parseServiceDeclaration", () => {
 	});
 
 	it("does not reject a path merely containing two dots", () => {
-		// `..` must be a whole segment; `a..b` is an ordinary name.
 		expect(
 			parseServiceDeclaration({ name: "api", entrypoint: "src/a..b.ts" })
 				.entrypoint,
@@ -255,8 +225,6 @@ describe("parseBuildManifest", () => {
 	});
 
 	it("rejects an unknown schema rather than guessing", () => {
-		// The schema constant is the contract; accepting anything else would let
-		// a future format be misread as this one.
 		expect(() =>
 			parseBuildManifest(manifest({ schema: "hobo.build-manifest/v2" })),
 		).toThrow(/Unexpected manifest schema/u);
@@ -329,16 +297,12 @@ describe("build artifacts", () => {
 		`sha256:${"A".repeat(64)}`,
 		`sha256:${"a".repeat(63)}`,
 	])("rejects the malformed digest %s", (digest) => {
-		// A manifest exists to make an artifact identifiable; a malformed digest
-		// makes it a claim rather than a record.
 		expect(() =>
 			parseBuildManifest(manifest({ artifacts: [artifact({ digest })] })),
 		).toThrow(/Invalid artifact digest/u);
 	});
 
 	it("requires an OCI artifact to say why it fell back", () => {
-		// A fallback that does not record its reason is how the fallback quietly
-		// becomes the default.
 		expect(() =>
 			parseBuildManifest(
 				manifest({
@@ -471,7 +435,6 @@ describe("parseBuildRequestFromInvocation", () => {
 	});
 
 	it("prefers a flag over the environment", () => {
-		// A flag is the more specific statement of intent.
 		expect(
 			parseBuildRequestFromInvocation(
 				context,

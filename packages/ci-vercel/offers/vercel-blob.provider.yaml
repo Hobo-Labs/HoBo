@@ -1,11 +1,3 @@
-# Vercel Blob (private) as the hosted relay's cache (ADR-0179 amendment,
-# phase 5). Lowered into the @hobo/pricing catalog by
-# scripts/generate-offers.mts.
-#
-# UNVERIFIED: these are Pro operation rates as @hobo/provider-vercel-blob
-# records them, not checked for this store, and Hobby's included operations
-# are not modelled. The relay admits a pay-as-you-go offer only under a cap
-# the owner declares (HOBO_CI_CACHE_OFFERS_JSON); the default cap is zero.
 schema: hobo.provider-manifest/v1
 
 provider:

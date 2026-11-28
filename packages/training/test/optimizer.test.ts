@@ -209,8 +209,6 @@ describe("trace capture", () => {
 describe("port conformance", () => {
 	it("satisfies core's TrainingEnginePort", async () => {
 		const engine = createBuiltinTrainingEngine(CONFIG);
-		// Type-level: BuiltinTrainingEngine extends TrainingEnginePort, and the
-		// assignment below only compiles if the shapes agree.
 		const port: TrainingEnginePort = engine;
 
 		expect(isJsonString(port.engineId)).toBe(true);

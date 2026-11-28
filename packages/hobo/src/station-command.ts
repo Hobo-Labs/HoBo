@@ -1,12 +1,3 @@
-/**
- * `hobo station` — ops/setup family for Station occupancy (NOT a lifecycle verb).
- * up/down remain the only lifecycle verbs for app graphs.
- *
- * Subcommands: init | up | down | status | rails list|publish|approve|activate|status
- *
- * Pure ops delegated to `@hobo/management` (shared with control API + MCP).
- */
-
 import type { CommandModule } from "@hobo/cli";
 import {
 	createManagementContext,

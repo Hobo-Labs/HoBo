@@ -18,10 +18,6 @@ import {
 	type ResourceIntent,
 } from "../src/index.js";
 
-// Routing, not refusal: a provider that is not answering is routed around,
-// and the resource lands on the next cheapest provider that satisfies it.
-// Neon being down never stops a deployment that has another vendor configured.
-
 function postgres(
 	providerId: string,
 	marginalPrice: string,

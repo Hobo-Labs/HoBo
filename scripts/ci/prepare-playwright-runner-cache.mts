@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/**
- * Stage a verified headless-shell zip for docker build context (runner base).
- */
 import { copyFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {

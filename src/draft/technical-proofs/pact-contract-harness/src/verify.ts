@@ -2,7 +2,6 @@ import type { PactDocument, PactRequest, PactResponse } from "./pact.js";
 import { isRecursiveSubset } from "./subset.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export interface ProviderStub {
   readonly name: string;
   handle(request: PactRequest): PactResponse | Promise<PactResponse>;

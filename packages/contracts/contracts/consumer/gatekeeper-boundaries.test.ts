@@ -158,12 +158,10 @@ describe("Gatekeeper -> Obligation Engine + Cost/Quota consumer contracts", () =
 			},
 		});
 
-		// obligation boundary: recorded blocked:false
 		expect(obligationPact.interactions[0].response.body.blocked).toBe(false);
 		expect(result.obligations.every((obligation) => obligation.satisfied)).toBe(
 			true,
 		);
-		// cost boundary: recorded ok:true with numeric remaining/limit
 		expect(result.costQuota.ok).toBe(true);
 		expect(isJsonNumber(result.costQuota.remaining)).toBe(true);
 		expect(result.decision).toBe("allow");

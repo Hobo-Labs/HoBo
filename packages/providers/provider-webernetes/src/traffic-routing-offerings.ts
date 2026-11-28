@@ -1,15 +1,6 @@
 import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
-/**
- * Webernetes TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
- *
- * The local yard serves each station at its own loopback, private-network or
- * `.hobo.test` endpoint. Nothing in front of the stations routes traffic, and a
- * local yard is never publicly reachable. What remains is the portable
- * in-process floor: the local router (or the caller) splits traffic between
- * two stations. `provider` is `other`: the core union has no Webernetes member.
- */
 export const WEBERNETES_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile =
 	Object.freeze({
 		provider: "other",
@@ -27,7 +18,6 @@ const NO_DNS = "A local yard owns no DNS zone it could steer";
 const NOT_PUBLIC =
 	"A local yard is never publicly reachable; a public funnel would contradict its locality";
 
-/** Offerings Webernetes cannot realize, declared absent rather than preview. */
 export const WEBERNETES_TRAFFIC_ROUTING_ABSENT: readonly AbsentTrafficOffering[] =
 	Object.freeze(
 		(

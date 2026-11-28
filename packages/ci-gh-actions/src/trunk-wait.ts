@@ -40,7 +40,6 @@ export type TrunkWaitState = Readonly<{
 
 export type TrunkWaitCache = Map<string, TrunkWaitState>;
 
-/** Default wait before admission-blocked main trunk work is offered to fleet. */
 // public-contract: bounds box memory hold without lowering standard class sizes.
 export const DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS = 45_000;
 
@@ -88,10 +87,6 @@ export function evaluateMainTrunkFleetDefer(
 		deferMs: number;
 		nowMs: number;
 		trunkSlots: number | undefined;
-		/**
-		 * ADDITIONAL standard launches that still fit in box memory right now
-		 * (`mainShardParallelLaunchCapacity`, #1926) — remaining room, not a total.
-		 */
 		parallelTrunkLaunchCapacity?: number;
 		localTrunkReserved: number;
 		fleetWitness: PeerCapacityWitness | undefined;
@@ -112,9 +107,6 @@ export function evaluateMainTrunkFleetDefer(
 		effectiveDeferMs,
 		input.nowMs,
 	);
-	// Memory capacity is remaining room, so the box's trunk ceiling is what is
-	// already reserved plus what still fits (same shape as
-	// `effectiveParallelLaunchSlots`), never below the configured trunk slots.
 	const trunkSlotCeiling = Math.max(
 		input.trunkSlots ?? 0,
 		input.parallelTrunkLaunchCapacity === undefined

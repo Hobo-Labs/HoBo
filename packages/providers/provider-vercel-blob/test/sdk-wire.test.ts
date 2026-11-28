@@ -1,10 +1,3 @@
-/**
- * What the pinned `@vercel/blob` 2.8.2 SDK puts on the wire for the options
- * the binding passes, and how it decodes the answers the binding depends on.
- * The binding's correctness rests on these mappings, so they are asserted
- * against the real SDK, not a stand-in: a version bump that changes one
- * fails here.
- */
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
 import { createManualClock } from "@hobo/kv-redis-compatible";
 import {

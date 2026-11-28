@@ -20,7 +20,6 @@ export interface BudgetPolicy {
 
 export type SparseBudgetPolicy = Partial<BudgetPolicy>;
 
-/** Writable sparse policy used while parsing untrusted JSON field-by-field. */
 export type MutableSparseBudgetPolicy = {
 	preferLocal?: boolean;
 	routing?: RoutingPolicy;
@@ -32,9 +31,7 @@ export type MutableSparseBudgetPolicy = {
 };
 
 export interface StationTarget {
-	/** Deployable target id shown in the Home Station. */
 	readonly id: string;
-	/** One provider-specific Yard owned by the Environment Station. */
 	readonly yardId: string;
 	readonly providerId: string;
 	readonly resourceClass: ResourceClass;
@@ -74,7 +71,6 @@ export interface DeployPlan {
 	readonly skipped: readonly SkippedTarget[];
 	readonly replicas: number;
 	readonly summary: string;
-	/** A Junction composes multiple provider-specific Yards; one host needs none. */
 	readonly junction: JunctionComposition | null;
 }
 
@@ -91,7 +87,6 @@ export const DEFAULT_BUDGET_POLICY: Readonly<BudgetPolicy> = Object.freeze({
 	]),
 });
 
-/** Merge only authored keys: defaults -> app -> deployment. */
 export function mergeBudgetPolicy(
 	appPolicy: SparseBudgetPolicy = {},
 	deploymentPolicy: SparseBudgetPolicy = {},

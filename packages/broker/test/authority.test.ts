@@ -128,8 +128,6 @@ describe("broker environments — admin controls", () => {
 		});
 		const result = await broker.resolve(baseRequest);
 		expect(result.outcome).toBe("resolved");
-		// The cheaper provider exists in the catalog but is outside the
-		// approved environment, so the approved (pricier) provider wins.
 		expect(result.receipt?.placements[0]?.providerId).toBe(
 			"@hobo/provider-pricey",
 		);

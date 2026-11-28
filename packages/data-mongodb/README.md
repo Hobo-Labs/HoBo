@@ -2,7 +2,7 @@
 
 The MongoDB engine for HoBo's engine-neutral data contract
 ([ADR-0177](../../docs/design/adr/03-data-plane.md#adr-0177),
-[design note](../../docs/design/data-engines-continuous-migration.md)): the
+[design note](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/data-engines-continuous-migration.md)): the
 `data.mongodb/v1` profile and the `@hobo/data-core` SPI — datasets, records,
 snapshot, change capture, apply, verify, write fence, retire — over an
 **injected executor**. The runtime package imports no driver and no BSON

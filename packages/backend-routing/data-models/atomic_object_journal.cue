@@ -32,8 +32,6 @@ import "list"
 	digest:       #AtomicJournalDigest
 }
 
-// Digest, ordering, exact byte bounds, immutable identity and CAS conditions
-// are also checked by the executable voter; CUE alone cannot establish them.
 #AtomicObjectJournalState: {
 	contract:         "hobo.atomic-object-journal/v1"
 	fleetId:          #AtomicJournalName

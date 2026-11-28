@@ -1,19 +1,3 @@
-/**
- * This module's honest-scope header says the bytes it emits are contract-shaped
- * rather than real `jco` output — but the *guards* around them are real, and
- * they are what the digest is worth anything for.
- *
- * A reproducible build is a claim that the same sources produce the same bytes
- * on any machine, at any time. Every check here defends one way that claim can
- * quietly stop being true: a toolchain version drifting, a source reading the
- * clock or the working directory, an unset `SOURCE_DATE_EPOCH`. None of those
- * make the build *fail* — they make it succeed and produce a different digest
- * somewhere else, which is the same as having no digest at all.
- *
- * So these tests break each guard's premise and check it refuses, and then
- * check the property the guards exist to protect: byte-identical output across
- * repeated runs, and a digest that moves when — and only when — an input does.
- */
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +23,6 @@ export const service = {
 };
 `;
 
-/** A scratch source tree. Never writes outside the OS temp dir. */
 function sourceRoot(files: Record<string, string> = {}): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-componentize-"));
 	mkdirSync(join(dir, "src"), { recursive: true });
@@ -84,10 +67,6 @@ describe("the toolchain pin", () => {
 	});
 
 	test("any drifted version is refused, naming which one", async () => {
-		// A toolchain version is an input to the output bytes. Building against a
-		// different one produces a different artifact from the same sources —
-		// exactly the thing a reproducibility claim rules out — and the message
-		// has to say which tool moved or the operator has four to check.
 		for (const name of Object.keys(PINNED_TOOLCHAIN)) {
 			const message = await messageOf(() =>
 				build(sourceRoot(), {
@@ -101,8 +80,6 @@ describe("the toolchain pin", () => {
 	});
 
 	test("a missing toolchain entry is refused", async () => {
-		// An absent version is not "use the default" — it is a build whose inputs
-		// nobody recorded.
 		const { jco, ...withoutJco } = PINNED_TOOLCHAIN;
 		void jco;
 		expect(
@@ -111,8 +88,6 @@ describe("the toolchain pin", () => {
 	});
 
 	test("the CI matrix carries the pinned toolchain", () => {
-		// The matrix is what CI runs; if it drifted from the pin, every CI build
-		// would fail the guard the moment someone regenerated it.
 		expect(DEFAULT_CI_MATRIX.toolchain).toEqual(PINNED_TOOLCHAIN);
 	});
 
@@ -128,8 +103,6 @@ describe("SOURCE_DATE_EPOCH", () => {
 	});
 
 	test("an empty epoch is refused", async () => {
-		// An unset variable arrives as an empty string; letting it through would
-		// silently drop the one control that pins build time.
 		expect(
 			await messageOf(() => build(sourceRoot(), { sourceDateEpoch: "" })),
 		).toContain("invalid_source_date_epoch");
@@ -150,8 +123,6 @@ describe("SOURCE_DATE_EPOCH", () => {
 	});
 
 	test("the epoch reaches the recorded metadata", async () => {
-		// It is an input to the digest; recording it is what lets someone
-		// reproduce the build later.
 		const result = await build(sourceRoot());
 		expect(result.component.metadata).toContain(EPOCH);
 	});
@@ -159,9 +130,6 @@ describe("SOURCE_DATE_EPOCH", () => {
 
 describe("the determinism guard on sources", () => {
 	test("a source reading the clock is refused", async () => {
-		// This is the guard that matters most. `Date.now()` in a source does not
-		// break the build — it makes the build succeed and produce different
-		// behaviour on every run, which no digest can detect.
 		const message = await messageOf(() =>
 			build(
 				sourceRoot({
@@ -174,8 +142,6 @@ describe("the determinism guard on sources", () => {
 	});
 
 	test("each forbidden construct is caught and named", async () => {
-		// Four separate ways to make output depend on the environment; the
-		// message names which one so the fix is obvious.
 		const cases: Array<[string, string]> = [
 			["Date.now", "export const t = Date.now();"],
 			["new Date", "export const t = new Date();"],
@@ -192,8 +158,6 @@ describe("the determinism guard on sources", () => {
 	});
 
 	test("the offending file is named", async () => {
-		// A monorepo build reads many sources; without the path the developer has
-		// to grep for it.
 		const message = await messageOf(() =>
 			build(sourceRoot({ "src/helper.ts": "export const r = Math.random();" })),
 		);
@@ -201,8 +165,6 @@ describe("the determinism guard on sources", () => {
 	});
 
 	test("whitespace between the call and its parens does not evade the check", async () => {
-		// The patterns allow it deliberately. A guard defeated by a formatter is
-		// not a guard.
 		expect(
 			await messageOf(() =>
 				build(
@@ -215,8 +177,6 @@ describe("the determinism guard on sources", () => {
 	});
 
 	test("a source merely mentioning the name in prose is not refused", async () => {
-		// The patterns require the call shape, so a comment explaining why the
-		// code avoids `Date.now` does not itself trip the guard.
 		await expect(
 			build(
 				sourceRoot({
@@ -227,8 +187,6 @@ describe("the determinism guard on sources", () => {
 	});
 
 	test("only TypeScript sources are read", async () => {
-		// A README describing `Math.random()` is not a source, and refusing the
-		// build over it would be a guard nobody could satisfy.
 		await expect(
 			build(sourceRoot({ "src/notes.md": "we never call Math.random() here" })),
 		).resolves.toBeDefined();
@@ -246,8 +204,6 @@ describe("the required service entry", () => {
 	});
 
 	test("a service with no health body is refused", async () => {
-		// The smoke expectation is derived from the source; without a body there
-		// is nothing to assert the built component against.
 		expect(
 			await messageOf(() =>
 				build(
@@ -271,7 +227,6 @@ describe("the required service entry", () => {
 
 describe("reproducibility", () => {
 	test("two builds of the same tree produce identical bytes", async () => {
-		// The property everything above exists to protect.
 		const root = sourceRoot();
 		const first = await build(root);
 		const second = await build(root);
@@ -282,22 +237,6 @@ describe("reproducibility", () => {
 	});
 
 	test("the digest depends on the source directory's name", async () => {
-		// Recorded as-is rather than asserted as correct, because it is at odds
-		// with the declared "workspace path remap" control.
-		//
-		// The remap exists so a build does not depend on where it was checked
-		// out. But the *rule* is written into the metadata as
-		// `${basename(root)}=>/workspace/hello-bindle`, so the directory name is
-		// itself an input to the digest: identical sources built from
-		// `/tmp/abc/` and `/tmp/def/` produce different digests.
-		//
-		// In practice the checkout is consistently named `hello-bindle`, so this
-		// does not bite today. It does mean the remap does not deliver the
-		// property its name claims, and a CI job using a per-run workspace
-		// directory would produce a different digest every time.
-		//
-		// Not changed here: the digest is recorded in proof artifacts and
-		// goldens across the repo, so altering how it is computed is a much
 		// wider change than a coverage pass should make unilaterally.
 		const first = await build(sourceRoot());
 		const second = await build(sourceRoot());
@@ -305,7 +244,6 @@ describe("reproducibility", () => {
 	});
 
 	test("the same directory rebuilt produces the same digest", async () => {
-		// The property that does hold, and the one the build actually relies on.
 		const root = sourceRoot();
 		expect((await build(root)).component.digest).toBe(
 			(await build(root)).component.digest,
@@ -313,8 +251,6 @@ describe("reproducibility", () => {
 	});
 
 	test("changing a source changes the digest", async () => {
-		// The other direction: a digest that ignored content would be useless as
-		// an identity.
 		const original = await build(sourceRoot());
 		const changed = await build(
 			sourceRoot({
@@ -341,8 +277,6 @@ describe("reproducibility", () => {
 	});
 
 	test("the declared controls name what makes the build reproducible", async () => {
-		// This list is documentation that ships with the artifact; a control
-		// listed but not implemented would be a claim nobody checks.
 		const result = await build(sourceRoot());
 		expect(result.reproducibility.controls).toEqual(
 			expect.arrayContaining([
@@ -367,9 +301,6 @@ describe("the produced artifact", () => {
 	});
 
 	test("the bytes are structurally valid wasm", async () => {
-		// Contract-shaped rather than real componentize-js output, but still a
-		// module a wasm parser accepts — otherwise the digest describes something
-		// no tool could ever read.
 		const result = await build(sourceRoot());
 		expect(WebAssembly.validate(new Uint8Array(result.component.bytes))).toBe(
 			true,
@@ -387,8 +318,6 @@ describe("the produced artifact", () => {
 	});
 
 	test("a digest that does not match the bytes is refused", async () => {
-		// The digest is the artifact's identity. Accepting a mismatched one would
-		// let a substituted payload travel under a trusted name.
 		const result = await build(sourceRoot());
 		expect(() =>
 			validateWasmComponentArtifact({
@@ -410,8 +339,6 @@ describe("the produced artifact", () => {
 	});
 
 	test("a WIT world disagreeing with the embedded metadata is refused", async () => {
-		// The metadata is inside the bytes and the field is outside them; a
-		// mismatch means one of the two was rewritten after the build.
 		const result = await build(sourceRoot());
 		expect(() =>
 			validateWasmComponentArtifact({
@@ -424,10 +351,6 @@ describe("the produced artifact", () => {
 
 describe("the OCI descriptor", () => {
 	test("the component is the manifest's single layer, by digest and size", async () => {
-		// An OCI descriptor is a content address; digest and size together are
-		// what a registry verifies a pull against. They live on the *layer*, not
-		// at the top level — the top level describes the artifact, the layer
-		// describes the bytes.
 		const result = await build(sourceRoot());
 		const descriptor = buildOciDescriptor(result.component);
 		expect(descriptor.artifactType).toBe(COMPONENT_MEDIA_TYPE);
@@ -440,8 +363,6 @@ describe("the OCI descriptor", () => {
 	});
 
 	test("the config blob addresses the metadata separately from the bytes", async () => {
-		// The metadata is pulled as its own blob, so its digest has to describe
-		// the metadata rather than the component.
 		const result = await build(sourceRoot());
 		const config = buildOciDescriptor(result.component).manifest.config;
 		expect(config.size).toBe(Buffer.byteLength(result.component.metadata));
@@ -449,8 +370,6 @@ describe("the OCI descriptor", () => {
 	});
 
 	test("the manifest is annotated with its title, source and WIT world", async () => {
-		// These are what a registry browser shows; without the WIT world an
-		// operator cannot tell which interface a stored component implements.
 		const result = await build(sourceRoot());
 		const annotations = buildOciDescriptor(result.component).manifest
 			.annotations;
@@ -464,8 +383,6 @@ describe("the OCI descriptor", () => {
 	});
 
 	test("rebuilding the same directory produces an identical descriptor", async () => {
-		// Scoped to one directory for the reason recorded above: the digest — and
-		// therefore the descriptor — carries the source directory's name.
 		const root = sourceRoot();
 		expect((await build(root)).oci).toEqual((await build(root)).oci);
 	});

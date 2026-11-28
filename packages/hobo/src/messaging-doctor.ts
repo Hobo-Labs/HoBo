@@ -1,8 +1,3 @@
-/**
- * Pure messaging readiness section for `hobo doctor` (ADR-0138).
- * Kept free of @hobo/cli so it is unit-testable without the full CLI graph.
- */
-
 import { diagnoseKafkaReadiness } from "@hobo/provider-kafka";
 import { diagnoseDaprReadiness } from "@hobo/runtime-dapr";
 

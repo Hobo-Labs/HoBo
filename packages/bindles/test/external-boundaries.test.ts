@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { bindle, externalBoundaryViolations } from "../src/index.js";
 
-// A Yard holds nothing external: a Bindle's b.external() is refused at
-// placement until the selected provider's Marketplace relationship is verified.
-
 describe("externalBoundaryViolations", () => {
 	it("refuses an external another vendor runs, naming the junction remediation", () => {
 		const app = bindle("shop", (b) => ({

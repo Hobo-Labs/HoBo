@@ -13,7 +13,6 @@ const listed: Ticket = api["api.tickets.list"].returns;
 const exactTicketId: string = ticket.id;
 const closed: boolean = closeResult.closed;
 
-// Raw escape hatches stay unknown until a caller narrows them.
 const raw = bindings.legacyRows.execute("select * from legacy");
 
 void listed;

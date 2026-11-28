@@ -31,7 +31,6 @@ import { loadReleaseOciManifest } from "../lib/release-oci-contract.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
-/** Documents the deploy context leaves out by file name. */
 const NAMED_DOCUMENTS = new Set([
 	"README.md",
 	"readme.md",
@@ -345,7 +344,6 @@ describe("release OCI app staging", () => {
 		expect(excluded("keep/a/b/file.js")).toBe(false);
 		expect(excluded("keep/a/b/run.log")).toBe(true);
 		expect(excluded("keep/run.log")).toBe(true);
-		// A later rule wins, and a rule on a directory covers what is in it.
 		expect(excluded("keep/x.log")).toBe(false);
 		expect(releaseOciDockerignoreExcludes("a/**/t/**\n", "a/b/t/c/d")).toBe(
 			true,
@@ -452,8 +450,6 @@ describe("release OCI app staging", () => {
 	});
 
 	it("keeps third-party licence texts in a deploy context", () => {
-		// Their licences ask for the text to travel with the code, and many
-		// packages keep it in a Markdown file.
 		const rules = releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-cli"]);
 		for (const text of [
 			"app/LICENSE",
@@ -467,8 +463,6 @@ describe("release OCI app staging", () => {
 	});
 
 	it("keeps every data file a workspace package ships in a deploy context", () => {
-		// `hobo` scaffolds from @hobo/patterns' starter trees at run time; a rule
-		// on `*.test.*` once dropped their `app.test.ts.tpl` from the image.
 		const rules = releaseOciDockerignore(RELEASE_OCI_STAGE_SPECS["hobo-cli"]);
 		const walk = (path: string): string[] =>
 			statSync(path).isDirectory()
@@ -484,8 +478,6 @@ describe("release OCI app staging", () => {
 			);
 			if (!name) continue;
 			for (const entry of files) {
-				// Build output is covered above; a document the rules name by its
-				// file name is left out on purpose.
 				if (entry === "dist" || !existsSync(join(packageRoot, entry))) continue;
 				for (const file of walk(join(packageRoot, entry))) {
 					if (NAMED_DOCUMENTS.has(basename(file))) continue;

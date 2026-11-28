@@ -1,6 +1,3 @@
-// SubscriptionDriver conformance (ADR-0182 D3, I15). Pull discovery is a
-// verified read, forward-only from a high-water mark, bounded per poll, and
-// an outage is a typed refusal that leaves the cursor where it was.
 import {
 	abortedSignal,
 	type CdConformanceReport,
@@ -37,9 +34,7 @@ export type SubscriptionDriverAssertion =
 
 export interface SubscriptionSourceWorld<TSub, TCtx> {
 	driver: SubscriptionDriverLike<TSub, TCtx>;
-	/** Publish a new version at the source (registry push, Git commit, CI run). */
 	release(version: string): Promise<void>;
-	/** Make the source refuse every request until healed. */
 	outage(down: boolean): void;
 }
 
@@ -47,13 +42,10 @@ export interface SubscriptionDriverHarness<TSub, TCtx> {
 	readonly subject: string;
 	readonly expectedKind: number;
 	readonly source: string;
-	/** A source holding `versions`, oldest first. */
 	create(
 		versions: readonly string[],
 	): Promise<SubscriptionSourceWorld<TSub, TCtx>>;
-	/** The subscription under test with the given discovery limit. */
 	subscription(limit: number): TSub;
-	/** A version string newer than every one passed to `create`. */
 	newer(index: number): string;
 	ctx(): TCtx;
 }

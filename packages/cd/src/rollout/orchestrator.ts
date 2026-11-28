@@ -1,20 +1,3 @@
-// createRolloutOrchestrator (C3, C4, C5, D7, D8, D12). Drives one promotion's
-// exposure Camp by Camp and stage by stage, deciding only from the journal and
-// from observation:
-//
-//   plan   lower the strategy per Camp onto its traffic rungs (rollout.Lowered)
-//   run    start the staged OpenDeliveryEngine record (the one ramp machine)
-//   tick   per (Camp, stage): reserve canary capacity → wait for the reconciler
-//          to report the promoted Set CONVERGED → boundary checks (windows,
-//          experiment, approval) → record the shift intent → Station cutover →
-//          observe the split → verification → advance the engine
-//
-// Every external effect is preceded by a CAS append of its intent, so a crash
-// resumes by observation and two drivers can never both shift (I4, I5, I12).
-// A FAIL, an INCONCLUSIVE verdict, a passed progress deadline, a rejected
-// experiment or a denied approval rolls back per D12: zero exposure through
-// Station cutover, then a rollback Delta to the predecessor Set that the
-// promotion gate decides (I7). No default ever passes on absent evidence.
 import { createHash } from "node:crypto";
 import { create, type JsonValue, toJson } from "@bufbuild/protobuf";
 import { parseTrafficRoutingOfferingId } from "@hobo/core";
@@ -90,7 +73,6 @@ import { stagePlanId, stageRoutingPlan } from "./routing.js";
 
 export type ExperimentVerdict = "ship" | "do-not-ship" | "inconclusive";
 
-/** Where experiment conclusions come from (OpenExperimentEngine `experiment.Concluded`). */
 export interface ExperimentConclusions {
 	conclusion(experimentId: string): Promise<ExperimentVerdict | undefined>;
 }
@@ -104,11 +86,8 @@ export type RolloutOrchestratorDeps = CdBase &
 		desired: DesiredStateReader & DeltaLedger;
 		approvals: ApprovalPort;
 		telemetry: TelemetrySink;
-		/** Camp labels and env type for window selectors; absent means no labels. */
 		topology?: TopologyReader;
-		/** Canary capacity through the hosting budget authority. */
 		capacity?: CanaryCapacity;
-		/** Defaults to reading `experiment.Concluded` events from the store. */
 		experiments?: ExperimentConclusions;
 	}>;
 
@@ -136,7 +115,6 @@ function holdStatus(hold: ReasonRecord): RolloutStatus {
 	return "running";
 }
 
-/** Store-backed experiment conclusions: the latest `experiment.Concluded` for the experiment. */
 export function storeExperimentConclusions(d: CdBase): ExperimentConclusions {
 	return {
 		async conclusion(experimentId) {
@@ -195,10 +173,8 @@ export function createRolloutOrchestrator(
 ): RolloutOrchestrator {
 	const experiments = d.experiments ?? storeExperimentConclusions(d);
 	const locks = new Map<string, Promise<void>>();
-	/** Rollouts this instance saw terminal: tick skips them (the ledger never reopens). */
 	const terminal = new Set<string>();
 
-	// ── telemetry (the journal is the record: a failing sink never fails a step) ──
 	const metric = (
 		name: string,
 		kind: "counter" | "histogram",
@@ -272,7 +248,6 @@ export function createRolloutOrchestrator(
 		...extra,
 	});
 
-	// ── snapshot ──────────────────────────────────────────────────────────────
 	async function snapshotOf(
 		state: RolloutLedgerState,
 	): Promise<RolloutSnapshot> {
@@ -352,7 +327,6 @@ export function createRolloutOrchestrator(
 		};
 	}
 
-	// ── rollback (D12) ────────────────────────────────────────────────────────
 	async function beginRollback(
 		state: RolloutLedgerState,
 		why: ReasonRecord,
@@ -396,7 +370,6 @@ export function createRolloutOrchestrator(
 		const exposed = [...state.exposure.entries()]
 			.filter(([, percent]) => percent > 0)
 			.map(([campId]) => campId);
-		// I17: a rollback runs in a closed window only where the window permits it.
 		for (const campId of exposed) {
 			if (rollback.zero.get(campId)?.observed) continue;
 			const topology = await d.topology?.camp(asCamp(campId));
@@ -669,7 +642,6 @@ export function createRolloutOrchestrator(
 							: ["Traffic shift was not fully acknowledged."],
 			};
 		} catch {
-			// Ambiguous outcome: never retried blindly, resolved by observation (I5).
 			return {
 				realized: "unknown",
 				notes: [
@@ -695,7 +667,6 @@ export function createRolloutOrchestrator(
 		}
 	}
 
-	// ── forward progress ──────────────────────────────────────────────────────
 	type Boundary = Readonly<{
 		hold?: ReasonRecord;
 		reject?: ReasonRecord;
@@ -835,11 +806,6 @@ export function createRolloutOrchestrator(
 		];
 	}
 
-	/**
-	 * The verification engine decides at its own progress deadline; a verdict
-	 * that never arrives (a stuck engine or source) fails closed after twice
-	 * that, so no gate stays unresolved forever.
-	 */
 	async function awaitVerdict(
 		state: RolloutLedgerState,
 		verificationId: string,
@@ -921,7 +887,6 @@ export function createRolloutOrchestrator(
 		const deadline = progressDeadlineMs(state.plan.verification);
 		const spec = state.plan.verification ?? emptySpec();
 
-		// 1. Canary capacity (once per Camp, before its first exposure).
 		const capacityRequired =
 			d.capacity !== undefined ||
 			hasObligation(state.obligations, ROLLOUT_OBLIGATIONS.hostingBudget);
@@ -968,7 +933,6 @@ export function createRolloutOrchestrator(
 			];
 		}
 
-		// 2. Before the Camp's first exposure, the reconciler must report the promoted Set converged.
 		if (
 			stageIndex === 0 &&
 			!stage.shift &&
@@ -983,7 +947,6 @@ export function createRolloutOrchestrator(
 				observed?.status === ReconcileStatus.CONVERGED &&
 				observed.setId === current.setId;
 			if (!converged) {
-				// BLOCKED on the promoted Set never progresses: fail closed now (D12).
 				if (
 					current !== undefined &&
 					current.freightId === state.freightId &&
@@ -1023,7 +986,6 @@ export function createRolloutOrchestrator(
 			}
 		}
 
-		// 3. Blue/green verifies the idle side before any traffic moves.
 		if (
 			strategy === RolloutStrategy.BLUE_GREEN &&
 			stageIndex === 0 &&
@@ -1097,7 +1059,6 @@ export function createRolloutOrchestrator(
 				];
 		}
 
-		// 4. Stage boundary: windows, experiment, approval — hold, never abort mid-stage (I17).
 		if (traffic && !stage.shift) {
 			const gate = await boundary(state, campId, stageIndex, stage, ctx);
 			if (gate.reject)
@@ -1150,7 +1111,6 @@ export function createRolloutOrchestrator(
 			];
 		}
 
-		// 5. Observed traffic is authoritative over the provider's acknowledgement.
 		if (traffic && stage.shift && !stage.shift.observed) {
 			if (stage.shift.acknowledged?.realized === "none")
 				return [
@@ -1202,7 +1162,6 @@ export function createRolloutOrchestrator(
 			return [state, "waiting"];
 		}
 
-		// 6. Verification at this stage.
 		if (!stage.verificationId) {
 			const id = await d.verification.start(
 				{
@@ -1263,7 +1222,6 @@ export function createRolloutOrchestrator(
 				freightId: state.freightId,
 				verdict: stage.verdict,
 			});
-		// 7. Advance the ramp engine with the outcome; a non-PASS halts it and rolls back.
 		await d.engine.advance(state.rolloutId, outcome, ctx);
 		if (stage.verdict !== VerificationVerdict.PASS)
 			return [
@@ -1317,7 +1275,6 @@ export function createRolloutOrchestrator(
 						? await rollbackStep(state, ctx)
 						: await forwardStep(state, ctx);
 				} catch (error) {
-					// A CAS conflict means another driver progressed this rollout; re-read and stop.
 					const reloaded = await load(rolloutId);
 					if (reloaded && reloaded.seq !== state.seq) {
 						state = reloaded;
@@ -1514,7 +1471,6 @@ export function createRolloutOrchestrator(
 		async tick(ctx) {
 			const ids = new Set<RolloutId>();
 			const prefix = ROLLOUT_LEDGER.stream("");
-			// Legacy spellings too, so a rollout started before the rename still ticks.
 			for (const type of ledgerSpellings(ROLLOUT_LEDGER.started))
 				for await (const entry of d.store.readAll({
 					tenant: d.tenant,

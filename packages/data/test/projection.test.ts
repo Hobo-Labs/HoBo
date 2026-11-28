@@ -72,13 +72,11 @@ describe("defineProjection read-model fold", () => {
 		const events: EventEnvelope[] = [];
 		for await (const event of s.read("order:1001")) events.push(event);
 
-		// "live": fold each growing prefix as events would arrive on the wire.
 		let live = orderView.fold(events.slice(0, 1));
 		for (let i = 2; i <= events.length; i += 1) {
 			live = orderView.fold(events.slice(0, i));
 		}
 
-		// "rebuild": drop the sink, replay the whole stream from the log.
 		const rebuilt = await orderView.rebuildFromZero(s, "order:1001");
 
 		expect(JSON.stringify(rebuilt)).toBe(JSON.stringify(live));
@@ -106,7 +104,6 @@ describe("defineProjection read-model fold", () => {
 					if (!isJsonObject(data)) {
 						throw new TypeError("order event data must be an object");
 					}
-					// A write attempt against the event body must throw (frozen input).
 					expect(() => {
 						Object.assign(data, { totalCents: -1 });
 					}).toThrow();
@@ -123,7 +120,6 @@ describe("defineProjection read-model fold", () => {
 		await spyView.rebuildFromZero(s, "order:1001");
 		expect(sawFrozenEvent).toBe(true);
 
-		// The projection surface exposes no write/append/emit capability.
 		expect("emit" in spyView).toBe(false);
 		expect("append" in spyView).toBe(false);
 		expect("store" in spyView).toBe(false);

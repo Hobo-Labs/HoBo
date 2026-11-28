@@ -19,10 +19,6 @@ import {
 	selfHostTopology,
 } from "../src/yard.js";
 
-// The example package itself is the operator's project: the committed
-// hobo.bindle.json is the manifest the cloud verbs read, and the dir basename
-// is the deployment id. The verbs only READ the project dir; all durable
-// control-plane state lands in the per-test dataDir.
 const projectDir = fileURLToPath(new URL("..", import.meta.url));
 
 interface EnvelopeData {
@@ -76,7 +72,6 @@ describe("self-host-yard", () => {
 		const homeCamp = hosted.topology.camps[0];
 		expect(homeCamp?.envType).toBe("production");
 		expect(homeCamp?.derivedProviderId).toBe(providerId);
-		// The Camp records WHERE this yard runs: the operator's own disk.
 		expect(homeCamp?.runtimeRequirements).toEqual([
 			"event-store:sqlite",
 			"runtime-local",
@@ -89,7 +84,6 @@ describe("self-host-yard", () => {
 		const hosted = openSelfHostedYard({ dataDir });
 		cleanups.push(hosted.close);
 
-		// A runtime registry with two providers cannot describe ONE yard.
 		const twoProviderRuntime = {
 			...hosted.runtime,
 			registry: {
@@ -105,7 +99,6 @@ describe("self-host-yard", () => {
 	it("plan/up/down run end to end and the event log survives a control-plane restart", async () => {
 		const dataDir = await freshDataDir();
 
-		// --- First control-plane process: the full lifecycle. ---
 		const first = openSelfHostedYard({ dataDir });
 		const plan = envelope(
 			(await first.cli.run(["plan", "--json"], { cwd: projectDir })).stdout,
@@ -138,13 +131,9 @@ describe("self-host-yard", () => {
 		}
 		expect([...destroyed].sort()).toEqual(["api", "web"]);
 
-		// The control plane's durable state is a real file on the operator's disk.
 		expect(existsSync(path.join(dataDir, "eventstore.sqlite"))).toBe(true);
 		first.close();
 
-		// --- Second control-plane process over the SAME dataDir: every
-		// deployment fact written before the restart is already in its event
-		// store — the operator's disk, not a provider, is the source of truth. ---
 		const second = openSelfHostedYard({ dataDir });
 		cleanups.push(second.close);
 		const replayed = await collectStream(
@@ -158,16 +147,12 @@ describe("self-host-yard", () => {
 		expect(replayedTypes).toContain("resource.Destroyed");
 		expect(replayedTypes).toContain("deployment.RolledBack");
 
-		// The restarted yard re-plans the same bindle to the same content-
-		// addressed plan (pure read path — no new facts appended).
 		const replan = envelope(
 			(await second.cli.run(["plan", "--json"], { cwd: projectDir })).stdout,
 		);
 		expect(replan.ok).toBe(true);
 		expect(replan.data.planHash).toBe(plan.data.planHash);
 
-		// --- A bare store over the same dataDir (no yard at all) reads the
-		// identical history: the log is plain data on disk. ---
 		const audit = createRuntimeLocalEventStore({
 			dataDir,
 			clock: createManualClock(),

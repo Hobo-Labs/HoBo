@@ -1,9 +1,3 @@
-/**
- * Serialized storage-owner Worker Thread protocol for node:sqlite.
- * Production EventStore calls should route through this boundary so
- * DatabaseSync never blocks the main runtime event loop unboundedly.
- */
-
 import { parentPort, workerData } from "node:worker_threads";
 import type {
 	AppendOptions,
@@ -209,7 +203,6 @@ async function main(): Promise<void> {
 	});
 }
 
-/** JSON-safe: bigint → decimal string tagged form. */
 function serializeBigints<T>(value: T): JsonValue {
 	return parseJsonValue(
 		JSON.stringify(value, (_k, v) =>

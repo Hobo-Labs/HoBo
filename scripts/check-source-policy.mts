@@ -63,9 +63,9 @@ const AST_GREP = join(
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
 const GENERATED_OR_VENDOR =
-	/^(?:external\/|tools\/oxlint\/anti-slop\/|packages\/wit\/src\/generated\/.*\.d\.ts$)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
+	/^(?:external\/|tools\/oxlint\/anti-slop\/|packages\/(?:hobo|runtimes\/runtime-wasm)\/wit\/wasi-http\/|packages\/wit\/src\/generated\/.*\.d\.ts$)|(?:^|\/)(?:_generated|_generated-assets|dist|node_modules|vendor)\/|(?:^|\/)wit\/deps\//u;
 const DIRECTIVE =
-	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:|SAFETY\s*:))/iu;
+	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment|generated)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|yamllint|yaml-language-server|actionlint|zizmor|renovate)\b|(?:pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:|SAFETY\s*:))/iu;
 const VITE_DIRECTIVE = /^\/\*\s*@vite-ignore\s*\*\/$/u;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 
@@ -125,6 +125,73 @@ function names(args: string[], filter: string): string[] {
 	])
 		.split("\0")
 		.filter(Boolean);
+}
+
+function addedLineCounts(args: string[]): Map<string, number> {
+	const entries = git([...args, "--no-renames", "--numstat", "-z", "--"]).split(
+		"\0",
+	);
+	const counts = new Map<string, number>();
+	for (const entry of entries) {
+		const firstTab = entry.indexOf("\t");
+		const secondTab = entry.indexOf("\t", firstTab + 1);
+		if (firstTab < 0 || secondTab < 0) continue;
+		const added = entry.slice(0, firstTab);
+		if (/^\d+$/u.test(added))
+			counts.set(entry.slice(secondTab + 1), Number(added));
+	}
+	return counts;
+}
+
+function relocationRelink(before: string, after: string): boolean {
+	const links = /\]\(([^)]+)\)/gu;
+	const previous = [...before.matchAll(links)].map((match) => match[1]);
+	const next = [...after.matchAll(links)].map((match) => match[1]);
+	if (
+		previous.length !== next.length ||
+		before.replace(links, "]()") !== after.replace(links, "]()")
+	)
+		return false;
+	let changed = false;
+	for (let index = 0; index < previous.length; index++) {
+		const target = next[index];
+		if (previous[index] === target) continue;
+		if (
+			!target ||
+			!/^https:\/\/(?:linear\.app\/|github\.com\/Hobo-Labs\/HoBo\/blob\/[\da-f]{40}\/)/u.test(
+				target,
+			)
+		)
+			return false;
+		changed = true;
+	}
+	return changed;
+}
+
+function removalOrRelocationRelink(args: string[], file: string): boolean {
+	const patch = git([
+		...args,
+		"--no-color",
+		"--no-ext-diff",
+		"--unified=0",
+		"--",
+		file,
+	]);
+	const removed: string[] = [];
+	const added: string[] = [];
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("--- ") || line.startsWith("+++ ")) continue;
+		if (line.startsWith("-")) removed.push(line.slice(1));
+		if (line.startsWith("+")) added.push(line.slice(1));
+	}
+	for (const line of added) {
+		const index = removed.findIndex((previous) =>
+			relocationRelink(previous, line),
+		);
+		if (index < 0) return false;
+		removed.splice(index, 1);
+	}
+	return true;
 }
 
 function renameSources(args: string[]): Map<string, string> {
@@ -242,6 +309,57 @@ export function commentsIn(file: string, text: string): Comment[] {
 	return [...found.values()].sort((left, right) => left.start - right.start);
 }
 
+function trainingRanges(file: string, text: string): Array<[number, number]> {
+	if (!CODE_EXTENSIONS.has(extname(sourcePath(file)).toLowerCase())) return [];
+	const kind = /\.[jt]sx$/iu.test(sourcePath(file))
+		? ts.ScriptKind.TSX
+		: ts.ScriptKind.TS;
+	const source = ts.createSourceFile(
+		file,
+		text,
+		ts.ScriptTarget.Latest,
+		true,
+		kind,
+	);
+	const ranges: Array<[number, number]> = [];
+	function visit(node: ts.Node): void {
+		if (
+			(ts.isFunctionDeclaration(node) ||
+				ts.isFunctionExpression(node) ||
+				ts.isArrowFunction(node) ||
+				ts.isMethodDeclaration(node)) &&
+			node.body &&
+			ts.isBlock(node.body)
+		) {
+			const body = node.body;
+			const first = body.statements[0];
+			const directive =
+				first &&
+				ts.isExpressionStatement(first) &&
+				ts.isStringLiteral(first.expression) &&
+				first.expression.text === "use training"
+					? first
+					: undefined;
+			const decorated =
+				ts.isMethodDeclaration(node) &&
+				ts.getDecorators(node)?.some((decorator) => {
+					const expression = ts.isCallExpression(decorator.expression)
+						? decorator.expression.expression
+						: decorator.expression;
+					return ts.isIdentifier(expression) && expression.text === "trainable";
+				});
+			if (directive || decorated)
+				ranges.push([
+					directive?.end ?? body.getStart(source) + 1,
+					body.end - 1,
+				]);
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	return ranges;
+}
+
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(sourcePath(file)).toLowerCase();
 	if (extension === ".astro") return astroComments(file, text);
@@ -267,11 +385,19 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			: undefined);
 	if (!language) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
-		return commentsIn(file, text).map((comment) => ({
-			text: comment.text,
-			first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
-			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
-		}));
+		const training = trainingRanges(file, text);
+		return commentsIn(file, text)
+			.filter(
+				(comment) =>
+					!training.some(
+						([start, end]) => start <= comment.start && comment.end <= end,
+					),
+			)
+			.map((comment) => ({
+				text: comment.text,
+				first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
+				last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
+			}));
 	}
 	const kinds =
 		language === "kotlin"
@@ -406,7 +532,7 @@ export function commentViolations(
 				file,
 				line: first,
 				message: DEFERRED.test(comment.text)
-					? "finish deferred work instead of adding a marker"
+					? "resolve the work or track it in Linear instead of adding a marker"
 					: "make the code self-documenting instead of adding a comment",
 			},
 		];
@@ -416,14 +542,6 @@ export function commentViolations(
 function isExperiencePlanningArtifact(file: string): boolean {
 	return /(?:^|\/)\.optimizexp\/(?:backlog\/|(?:INIT\.md|init-report\.json|experience-catalog\.json)$|personas\/[^/]+\.md$|features\/[^/]+\/(?:EXPERIENCE|SEED|README)\.md$|runs\/[^/]+\/(?:INCOMPLETE\.md|backlog\.json)$)/iu.test(
 		file,
-	);
-}
-
-function addsLines(args: readonly string[], file: string): boolean {
-	return (
-		addedLineNumbers(
-			git([...args, "--no-color", "--no-ext-diff", "--unified=0", "--", file]),
-		).size > 0
 	);
 }
 
@@ -459,6 +577,9 @@ export function documentViolation(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
+	const untrackedSet = new Set(untracked);
+	const modified = new Set(names(args, "M"));
+	const addedCounts = addedLineCounts(args);
 	const renamed = renameSources(args);
 	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
 		args: parentArgs,
@@ -470,11 +591,15 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
 		const sourceFile = sourcePath(file);
+		const deletionOnly = !untrackedSet.has(file) && addedCounts.get(file) === 0;
 		if (
 			((isExperiencePlanningArtifact(sourceFile) ||
 				/\.mdx?$/iu.test(sourceFile)) &&
-				parents.every((parent) => parent.files.has(file)) &&
-				(untracked.includes(file) || addsLines(args, file))) ||
+				!(
+					modified.has(file) &&
+					(deletionOnly || removalOrRelocationRelink(args, file))
+				) &&
+				parents.every((parent) => parent.files.has(file))) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
 			const reason = documentViolation(file, contents(mode, file));
@@ -490,11 +615,12 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			!OTHER_LANGUAGES.has(extension)
 		)
 			continue;
+		if (deletionOnly) continue;
 		const text = contents(mode, file);
 		if (!extension && !file.startsWith(".githooks/") && !text.startsWith("#!"))
 			continue;
 		const source = renamed.get(file);
-		const added = untracked.includes(file)
+		const added = untrackedSet.has(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
 			: addedLineNumbers(
 					git([

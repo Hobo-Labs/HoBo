@@ -15,7 +15,6 @@ const REPO_ROOT = join(import.meta.dirname, "..", "..");
 const IMPORT_PATTERN =
 	/^\s*(?:import|export)\s+(?:type\s+)?(?:[\w*{}\s$,]+\s+from\s+)?["']([^"']+)["']/gm;
 
-/** Every file the entry loads, following relative imports (`.js` names a `.ts` source). */
 function importGraph(entry: string, seen = new Set<string>()): string[] {
 	const absolute = resolve(entry);
 	if (seen.has(absolute)) return [...seen];
@@ -44,8 +43,6 @@ after(() => {
 });
 
 describe("scripts the deps layer job runs before any install", () => {
-	// The job builds the image that holds node_modules, so nothing is installed
-	// when these run. A package import fails there with ERR_MODULE_NOT_FOUND.
 	for (const entry of [
 		"scripts/ci/wait-deps-build-window.mts",
 		"scripts/lib/deps-build-headroom.mts",

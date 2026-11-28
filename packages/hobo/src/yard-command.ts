@@ -13,13 +13,6 @@ import { ensureAllRuntimeHosts, getRuntimeHost } from "./host-registry.js";
 import { isJsonNumber, isJsonString, type JsonValue } from "./json.js";
 import { probeWasmHostInstall } from "./wasm-host.js";
 
-// `hobo yard` — install/inspect a **Yard** (glossary: provider-specific control
-// plane). Camps are placement targets the Yard creates when serving Bindles.
-//   hobo yard init [--force] [--port <n>] [--host local|wasm|oci|cloud-native]
-//     aliases: isolated-wasm→wasm, bare-metal|runtime-local→local
-//   hobo yard ensure  — ensure all registered host runtimes
-//   hobo yard status | doctor
-
 function parseComponentHostFlag(
 	raw: JsonValue | undefined,
 ): ComponentHostKind | undefined {

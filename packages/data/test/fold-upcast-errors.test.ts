@@ -1,23 +1,3 @@
-/**
- * Three small modules that together decide whether an event stream stays
- * replayable forever.
- *
- * `foldEvents` has one property everything else depends on: a replay must reach
- * the same state as the original live pass. That is why quarantine is persisted
- * as a *fact* carrying the seq it neutralises rather than being decided afresh
- * each time — if the fold re-judged a poison event on every replay, a body that
- * happened to throw once and not the next time would give two different states
- * from the same log.
- *
- * `createUpcasterRegistry` is the other half: old events are never rewritten, so
- * every read walks them forward through a chain of pure transforms. A chain with
- * a gap silently stops upcasting partway and hands the caller a half-migrated
- * body that still claims its old version.
- *
- * The typed errors exist so a caller can tell "your command was illegal, do not
- * retry" from "someone appended first, re-fold and try again" — collapsing those
- * two produces either an infinite retry loop or a dropped write.
- */
 import type { EventEnvelope } from "@hobo/core";
 import { describe, expect, test } from "vitest";
 
@@ -61,7 +41,6 @@ function dataOf(event: EventEnvelope): JsonObject {
 	return event.data as JsonObject;
 }
 
-/** A counting fold: each `item.Added` bumps the total by its amount. */
 const counting = {
 	initialState: { total: 0 },
 	evolve: (state: { total: number }, event: EventEnvelope) => ({
@@ -78,8 +57,6 @@ describe("foldEvents", () => {
 	});
 
 	test("events are folded in order and the seq is the last one seen", () => {
-		// The seq becomes the caller's `expectedSeq` for its next append, so a
-		// wrong one turns every subsequent write into a spurious conflict.
 		const outcome = foldEvents(
 			[
 				envelope("item.Added", { amount: 2 }),
@@ -92,25 +69,18 @@ describe("foldEvents", () => {
 	});
 
 	test("the seq is the maximum, not the last value seen", () => {
-		// A replay makes no ordering promise the fold can lean on; taking the last
-		// event's seq from an out-of-order batch would hand back a stale
-		// expectedSeq and lose the next append.
 		const first = envelope("item.Added", { amount: 1 }, { seq: 9 });
 		const second = envelope("item.Added", { amount: 1 }, { seq: 4 });
 		expect(foldEvents([first, second], counting).seq).toBe(9);
 	});
 
 	test("the initial state is not mutated by a fold", () => {
-		// The spec is often a module-level constant reused across folds; a fold
-		// that mutated it would leak one aggregate's state into the next.
 		const spec = { ...counting, initialState: { total: 0 } };
 		foldEvents([envelope("item.Added", { amount: 5 })], spec);
 		expect(spec.initialState).toEqual({ total: 0 });
 	});
 
 	test("the event handed to evolve is frozen", () => {
-		// Read-only by contract. An evolve that could edit the envelope would
-		// make the fold depend on evolve's side effects rather than the log.
 		let sawFrozen: boolean | undefined;
 		foldEvents([envelope("item.Added", { amount: 1 })], {
 			initialState: { total: 0 },
@@ -123,8 +93,6 @@ describe("foldEvents", () => {
 	});
 
 	test("mutating the state passed to evolve does not corrupt the fold", () => {
-		// Each call gets a clone, so an evolve that mutates in place cannot
-		// retroactively change what an earlier step produced.
 		const outcome = foldEvents(
 			[
 				envelope("item.Added", { amount: 1 }),
@@ -148,7 +116,6 @@ describe("foldEvents", () => {
 
 describe("quarantine determinism", () => {
 	test("an evolve that throws quarantines the event instead of wedging the stream", () => {
-		// One poison body must not make an aggregate permanently unloadable.
 		const outcome = foldEvents(
 			[
 				envelope("item.Added", { amount: 1 }),
@@ -169,8 +136,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("the quarantine record names the offending seq and the reason", () => {
-		// The caller persists this as a fact; without the seq the fact cannot
-		// neutralise anything, and without the reason nobody can diagnose it.
 		const poison = envelope("item.Added", { amount: "poison" });
 		const outcome = foldEvents([poison], {
 			initialState: { total: 0 },
@@ -183,8 +148,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("the quarantine fact type is derived from the event's family", () => {
-		// `item.Added` quarantines as `item.Quarantined`, so the fact lands in
-		// the same family a reader is already subscribed to.
 		const outcome = foldEvents([envelope("item.Added", {})], {
 			initialState: {},
 			evolve: () => {
@@ -205,20 +168,14 @@ describe("quarantine determinism", () => {
 	});
 
 	test("a persisted quarantine fact skips its offending event on replay", () => {
-		// The property the whole design exists for. On replay the poison event is
-		// skipped because a *fact* says so, not because it threw again.
 		const poison = envelope("item.Added", { amount: 5 });
 		const fact = envelope("item.Quarantined", { offendingSeq: poison.seq });
 		const outcome = foldEvents([poison, fact], counting);
 		expect(outcome.state).toEqual({ total: 0 });
-		// And no *new* quarantine is raised — it was already neutralised.
 		expect(outcome.quarantined).toEqual([]);
 	});
 
 	test("a quarantine fact appearing before its target still neutralises it", () => {
-		// The neutralised seqs are collected in a first pass precisely so order
-		// does not matter; a single-pass fold would miss a fact that arrived
-		// first and re-apply the poison event.
 		const poison = envelope("item.Added", { amount: 5 }, { seq: 20 });
 		const fact = envelope(
 			"item.Quarantined",
@@ -229,8 +186,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("a live fold and a replay with the fact reach the same state", () => {
-		// Stated as one assertion because it is the actual contract: whatever the
-		// live pass decided, the replay reproduces without re-judging.
 		const good = envelope("item.Added", { amount: 4 });
 		const poison = envelope("item.Added", { amount: "poison" });
 		const spec = {
@@ -246,8 +201,6 @@ describe("quarantine determinism", () => {
 		const fact = envelope("item.Quarantined", {
 			offendingSeq: live.quarantined[0]?.offendingSeq,
 		});
-		// The replay uses a fold that would *not* throw, to prove the skip comes
-		// from the fact rather than from the body failing again.
 		const replay = foldEvents([good, poison, fact], {
 			initialState: { total: 0 },
 			evolve: (state: { total: number }, event) => ({
@@ -258,8 +211,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("quarantine facts are never folded as ordinary events", () => {
-		// They are metadata about the stream, not part of the aggregate; folding
-		// one would let a quarantine change the state it was meant to protect.
 		const outcome = foldEvents(
 			[envelope("item.Quarantined", { offendingSeq: 999, amount: 100 })],
 			counting,
@@ -268,8 +219,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("a quarantine fact with no numeric offendingSeq neutralises nothing", () => {
-		// A malformed fact must not silently neutralise an arbitrary event —
-		// better to fold the stream as written than to drop something at random.
 		const outcome = foldEvents(
 			[
 				envelope("item.Quarantined", { offendingSeq: "not-a-number" }),
@@ -301,8 +250,6 @@ describe("quarantine determinism", () => {
 	});
 
 	test("the quarantine seq is past the stream head", () => {
-		// The record becomes an appended fact, so its seq has to be one the
-		// stream has not used yet.
 		const outcome = foldEvents([envelope("item.Added", {}, { seq: 50 })], {
 			initialState: {},
 			evolve: () => {
@@ -335,9 +282,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("a chain is applied end to end", () => {
-		// Old events are never rewritten, so a reader has to walk every step from
-		// the stored version up to current. Stopping early hands back a
-		// half-migrated body.
 		const r = registry()
 			.register("item.Added", 1, (data) => ({
 				// SAFETY: the registry receives JSON event bodies at this boundary.
@@ -360,9 +304,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("a chain with a gap stops at the gap", () => {
-		// Pinned deliberately. Registering v1→v2 and v3→v4 but not v2→v3 leaves
-		// the event at v2, silently: the registry has no way to know a step is
-		// missing rather than simply being the end of the chain.
 		const r = registry()
 			.register("item.Added", 1, (data) => ({
 				// SAFETY: the registry receives JSON event bodies at this boundary.
@@ -380,16 +321,12 @@ describe("upcasting on read", () => {
 	});
 
 	test("an event already at the latest version is returned unchanged", () => {
-		// Identity, not a copy: a reader comparing by reference must not see a
-		// new object for an event nothing was done to.
 		const r = registry().register("item.Added", 1, (data) => data);
 		const event = envelope("item.Added", { amount: 1 }, { v: 5 });
 		expect(r.upcast(event)).toBe(event);
 	});
 
 	test("upcasting starts from the event's own version, not from one", () => {
-		// A v2 event must not be run through the v1 transform again — that would
-		// apply a migration twice.
 		const applied: number[] = [];
 		const r = registry()
 			.register("item.Added", 1, (data) => {
@@ -412,8 +349,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("latestVersion is one for a type with no upcasters", () => {
-		// The first version of an event type is 1, so an unregistered type is
-		// already current rather than unknown.
 		expect(registry().latestVersion("never.Registered")).toBe(1);
 	});
 
@@ -430,8 +365,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("a duplicate registration is refused", () => {
-		// Two transforms for one step is ambiguous, and silently keeping either
-		// would make the migration depend on module load order.
 		const r = registry().register("item.Added", 1, (d) => d);
 		expect(() => r.register("item.Added", 1, (d) => d)).toThrow(/duplicate/);
 	});
@@ -449,8 +382,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("a non-positive or non-integer fromVersion is refused", () => {
-		// Versions start at 1 and step by one; anything else would register a
-		// transform the chain walk can never reach.
 		for (const version of [0, -1, 1.5, Number.NaN]) {
 			expect(() =>
 				registry().register("item.Added", version, (d) => d),
@@ -459,8 +390,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("upcasters run inside a fold", () => {
-		// The end-to-end path: a stored v1 body is migrated on read and the fold
-		// sees the current shape without the log having been rewritten.
 		const upcasters = registry().register("item.Added", 1, (data) => ({
 			// SAFETY: the registry receives JSON event bodies at this boundary.
 			amount: Number((data as JsonObject).legacyAmount ?? 0),
@@ -473,11 +402,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("an upcaster that throws quarantines rather than wedging the fold", () => {
-		// Regression. The upcast used to run *outside* the try/catch, so a
-		// migration that threw propagated straight out of `foldEvents` — despite
-		// the module's own contract saying "an evolve/upcast that throws in THIS
-		// pass is recorded as a fresh quarantine record ... so one bad body never
-		// wedges the stream".
 		const upcasters = registry().register("item.Added", 1, () => {
 			throw new Error("bad migration");
 		});
@@ -490,8 +414,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("one bad migration does not stop the rest of the stream folding", () => {
-		// The consequence that made the gap worth fixing rather than recording:
-		// the aggregate was not merely missing one event, it was unloadable.
 		const upcasters = registry().register("legacy.Added", 1, () => {
 			throw new Error("bad migration");
 		});
@@ -508,10 +430,6 @@ describe("upcasting on read", () => {
 	});
 
 	test("a failed migration is recoverable, because the fold can now produce its fact", () => {
-		// And the reason it was permanent before: the quarantine fact that
-		// neutralises the event can only be produced by a fold that finishes. A
-		// throwing upcaster runs again on every replay, so a fold that died on it
-		// could never emit the fact that would let the next replay skip it.
 		const upcasters = registry().register("item.Added", 1, () => {
 			throw new Error("bad migration");
 		});
@@ -528,8 +446,6 @@ describe("upcasting on read", () => {
 
 describe("the typed errors", () => {
 	test("an invariant violation is explicitly not retryable", () => {
-		// The distinction a caller branches on. Retrying an illegal command is an
-		// infinite loop; not retrying a conflict is a dropped write.
 		const error = new AggregateInvariantError("cart already checked out");
 		expect(error.code).toBe("AGGREGATE_INVARIANT");
 		expect(error.retryable).toBe(false);
@@ -553,8 +469,6 @@ describe("the typed errors", () => {
 	});
 
 	test("a stale fence is not retryable", () => {
-		// A stale fence means another actor took over the stream; retrying would
-		// be one actor fighting another rather than resolving anything.
 		const error = new AggregateStaleFenceError("cart-1");
 		expect(error.code).toBe("STALE_FENCE");
 		expect(error.retryable).toBe(false);
@@ -575,8 +489,6 @@ describe("the typed errors", () => {
 	});
 
 	test("every typed error is a real Error", () => {
-		// Callers use `instanceof Error` and read `.stack`; a plain object here
-		// would break both.
 		for (const error of [
 			new AggregateInvariantError("x"),
 			new AggregateConflictError("s", 1),
@@ -595,9 +507,6 @@ describe("recognising a runtime conflict without depending on the runtime", () =
 	});
 
 	test("the runtime EventStore's signals are recognised by name", () => {
-		// The inward-only dependency rule means this package cannot import the
-		// runtime's error class, so it matches on the shape instead. A rename on
-		// either side silently breaks retry, which is why both names are pinned.
 		for (const name of [
 			"OptimisticSequenceConflictError",
 			"StaleSequenceError",
@@ -613,14 +522,11 @@ describe("recognising a runtime conflict without depending on the runtime", () =
 	});
 
 	test("an unrelated error is not a conflict", () => {
-		// Treating an arbitrary failure as retryable would retry a command that
-		// can never succeed.
 		expect(isOptimisticConflict(new Error("disk full"))).toBe(false);
 		expect(isOptimisticConflict(new AggregateInvariantError("x"))).toBe(false);
 	});
 
 	test("null and undefined are not conflicts", () => {
-		// Reached from a `catch`, where the thrown value can be anything.
 		expect(isOptimisticConflict(null)).toBe(false);
 		expect(isOptimisticConflict(undefined)).toBe(false);
 	});
@@ -632,8 +538,6 @@ describe("recognising a runtime conflict without depending on the runtime", () =
 	});
 
 	test("a conflict is not a stale fence", () => {
-		// They call for opposite responses — retry versus stand down — so the two
-		// predicates must not both answer true.
 		expect(isStaleFenceError(new AggregateConflictError("s", 1))).toBe(false);
 		expect(isOptimisticConflict(new AggregateStaleFenceError("s"))).toBe(false);
 	});

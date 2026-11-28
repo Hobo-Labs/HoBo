@@ -134,13 +134,11 @@ export interface ClockReplayResult {
 	readonly finalNow: IsoInstant;
 }
 
-/** Read-only clock facet for timestamp queries. */
 export interface Clock {
 	now(): IsoInstant;
 	nowMs(): number;
 }
 
-/** Deterministic virtual clock port with sleep, cron, and advance. */
 export interface VirtualClock extends Clock {
 	sleep(runId: RunId, delayMs: number, options: TimerOptions): ScheduledTimer;
 	cron(scheduleId: ScheduleId, spec: IntervalCronSpec): CronSchedule;

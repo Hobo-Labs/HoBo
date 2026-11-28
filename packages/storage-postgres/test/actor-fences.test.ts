@@ -171,7 +171,6 @@ describeLive("shared PostgreSQL actor leases", () => {
 			holderId: "process-b",
 		});
 		expect(next.fenceToken).toBeGreaterThan(lease.fenceToken);
-		// New holder has not appended yet. The acquire itself must fence A.
 		await expect(
 			first.append(
 				"deployment:a",
@@ -179,7 +178,7 @@ describeLive("shared PostgreSQL actor leases", () => {
 				append(lease.fenceToken),
 			),
 		).rejects.toMatchObject({ code: "STALE_FENCE" });
-		await lease.release(); // delayed release cannot release the new holder
+		await lease.release();
 		await next.revalidate();
 		await other.append(
 			"deployment:a",
@@ -242,7 +241,6 @@ describeLive("shared PostgreSQL actor leases", () => {
 			`UPDATE "${schema}".actor_leases SET expires_at = clock_timestamp() - INTERVAL '1 second' WHERE stream_id = $1`,
 			[lease.key],
 		);
-		// The caller lost the first response and retries the same append.
 		const retry = await store.append(
 			lease.key,
 			[{ type: "test.Event", meta: { idempotencyKey: "k1" } }],
@@ -362,7 +360,6 @@ describeLive("shared PostgreSQL actor leases", () => {
 			],
 		});
 		await upgraded.ready();
-		// A previously open process reads the new policy inside its transaction.
 		await expect(
 			old.append("hosting-transition:tenant:t", [{ type: "test.Unfenced" }], {
 				...OPTS,
@@ -476,7 +473,6 @@ describeLive("shared PostgreSQL actor leases", () => {
 			expectedSeq: 0,
 			fenceToken: a.fenceToken,
 		});
-		// The current holder may snapshot; an unfenced snapshot may not.
 		await store.snapshot(key, { by: "a" }, 1, { fenceToken: a.fenceToken });
 		await expect(store.snapshot(key, { by: "anon" }, 1)).rejects.toMatchObject({
 			code: "MISSING_FENCE",
@@ -495,7 +491,6 @@ describeLive("shared PostgreSQL actor leases", () => {
 			state: { by: "b" },
 		});
 		await b.release();
-		// A released lease row still guards the stream.
 		await expect(
 			store.snapshot(key, { by: "late-b" }, 1, { fenceToken: b.fenceToken }),
 		).rejects.toMatchObject({ code: "STALE_FENCE" });

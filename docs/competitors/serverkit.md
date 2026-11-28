@@ -74,7 +74,7 @@ detection are node-attach mechanics rather than panel features.
 | `identity-secrets` | Pairing, tunnels and certificate management |
 
 ServerKit is captured for its **node-attach and Relay reference value**, not as a rival for HoBo's
-application model — a framing [`lineage.md`](../design/lineage.md) already records.
+application model — a framing [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) already records.
 
 ## Feature surface
 

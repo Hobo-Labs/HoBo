@@ -10,7 +10,6 @@ import {
 import { reconcileAmbiguousFailure } from "./reconcile-ambiguous-failure.js";
 import { type JsonValue } from "./json.js";
 
-
 const KV = "wasi:keyvalue/store@0.2.0";
 const WORKFLOW = "hobo:runtime/workflow@0.1.0";
 

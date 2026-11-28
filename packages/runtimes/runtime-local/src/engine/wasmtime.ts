@@ -34,11 +34,6 @@ export function createWasmtimeCliEngine(
 		options.binPath ?? process.env.HOBO_WASMTIME_BIN ?? "wasmtime";
 	const versionOutput = spawnSync(binPath, ["--version"], { encoding: "utf8" });
 	if (versionOutput.status !== 0) {
-		// A binary that could not be spawned at all — the usual case, wasmtime
-		// simply not installed — comes back with `status: null` and *null*
-		// streams, so reading `.stderr.trim()` unguarded turns the most likely
-		// failure into a TypeError instead of this named refusal. `error`
-		// carries the spawn reason (ENOENT, EACCES) in exactly that case.
 		throw new ComponentHostError(
 			"wasmtime_version_floor",
 			versionOutput.stderr?.trim() ||

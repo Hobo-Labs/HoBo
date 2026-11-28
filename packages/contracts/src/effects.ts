@@ -1,9 +1,3 @@
-/**
- * Verse-inspired EffectSpec for Contract IR (ADR-0136).
- * Effects are first-class optional annotations on BoundaryContract.
- * No Effect-TS / Polly / XState dependencies.
- */
-
 // public-contract: schema version for EffectSpec declarations (ADR-0136).
 import {
 	cloneAsJson,
@@ -13,11 +7,11 @@ import {
 	type JsonValue,
 } from "./json.js";
 
+// public-contract: stable exported contract literal
 export const EFFECT_SPEC_SCHEMA_VERSION = "hobo.effect-spec/v1";
 // public-contract: schema version for captured EffectManifest exports (ADR-0136).
 export const EFFECT_MANIFEST_SCHEMA_VERSION = "hobo.effect-manifest/v1";
 
-/** Exclusive-ish purity lattice (more pure → less pure). */
 export const PURITY_LEVELS = Object.freeze([
 	"pure",
 	"varies",
@@ -27,7 +21,6 @@ export const PURITY_LEVELS = Object.freeze([
 
 export type PurityLevel = (typeof PURITY_LEVELS)[number];
 
-/** Additive capability effects. */
 export const CAPABILITY_EFFECTS = Object.freeze([
 	"decides",
 	"suspends",
@@ -37,7 +30,6 @@ export const CAPABILITY_EFFECTS = Object.freeze([
 
 export type CapabilityEffect = (typeof CAPABILITY_EFFECTS)[number];
 
-/** Domain I/O effects (drive harness mocks and external capture). */
 export const DOMAIN_EFFECTS = Object.freeze([
 	"network",
 	"storage",
@@ -57,16 +49,11 @@ export type DomainEffect = (typeof DOMAIN_EFFECTS)[number];
 
 export type EffectKind = CapabilityEffect | DomainEffect;
 
-// ADR-0136 parse-don't-validate DSL surface with readonly refined fields;
-// generated contracts_pb.ts EffectSpec is its wire form.
 // domain-view: deliberate refined domain type, permanent by design.
 export interface EffectSpec {
 	readonly schemaVersion: typeof EFFECT_SPEC_SCHEMA_VERSION;
-	/** Exclusive purity position on the lattice. */
 	readonly purity: PurityLevel;
-	/** Additive capability effects (sorted unique). */
 	readonly capabilities: readonly CapabilityEffect[];
-	/** Domain I/O effects (sorted unique). */
 	readonly domains: readonly DomainEffect[];
 }
 
@@ -98,10 +85,6 @@ const PURITY_SET = new Set<string>(PURITY_LEVELS);
 const CAP_SET = new Set<string>(CAPABILITY_EFFECTS);
 const DOMAIN_SET = new Set<string>(DOMAIN_EFFECTS);
 
-/**
- * Conservative default for external-facing / unknown contracts.
- * pure must be declared explicitly.
- */
 export function conservativeDefaultEffects(): EffectSpec {
 	return Object.freeze({
 		schemaVersion: EFFECT_SPEC_SCHEMA_VERSION,
@@ -148,7 +131,6 @@ export function parseEffectSpec<T>(input: T): EffectSpec {
 		"$.effects.domains",
 	) as DomainEffect[];
 
-	// pure forbids domain I/O and most capabilities except decides (typed failure ok).
 	if (purity === "pure") {
 		if (domains.length > 0) {
 			throw new EffectValidationError(
@@ -167,7 +149,6 @@ export function parseEffectSpec<T>(input: T): EffectSpec {
 		}
 	}
 
-	// network/externalCall imply at least varies purity
 	if (
 		(domains.includes("network") || domains.includes("externalCall")) &&
 		PURITY_RANK[purity] < PURITY_RANK.varies
@@ -191,8 +172,6 @@ export function createEffectSpec(input: EffectSpecInput = {}): EffectSpec {
 	return parseEffectSpec(input);
 }
 
-// ── Lattice helpers ─────────────────────────────────────────────────────────
-
 export function isPure(spec: EffectSpec): boolean {
 	return (
 		spec.purity === "pure" &&
@@ -215,12 +194,10 @@ export function purityRank(level: PurityLevel): number {
 	return PURITY_RANK[level];
 }
 
-/** Join purity to least pure (higher rank). */
 export function purityJoin(a: PurityLevel, b: PurityLevel): PurityLevel {
 	return PURITY_RANK[a] >= PURITY_RANK[b] ? a : b;
 }
 
-/** Union of two effect sets (caller must declare at least the union of callees). */
 export function effectUnion(a: EffectSpec, b: EffectSpec): EffectSpec {
 	return Object.freeze({
 		schemaVersion: EFFECT_SPEC_SCHEMA_VERSION,
@@ -239,11 +216,6 @@ export function effectUnion(a: EffectSpec, b: EffectSpec): EffectSpec {
 	});
 }
 
-/**
- * Subtyping: `provided` can be used where `required` is expected iff
- * provided is safer — purity rank ≤ required, capabilities ⊆ required,
- * domains ⊆ required.
- */
 export function effectSubtype(
 	provided: EffectSpec,
 	required: EffectSpec,
@@ -266,7 +238,6 @@ export interface EffectDiff {
 	readonly addedDomains: DomainEffect[];
 }
 
-/** Effects present in `next` but not in `prev` (widening). */
 export function effectDiff(prev: EffectSpec, next: EffectSpec): EffectDiff {
 	return {
 		purityWidened: PURITY_RANK[next.purity] > PURITY_RANK[prev.purity],
@@ -277,10 +248,6 @@ export function effectDiff(prev: EffectSpec, next: EffectSpec): EffectDiff {
 	};
 }
 
-/**
- * Effect widening is breaking when consumers assumed a narrower effect set.
- * Adding domain I/O or reducing purity is breaking; removing effects is safe.
- */
 export function isEffectWideningBreaking(
 	prev: EffectSpec,
 	next: EffectSpec,
@@ -293,10 +260,6 @@ export function isEffectWideningBreaking(
 	);
 }
 
-// ── EffectManifest (export for external systems) ────────────────────────────
-
-// ADR-0136 parse-don't-validate export manifest with refined readonly fields;
-// generated contracts_pb.ts EffectManifest is the wire form.
 // domain-view: deliberate refined domain type, permanent by design.
 export interface EffectManifest {
 	readonly schemaVersion: typeof EFFECT_MANIFEST_SCHEMA_VERSION;
@@ -304,7 +267,6 @@ export interface EffectManifest {
 	readonly contractVersion: string;
 	readonly channel: string;
 	readonly effects: EffectSpec;
-	/** Lattice position label for SRE/policy consumers. */
 	readonly purityLabel: PurityLevel;
 	readonly mayFail: boolean;
 	readonly requiresNetwork: boolean;
@@ -338,8 +300,6 @@ export function serializeEffectManifest(manifest: EffectManifest): string {
 	return JSON.stringify(manifest, null, 2);
 }
 
-// ── Effect capture (facts only; no re-execution on replay) ───────────────────
-
 // public-contract: fact name emitted when a contract effect is declared (ADR-0136).
 export const EFFECT_DECLARED_EVENT = "contract.EffectDeclared";
 // public-contract: fact name emitted when a declared effect is invoked (ADR-0136).
@@ -351,7 +311,6 @@ export interface EffectCaptureFact {
 	readonly channel: string;
 	readonly effects: EffectSpec;
 	readonly at: string;
-	/** OTel-style attributes for external export. */
 	readonly attributes: Readonly<Record<string, string | boolean | number>>;
 }
 
@@ -391,10 +350,6 @@ export function createEffectTracer(sink: EffectSink) {
 			sink.record(fact);
 			return fact;
 		},
-		/**
-		 * Record that an effectful boundary was invoked. Does not re-execute
-		 * work — inspection reconstructs from these facts on replay.
-		 */
 		invoked(input: {
 			contractId: string;
 			channel: string;
@@ -440,8 +395,6 @@ function buildCaptureFact(
 		}),
 	});
 }
-
-// ── parsers ─────────────────────────────────────────────────────────────────
 
 function expectObject(input: JsonValue, path: string): JsonObject {
 	if (input === null || !isJsonObject(input) || Array.isArray(input)) {

@@ -151,7 +151,6 @@ describe("SqliteJournal", () => {
 			}),
 		).rejects.toMatchObject({ code: "OPTIMISTIC_SEQUENCE_CONFLICT" });
 
-		// queue effect must not have been committed
 		const leased = j.leaseMessages({
 			queueName: "q",
 			maxMessages: 10,
@@ -194,7 +193,7 @@ describe("SqliteJournal", () => {
 
 	it("preserves bigint fence tokens beyond MAX_SAFE_INTEGER", async () => {
 		const j = journal();
-		const big = 9_007_199_254_740_993n; // > MAX_SAFE_INTEGER
+		const big = 9_007_199_254_740_993n;
 		await j.append("fenced", [{ type: "a.A", data: {} }], {
 			expectedSeq: 0,
 			actor,

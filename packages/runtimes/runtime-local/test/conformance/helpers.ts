@@ -78,8 +78,6 @@ function createBrokenFenceActorHost() {
 			if (!(request.fold instanceof Function)) {
 				throw new TypeError("request.fold must be a function");
 			}
-			// Bind it here: the narrowing above does not survive into the nested
-			// closures below, which is what the assertion was papering over.
 			const fold = request.fold;
 			const stream = getBrokenStream(streams, actorKey);
 			const initialState = structuredClone(request.initialState);

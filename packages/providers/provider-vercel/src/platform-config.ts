@@ -1,21 +1,3 @@
-/**
- * What a plan placed on Vercel asks of the deployment's `vercel.json`.
- *
- * Vercel has no API that creates a schedule or a queue consumer on its own:
- * both are platform configuration a deployment carries (`schedules`, and a
- * function's `experimentalTriggers`), and Vercel's static deployments refuse
- * that file by design. So a schedule or a queue placed on Vercel is executed
- * by a git deployment of a project whose `vercel.json` declares it, and HoBo's
- * part is to hold that file to the plan: `vercelPlatformDrift` lists every
- * difference, and a delivery refuses while there is one.
- *
- * - A schedule with a cadence that runs a queue is a `schedules` entry:
- *   `{ schedule: <cron>, topic: <queue> }`, under the schedule's name.
- * - Every queue has a consumer: some function's `experimentalTriggers`
- *   includes a `queue/v2beta` trigger on its topic.
- * - A schedule on anything but a queue would need a function path to call,
- *   which the plan does not name: it is reported, not guessed.
- */
 import {
 	isJsonArray,
 	isJsonObject,
@@ -23,7 +5,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-/** The parts of a planned resource this check reads (a `ResourceIntent`). */
 export type VercelPlannedResource = Readonly<{
 	name: string;
 	port: string;
@@ -48,7 +29,6 @@ function triggerTopics(config: JsonValue): ReadonlySet<string> {
 	return topics;
 }
 
-/** Every way `config` differs from what `planned` asks of it; empty when none. */
 export function vercelPlatformDrift(
 	config: JsonValue,
 	planned: readonly VercelPlannedResource[],

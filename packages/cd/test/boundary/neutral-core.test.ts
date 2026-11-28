@@ -1,8 +1,3 @@
-// I11 — Neutral core (ADR-0182 I11). @hobo/cd imports no provider-*, iac-*,
-// runtime-*, ci*, broker, cli, hobo or resolver-components, and names no
-// Kubernetes / OCI-runtime / Git-host / Argo / Flux / vendor-APM type outside
-// `adapters/` and `verification/sources/`. This scan runs over whatever
-// modules exist, so it keeps holding as sibling work packages merge.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,14 +6,11 @@ import { describe, expect, it } from "vitest";
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const srcRoot = join(packageRoot, "src");
 
-// Excluded: vendor adapters, health-source adapters, and the generated code
-// of the frozen contract (its SCREAMING_CASE enum labels name sources, not types).
 const EXCLUDED = ["_generated", "adapters", join("verification", "sources")];
 
 const FORBIDDEN_IMPORT =
 	/^@hobo\/(?:provider-(?!redaction(?:\/|$))[\w-]+|iac(?:-[\w-]+)?|runtime-[\w-]+|ci(?:-[\w-]+)?|broker|cli|hobo|resolver-components)(?:\/.*)?$/u;
 
-// Vendor words, matched against the Pascal-case segments of type-like names.
 const VENDOR_WORDS = [
 	"kube",
 	"kubernetes",
@@ -67,7 +59,6 @@ function sourceFiles(dir: string): string[] {
 	return out.sort();
 }
 
-/** Remove comments and string/template literals, keeping line structure. */
 export function stripNonCode(text: string): string {
 	let out = "";
 	let i = 0;
@@ -101,7 +92,6 @@ export function stripNonCode(text: string): string {
 	return out;
 }
 
-/** Module specifiers of import/export-from/dynamic import statements. */
 export function importSpecifiers(text: string): string[] {
 	const specs: string[] = [];
 	const pattern = /(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/gu;
@@ -110,13 +100,10 @@ export function importSpecifiers(text: string): string[] {
 	return specs;
 }
 
-/** Vendor-named identifiers in code (comments and strings excluded). */
 export function vendorIdentifiers(text: string): string[] {
 	const found: string[] = [];
 	for (const match of stripNonCode(text).matchAll(/[A-Za-z_$][\w$]*/gu)) {
 		const id = match[0];
-		// I11 is about *types*: PascalCase names (types, interfaces, classes,
-		// enums). SCREAMING_CASE labels and camelCase values are not types.
 		if (!/^[A-Z]/u.test(id) || !/[a-z]/u.test(id)) continue;
 		const words = id
 			.replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
@@ -124,7 +111,6 @@ export function vendorIdentifiers(text: string): string[] {
 			.split(/[\s_$]+/u)
 			.map((w) => w.toLowerCase())
 			.filter(Boolean);
-		// Single segments and adjacent pairs (Git+Hub, New+Relic, Manifest+Work).
 		const candidates = [
 			...words,
 			...words.slice(1).map((w, i) => `${words[i]}${w}`),

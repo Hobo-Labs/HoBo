@@ -1,7 +1,3 @@
-/**
- * Ordered anon container/host chain — one-shot per host + cooldown.
- * Never loops. Never re-probes blacklisted dead APIs (Instanode).
- */
 import type { DebugFields } from "../../src/lib/json-inspect.js";
 import {
 	isRateLimitMessage,
@@ -23,7 +19,6 @@ export type AnonHostChainKind = "node-dynamic" | "docker-source" | "oci-image";
 
 export type RunAnonHostChainInput = AnonContainerDeployInput & {
 	readonly chainKind: AnonHostChainKind;
-	/** OCI source for appish (required when chainKind=oci-image). */
 	readonly sourceImage?: string;
 	readonly hosts?: readonly AnonContainerHostId[];
 };
@@ -62,7 +57,6 @@ function debugLog(
 	message: string,
 	data: DebugFields,
 ): void {
-	// #region agent log
 	fetch("http://127.0.0.1:7655/ingest/eac23247-0462-43c4-8e6e-14b2a6cecba6", {
 		method: "POST",
 		headers: {
@@ -79,7 +73,6 @@ function debugLog(
 			timestamp: Date.now(),
 		}),
 	}).catch(() => {});
-	// #endregion
 }
 
 async function tryHost(
@@ -144,9 +137,6 @@ export type AnonHostChainOutcome =
 			readonly error: string;
 	  };
 
-/**
- * Try hosts in order. One attempt each. Rate-limit → cooldown file.
- */
 export async function runAnonHostChain(
 	input: RunAnonHostChainInput,
 ): Promise<AnonHostChainOutcome> {

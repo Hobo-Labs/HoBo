@@ -1,8 +1,3 @@
-/**
- * Experience-proof surface for the control-plane Yard game UI.
- * Pins zone contract + sheet confirm path without live cloud deps.
- */
-
 export const CONTROL_YARD_PROOF = "control-yard" as const;
 export const CONTROL_YARD_ADR = "ADR-0135" as const;
 

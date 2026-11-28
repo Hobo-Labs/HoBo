@@ -1,9 +1,3 @@
-/**
- * Validate live anon OpenSaaS Temporary endpoints (client + server + db).
- * Usage:
- *   HOBO_OPENSAAS_CLIENT_URL=... HOBO_OPENSAAS_SERVER_URL=... \
- *   HOBO_OPENSAAS_DATABASE_URL=... node --import tsx site/scripts/validate-opensaas-temporary-e2e.mts
- */
 import { spawn } from "node:child_process";
 
 type Check = { name: string; ok: boolean; detail: string };
@@ -92,7 +86,6 @@ async function main(): Promise<void> {
 				: serverUrl,
 		),
 	);
-	// Replace bogus check: if server is loopback, fail explicitly
 	if (/127\.0\.0\.1|localhost/iu.test(serverUrl)) {
 		checks.push({
 			name: "server-public",

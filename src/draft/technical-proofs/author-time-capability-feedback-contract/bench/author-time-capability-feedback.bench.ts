@@ -1,8 +1,3 @@
-/**
- * Vitest bench for the proof's measurable hot path: analyzing a full catalog of
- * capability requests against a provider snapshot (the per-keystroke author-time
- * loop `hobo doctor`/codegen diagnostics ride).
- */
 import { bench, describe } from "vitest";
 
 import { analyzeAuthorTimeCapabilityFeedback } from "../src/author-time-capability-feedback.ts";

@@ -1,7 +1,4 @@
 /* oxlint-disable anti-slop/no-chained-type-assertions, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unsafe-dictionary-type, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: test fixtures brand ids minted by the fake journal, build partial generated records, and read controlled JSON fixtures at the test boundary. */
-// Hosting-transition realizer (adapters/hosting-transition.ts): versions go
-// through the hosting-transition coordinator; convergence only from SETTLED
-// with the destination owning writes; restore/block are typed refusals.
 
 import {
 	HostingTransitionAction,
@@ -51,7 +48,6 @@ function state(
 	} as unknown as HostingTransitionState;
 }
 
-/** A scripted coordinator walking PROPOSED → … → SETTLED, one step per call. */
 function scripted(script: readonly HostingTransitionState[]) {
 	let index = 0;
 	const calls: string[] = [];
@@ -173,7 +169,6 @@ describe("createHostingTransitionRealizer", () => {
 		expect(obs.status).toBe(ReconcileStatus.CONVERGED);
 		expect(obs.setId).toBe(h.input.desired.setId);
 		expect(obs.resources[0]?.kind).toBe("hosting-transition");
-		// The reconciler's lease fence is the coordinator's writer fence (I4).
 		expect(script.fence()).toBe(7n);
 	});
 

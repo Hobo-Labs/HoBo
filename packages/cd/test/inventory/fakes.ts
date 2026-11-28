@@ -1,6 +1,3 @@
-// Test doubles for the WP22 inventory and placement tests. Each models the
-// frozen port it stands in for (ports.ts, @hobo/core eventstore); none is
-// reachable from production code.
 import { create } from "@bufbuild/protobuf";
 import {
 	type AppendOptions,
@@ -55,7 +52,6 @@ export const OPERATOR: PrincipalRef = { kind: "user", id: "ops@acme" };
 export const STATION: PrincipalRef = { kind: "service", id: "station-eu" };
 export const AGENT: PrincipalRef = { kind: "agent", id: "agent-7" };
 
-/** Brand a Camp id in a test. */
 export function camp(id: string): CampId {
 	// SAFETY: test fixture ids are literal Camp ids.
 	return id as CampId;
@@ -78,17 +74,11 @@ export function context(
 	return { tenant: TENANT, principal, now };
 }
 
-/**
- * In-memory DurableEventStore with conformance-suite semantics: per-stream
- * expected-seq CAS (a stale expectedSeq throws the core conflict error) and
- * per-stream idempotency-key dedup checked before the CAS.
- */
 export class MemoryEventStore implements DurableEventStore {
 	private readonly streams = new Map<string, EventEnvelope[]>();
 	private readonly all: PositionedEvent[] = [];
 	private nextId = 1;
 	appendCalls = 0;
-	/** Test hook: run before the CAS check of the next append (simulates a concurrent writer). */
 	beforeAppend: (() => Promise<void>) | undefined;
 
 	async append(
@@ -197,12 +187,10 @@ export class MemoryEventStore implements DurableEventStore {
 		return { ...result, effects: [] };
 	}
 
-	/** Test helper: raw events of one stream. */
 	events(streamId: string): readonly EventEnvelope[] {
 		return this.streams.get(streamId) ?? [];
 	}
 
-	/** Test helper: append a Station-side reconcile status event for a Camp. */
 	async reconcileEvent(
 		campId: string,
 		type: string = CD_EVENTS.StatusObserved,
@@ -262,7 +250,6 @@ export type AuthorizerCall = Readonly<{
 	subject: JsonObject;
 }>;
 
-/** Allows users and services; agents get proposal-only; listed actions are denied. */
 export class FakeAuthorizer implements CdAuthorizer {
 	readonly calls: AuthorizerCall[] = [];
 	readonly denied = new Set<CdAction>();
@@ -345,7 +332,6 @@ export class FakeRails implements RailDeliveryReader {
 	}
 }
 
-/** Only `status` is read by the inventory (claims from the latest observation). */
 export class FakeDesired implements DesiredStateReader {
 	readonly observations = new Map<string, ReconcileObservationRecord>();
 	async current() {

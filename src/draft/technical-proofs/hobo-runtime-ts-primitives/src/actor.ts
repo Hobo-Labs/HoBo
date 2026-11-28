@@ -7,7 +7,6 @@ import {
 import type { ActorKey, Message, MessageMap } from "./types.js";
 import { type JsonValue } from "./json.js";
 
-
 export interface ActorRef<S, M extends MessageMap<S>> {
   name: string;
   key(id: string): ActorKey;

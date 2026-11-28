@@ -1,10 +1,3 @@
-/**
- * The builder is a front end, not a fork. These tests exist mostly to keep it
- * that way: the equivalence cases pin builder output to `defineYard` /
- * `defineStation` output, and the refusal cases drive each existing error code
- * through the builder so a second, drifting validation path cannot appear
- * without turning one of them red.
- */
 import { camp } from "@hobo/camps";
 import {
 	CAPABILITY_SLOTS,
@@ -406,8 +399,6 @@ describe("every existing refusal still fires through the builder", () => {
 	});
 
 	it("YARD_BINDING_EMPTY_CONSTRAINT", () => {
-		// Hand-rolled rather than via slotBinding(), which refuses this earlier
-		// with its own code — the point is that the Yard-level screen still runs.
 		const unconstrained: SlotBinding = {
 			contract: SLOT_BINDING_CONTRACT,
 			slot: "bucket",
@@ -487,11 +478,6 @@ describe("every existing refusal still fires through the builder", () => {
 	});
 
 	it("refuses an unusable provider before the callback body runs", () => {
-		// Under the old `y.on(provider)` shape a Yard could be half-authored
-		// against no provider at all, and the refusal arrived from yard() after
-		// every slot call had already been written. As an argument the provider
-		// is resolved first, so the refusal names the call that is wrong and the
-		// body never executes against a Yard that does not have one yet.
 		let bodyRan = false;
 		let raised: JsonValue;
 		try {

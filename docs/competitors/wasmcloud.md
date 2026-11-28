@@ -337,7 +337,7 @@ wasmCloud already ships the two hardest properties HoBo needs at the runtime lay
 - **Render-target** — HoBo renders manifest IR to `wadm` (ADR-0108), which speaks OAM vocabulary
   shared with KubeVela.
 - **Standard** — WIT and WASI are spoken at the boundary, never absorbed as HoBo's internal model,
-  per the governing rule in [`lineage.md`](../design/lineage.md).
+  per the governing rule in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md).
 - Not a displace target in any reading.
 
 ## Threats and lessons
@@ -357,7 +357,7 @@ wasmCloud already ships the two hardest properties HoBo needs at the runtime lay
 
 - [wasmcloud.com/docs](https://wasmcloud.com/docs) — components, capability providers, links, hosts, lattice, wRPC, wadm, wash
 - [wasmCloud/wasmCloud](https://github.com/wasmCloud/wasmCloud) — source, CNCF project status
-- HoBo-side: [ADR-0031](../design/adr/01-architecture-core.md#adr-0031) (default host), [ADR-0108](../design/adr/01-architecture-core.md#adr-0108) (wadm render target), [`design/lineage.md`](../design/lineage.md)
+- HoBo-side: [ADR-0031](../design/adr/01-architecture-core.md#adr-0031) (default host), [ADR-0108](../design/adr/01-architecture-core.md#adr-0108) (wadm render target), [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md)
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current provider catalog size and language toolchain maturity were not

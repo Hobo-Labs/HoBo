@@ -17,10 +17,6 @@ const STRIP = ["--experimental-strip-types", "--no-warnings"];
 
 type Chunk = readonly [atMs: number, bytes: Uint8Array];
 
-/**
- * A writer on a fake clock that only `sleep` moves: each chunk can be read
- * from its time on, and the pipe reads as closed from `closesAtMs`.
- */
 function fakeWriter(chunks: readonly Chunk[], closesAtMs: number) {
 	let clock = 0;
 	let next = 0;
@@ -118,15 +114,12 @@ describe("readStdin", () => {
 type Exit = Readonly<{ status: number | null; stdout: string; stderr: string }>;
 
 type LateWrite = Readonly<{
-	/** Written `delayMs` after the trigger, then the pipe is closed. Absent: the pipe stays open and empty. */
 	input?: string;
-	/** The trigger: this text on the child's stderr. Absent: the spawn. */
 	after?: string;
 	delayMs: number;
 	env?: NodeJS.ProcessEnv;
 }>;
 
-/** Runs node with `args` behind a stdin pipe whose writer starts late. */
 function runWithLateWriter(
 	args: readonly string[],
 	late: LateWrite,
@@ -146,7 +139,6 @@ function runWithLateWriter(
 			}, late.delayMs);
 		};
 		const guard = setTimeout(() => child.kill(), 20_000);
-		// The pipe breaks when the child exits before the writer writes.
 		child.stdin.on("error", () => undefined);
 		child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
 			stdout += chunk;
@@ -167,12 +159,6 @@ function runWithLateWriter(
 	});
 }
 
-/**
- * Node arguments for a child that imports node:process, as the CI scripts do
- * (which puts fd 0 in non-blocking mode), checks that its stdin is empty and
- * non-blocking with one raw read, prints `probe=<code>`, then prints what
- * `read` returns.
- */
 function childReading(read: string, probe = true): string[] {
 	const lines = [
 		'import "node:process";',
@@ -197,9 +183,6 @@ describe("stdin on a pipe the writer has not written to yet", () => {
 			{ delayMs: 1000, input: "x" },
 		);
 		if (!/^probe=EAGAIN$/m.test(exit.stderr)) {
-			// The EAGAIN crash pins a Node/libuv quirk: importing node:process
-			// sets O_NONBLOCK on fd 0. Where a future Node or another platform
-			// keeps fd 0 blocking, the control case has nothing to control.
 			t.skip("fd 0 stayed blocking on this Node/platform");
 			return;
 		}
@@ -238,8 +221,6 @@ describe("the CI scripts that read changed paths from stdin, behind a late write
 	const late = { delayMs: 1000, input: "docs/a.md\n" };
 
 	it("job-scope.mts", async () => {
-		// An entry that imports node builtins only, so the tree cannot widen the
-		// scope: `run=false` means the path arrived, and an empty read runs.
 		const exit = await runWithLateWriter(
 			[...STRIP, "scripts/ci/job-scope.mts", "scripts/lib/read-stdin.mts"],
 			late,
@@ -249,10 +230,6 @@ describe("the CI scripts that read changed paths from stdin, behind a late write
 	});
 
 	it("dependent-tests.mts", async () => {
-		// The lockfile alone plans the whole workspace without walking a test:
-		// the reason names the path, so it arrived, and an empty read says
-		// "empty diff". A docs path plans by walking every package's tests,
-		// which outlasted this harness's 20 s guard on a busy runner.
 		const exit = await runWithLateWriter(
 			[...STRIP, "scripts/ci/dependent-tests.mts"],
 			{ ...late, input: "pnpm-lock.yaml\n" },

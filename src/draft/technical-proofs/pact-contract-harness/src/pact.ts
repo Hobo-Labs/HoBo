@@ -2,7 +2,6 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { isJsonString, isJsonNumber, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const PARTICIPANT_NAME = /^[A-Z][A-Za-z0-9]*$/;
 

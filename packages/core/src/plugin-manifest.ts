@@ -12,14 +12,6 @@ import {
 	requiredArray,
 } from "./parse-utils.js";
 
-// hobo.plugin/v1 (ADR-0156 §4, extension-points.md §Packaging): the `hobo`
-// key an external plugin package declares in its package.json — the entry
-// module plus the `{point, export}` extensions it provides. This module is
-// the PURE half (parse-don't-validate); the effectful loader that imports
-// the entry and checks exports lives at the composition root
-// (`packages/hobo`), never in core. Wire form:
-// data-models/extension_plugin.proto (+ CUE constraints).
-
 // public-contract: plugin manifest schema id.
 export const PLUGIN_MANIFEST_SCHEMA = "hobo.plugin/v1";
 
@@ -36,14 +28,7 @@ export class PluginManifestParseError extends CoreParseError {
 }
 
 // domain-view: parse-dont-validate parsed/derived types below; the generated
-// extension_plugin_pb wire records are the transport form.
 
-/**
- * One extension a plugin provides: which point, via which named export.
- * `id` is the optional stable id the host registers the extension under
- * (e.g. the installable-catalog key for `hobo add`); when absent the host
- * derives it from the extension instance (a provider's `id`).
- */
 // domain-view: branded ExtensionPointId refinement of extension_plugin.proto PluginExtensionDeclaration.
 export interface PluginExtensionDeclaration {
 	readonly point: ExtensionPointId;
@@ -53,7 +38,6 @@ export interface PluginExtensionDeclaration {
 
 export interface HoboPluginManifest {
 	readonly schema: typeof PLUGIN_MANIFEST_SCHEMA;
-	/** Module specifier of the plugin entry, relative to the package root. */
 	readonly entry: string;
 	readonly extensions: ReadonlyArray<PluginExtensionDeclaration>;
 }
@@ -61,7 +45,6 @@ export interface HoboPluginManifest {
 const MANIFEST_KEYS = ["schema", "entry", "extensions"] as const;
 const EXTENSION_KEYS = ["point", "export", "id"] as const;
 
-/** Parse a `hobo.plugin/v1` manifest object (the `hobo` package.json key). */
 export function parsePluginManifest(
 	value: JsonValue | undefined,
 ): HoboPluginManifest {
@@ -131,12 +114,6 @@ export interface PluginPackageManifest {
 	readonly plugin: HoboPluginManifest;
 }
 
-/**
- * Parse a plugin package's package.json: requires `name` plus a valid `hobo`
- * key. A package.json without a `hobo` key is not a plugin — that is a
- * distinct, detectable condition (`isPluginPackageJson`), not a parse error
- * with a confusing path.
- */
 export function parsePluginPackageJson(
 	value: JsonValue | undefined,
 ): PluginPackageManifest {
@@ -160,7 +137,6 @@ export function parsePluginPackageJson(
 	});
 }
 
-/** True when the value looks like a package.json carrying a `hobo` key. */
 export function isPluginPackageJson(value: JsonValue | undefined): boolean {
 	return (
 		isJsonObject(value) &&

@@ -1,23 +1,8 @@
-// Property tests for `parseYardBindings`.
-//
-// The module note calls the row list "a set, not a list": authoring order must
-// not survive into the record, because ADR-0151 forbids any ordered or weighted
-// scoring and an order that leaks becomes a preference. That is an algebraic
-// claim — permutation invariance plus idempotence — and example-based tests can
-// only spot-check it. The duplicate and empty-constraint refusals are total
-// claims for the same reason: a row set that admits either one is a portability
-// lie the planner would act on.
-//
-// The profile grammar is checked against a hand-written recognizer rather than
-// against the exported regex, so this test can disagree with the source.
-//
-// Determinism: every run is seeded so a failure reproduces exactly.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { parseYardBindings, type YardBindingInput } from "../src/index.js";
 
-/** Fixed seed: a counterexample found here is reproducible verbatim. */
 const SEED = 20260817;
 const RUNS = 300;
 
@@ -45,8 +30,6 @@ const rowArb: fc.Arbitrary<YardBindingInput> = fc
 			{ nil: undefined },
 		),
 	)
-	// A row must constrain something; when neither id was drawn, pin productId
-	// so this generator only produces rows the boundary can accept.
 	.map(([profile, productId, connectivityId, require, properties]) => ({
 		profile,
 		...(productId === undefined && connectivityId === undefined
@@ -66,18 +49,12 @@ function tripleOf(row: YardBindingInput): string {
 	]);
 }
 
-/** Row lists whose (profile, productId, connectivityId) triples are distinct. */
 const rowSetArb = fc.uniqueArray(rowArb, {
 	minLength: 1,
 	maxLength: 6,
 	selector: tripleOf,
 });
 
-/**
- * The ADR-0151 profile grammar, recognized by hand rather than by reusing the
- * exported regex: `<family>.<path>/v<major>`, lowercase, no leading zero on the
- * major, and no `/` anywhere but the version separator.
- */
 function grammarAccepts(value: string): boolean {
 	const parts = value.split("/");
 	if (parts.length !== 2) return false;
@@ -170,7 +147,6 @@ describe("parseYardBindings treats rows as a set", () => {
 						parseYardBindings(withDuplicate),
 					);
 					expect(code).toBe("YARD_BINDING_DUPLICATE");
-					// A refusal that does not name the colliding row is not a fix.
 					expect(message).toContain(source.profile);
 				},
 			),
@@ -196,7 +172,6 @@ describe("parseYardBindings treats rows as a set", () => {
 	it("accepts exactly the profiles the ADR-0151 grammar admits", () => {
 		const profileArb = fc.oneof(
 			validProfileArb,
-			// Strings that straddle the grammar boundary in every direction.
 			fc.string({
 				unit: fc.constantFrom(..."abz09-._/vV0"),
 				maxLength: 12,
@@ -226,7 +201,6 @@ describe("parseYardBindings treats rows as a set", () => {
 			}),
 			{ seed: SEED, numRuns: RUNS },
 		);
-		// Neither branch may be vacuous, or the property proves nothing.
 		expect(acceptedCount).toBeGreaterThan(0);
 		expect(refusedCount).toBeGreaterThan(0);
 	});

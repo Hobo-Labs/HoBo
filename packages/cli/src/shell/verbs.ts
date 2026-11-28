@@ -210,7 +210,7 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 	{
 		name: "serve",
 		role: "control plane",
-		summary: "Local control-plane HTTP+SSE for the Yard game UI",
+		summary: "Serve the local control-plane HTTP and SSE API",
 	},
 	{
 		name: "replay",

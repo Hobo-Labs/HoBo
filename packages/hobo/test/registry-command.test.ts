@@ -8,9 +8,6 @@ import {
 	createRegistryCommand,
 } from "../src/index.js";
 
-// `hobo registry` lists the live PlannerRegistry — the provider + capability
-// catalog the Planner matches deployments against.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -34,7 +31,6 @@ describe("createRegistryCommand", () => {
 		expect(registry.ok).toBe(true);
 		expect(registry.status).toBe("ok");
 		expect(registry.data.catalogHash).toBeTruthy();
-		// The default runtime registers the Cloudflare provider.
 		expect(registry.data.providers.length).toBeGreaterThan(0);
 		const provider = registry.data.providers[0];
 		expect(provider.providerId).toBeTruthy();

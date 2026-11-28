@@ -1,12 +1,3 @@
-/**
- * The standard Camp tiers, and the properties that make them worth having.
- *
- * These tests are mostly about the *shape* of the default rather than its
- * contents, because the contents are a judgement sourced from Azure WAF SE:04
- * and AWS WAF SEC05-BP01 while the shape is what breaks silently: a default
- * that quietly grows, a containment graph that gains an upward edge, a tier
- * inferred from a name.
- */
 import {
 	CAMP_TIER_EGRESS,
 	CAMP_TIER_ORDER,
@@ -23,8 +14,6 @@ import { standardCamps } from "../src/standard-camps.js";
 
 describe("the default tier set", () => {
 	it("is the three-tier shape both frameworks reach for first", () => {
-		// SEC05-BP01: "presentation layer, application layer, and data layer".
-		// SE:04 networking pattern 1: one subnet for web, one for database.
 		expect([...DEFAULT_CAMP_TIERS]).toEqual(["edge", "app", "data"]);
 	});
 
@@ -64,7 +53,6 @@ describe("tier and environment are orthogonal axes", () => {
 	});
 
 	it("refuses to guess an environment", () => {
-		// Guessing one is how a staging deploy lands in production.
 		expect(() => standardCamps("")).toThrowError(/environment type/u);
 		expect(() => standardCamps(undefined as never)).toThrowError(
 			/environment type/u,
@@ -105,17 +93,11 @@ describe("the containment graph", () => {
 	});
 
 	it("has no upward edges — nothing reaches back toward the perimeter", () => {
-		// SE:04 calls containment "the exit edge of a segment that prevents
-		// lateral movement". A store that can call business logic is the
-		// inversion that makes a breach in `data` reach everything.
 		const rank = new Map<CampTier, number>(
 			CAMP_TIER_ORDER.map((tier, index) => [tier, index]),
 		);
 		const upward: string[] = [];
 		for (const [from, targets] of Object.entries(CAMP_TIER_EGRESS)) {
-			// `ops` is deliberately exempt: operational surfaces reach everything
-			// by definition, which is exactly why SE:04 wants them segmented off
-			// the workload path rather than living inside it.
 			if (from === CAMP_TIERS.ops) continue;
 			for (const to of targets) {
 				if ((rank.get(to) ?? 0) < (rank.get(from as CampTier) ?? 0)) {
@@ -151,8 +133,6 @@ describe("the containment graph", () => {
 	});
 
 	it("never lets edge reach data directly", () => {
-		// The whole point of the middle tier: a breach at the perimeter does not
-		// put the caller one hop from persistence.
 		expect(CAMP_TIER_EGRESS.edge).not.toContain(CAMP_TIERS.data);
 	});
 });

@@ -26,7 +26,6 @@ export function mainShardParallelLaunchCapacity(
 	);
 }
 
-/** Convert memory-parallel admits into total box launch slots (live + additional). */
 export function effectiveParallelLaunchSlots(
 	policyLaunchSlots: number,
 	liveContainerCount: number,

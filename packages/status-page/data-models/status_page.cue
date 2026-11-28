@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in data-models/status_page.proto.
-// Constrains the customer-safe shape of status-page records; validation
-// constraints only — rendering and folding live in src/.
 package status_page
 
 import (
@@ -10,7 +7,6 @@ import (
 
 #StatusScopeKind: "station" | "primitives" | "project" | "bindle"
 
-// UNKNOWN is the fail-safe: stale components must never read operational.
 #ComponentStatus: "operational" | "maintenance" | "unknown" | "degraded" |
 	"partial_outage" | "major_outage"
 
@@ -66,7 +62,6 @@ import (
 	updatedAt:   string & strings.MinRunes(1)
 	resolvedAt?: string
 	updates: [...#IncidentUpdateRecord]
-	// Resolved incidents must carry resolvedAt.
 	if state == "resolved" {
 		resolvedAt: string & strings.MinRunes(1)
 	}
@@ -101,7 +96,6 @@ import (
 	scopeKind:   #StatusScopeKind
 	scopeId:     string & =~"^[a-z0-9][a-z0-9._-]*$"
 	contentHash: string & =~"^sha256:[0-9a-f]{64}$"
-	// Declared-public component allowlist — publishing requires at least one.
 	components: [...string] & list.MinItems(1)
 }
 

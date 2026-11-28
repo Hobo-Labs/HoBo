@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type OfficeServer, createOfficeServer } from "../src/server.js";
 import { type JsonValue, type JsonObject } from "../src/json.js";
 
-
 let office: OfficeServer;
 let base: string;
 
@@ -185,7 +184,6 @@ describe("logs and metrics intake", () => {
 });
 
 describe("cross-request trace pairing over HTTP", () => {
-	// Simulator topology (junctions exist) with ticks effectively paused.
 	let simOffice: OfficeServer;
 	let simBase: string;
 

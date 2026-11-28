@@ -16,7 +16,6 @@ interface SeenState {
 	seen: number[];
 }
 
-// Minimal envelope factory for pure fold/upcast unit tests.
 function evt(
 	partial: Pick<EventEnvelope, "type" | "seq" | "v" | "data">,
 ): EventEnvelope {
@@ -138,7 +137,6 @@ describe("poison-event quarantine", () => {
 			spec,
 		);
 
-		// seq 2 is skipped on replay; the quarantine fact itself is never folded.
 		expect(outcome.state).toEqual({ seen: [1] });
 		expect(outcome.seq).toBe(3);
 	});

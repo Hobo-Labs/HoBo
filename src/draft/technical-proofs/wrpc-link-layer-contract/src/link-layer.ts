@@ -17,7 +17,6 @@ import {
 import { negotiateWireVersion } from "./wire-version.js";
 import { isJsonString, isJsonObject, type JsonValue } from "./json.js";
 
-
 type IndexedPins = Map<
   string,
   ComponentRegistration["imports"][number] | ProviderRegistration["exports"][number]

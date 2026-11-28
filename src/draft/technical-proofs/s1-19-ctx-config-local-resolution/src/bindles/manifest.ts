@@ -2,7 +2,6 @@ import type { ConfigContract, ConfigEntry, ConfigManifest, ConfigManifestEntry }
 import { CONFIG_SCHEMA_VERSION } from "./types.js";
 import { isJsonObject, type JsonValue, type JsonObject } from "../json.js";
 
-
 export function emitConfigManifest(contract: ConfigContract): ConfigManifest {
   if (contract.schema !== CONFIG_SCHEMA_VERSION) {
     throw new TypeError(`expected ${CONFIG_SCHEMA_VERSION} contract`);

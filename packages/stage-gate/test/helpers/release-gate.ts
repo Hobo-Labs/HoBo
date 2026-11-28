@@ -1,10 +1,3 @@
-/**
- * What the release-gate suites share (ADR-0172): the stand-in ai-bdd
- * (fake-ai-bdd.mts) as HOBO_AI_BDD_CMD, a plan of what it plays back, and a
- * runner that drives runStageGate(defineReleaseGate()) through real
- * processes. Every directory newDir() makes is removed by removeTempDirs(),
- * which each suite registers with afterEach.
- */
 import { createHash } from "node:crypto";
 import {
 	mkdirSync,
@@ -48,7 +41,6 @@ export const TIMEOUT = 60_000;
 
 const dirs: string[] = [];
 
-/** Removes every directory newDir() made; each suite runs it after each test. */
 export function removeTempDirs(): void {
 	for (const dir of dirs.splice(0)) {
 		rmSync(dir, { recursive: true, force: true });
@@ -96,7 +88,6 @@ export function checkOf(run: GateRun, checkId: string): CheckResult {
 	return found;
 }
 
-/** The release gate, its replay check's runner bound (the backstop) replaced when `replayBackstopMs` is set. */
 function releaseGate(
 	replayBackstopMs: number | undefined,
 ): StageGateDefinition {
@@ -142,7 +133,6 @@ export function runIdOf(reportPath: string): string {
 	return id;
 }
 
-/** A project that already holds the passed fixture as its latest report and its run directory: a run that happened before. */
 export function earlierRun(project: string): string {
 	const runId = "01a132d2-fe9a-7d3a-a7d8-157d681d6417";
 	for (const dir of [
@@ -155,12 +145,6 @@ export function earlierRun(project: string): string {
 	return runId;
 }
 
-/**
- * Whether a process has ended, waiting up to `attempts` x 100 ms (10 s) for
- * it to. A zombie has ended: kill(pid, 0) still finds one until its parent
- * reaps it, and an orphan's parent is init, which on some hosts takes seconds.
- * The wait is only spent by a test that is about to fail.
- */
 export async function gone(pid: number, attempts = 100): Promise<boolean> {
 	for (let attempt = 0; attempt < attempts; attempt += 1) {
 		try {
@@ -174,11 +158,6 @@ export async function gone(pid: number, attempts = 100): Promise<boolean> {
 	return false;
 }
 
-/**
- * Linux: whether /proc/<pid>/status says the process is a zombie of one thread
- * (State: Z, Threads: 1). A process whose main thread exited while other
- * threads run reads Z too, with more threads, and is still running.
- */
 function isZombie(pid: number): boolean {
 	if (process.platform !== "linux") return false;
 	try {
@@ -189,15 +168,11 @@ function isZombie(pid: number): boolean {
 	}
 }
 
-/** Ends a process a failed test left behind; one that is gone already is fine. */
 export function killQuietly(pid: number): void {
-	// 0 or less would signal a whole process group, this test's own among them.
 	if (!Number.isInteger(pid) || pid <= 0) return;
 	try {
 		process.kill(pid, "SIGKILL");
-	} catch {
-		// Gone already.
-	}
+	} catch {}
 }
 
 export function sha256Of(path: string): string {
@@ -205,7 +180,6 @@ export function sha256Of(path: string): string {
 	return `sha256:${digest}`;
 }
 
-/** The passed fixture with one scenario failed: a frozen no-agent replay that found a regression. */
 export function failedReplayReport(): string {
 	const doc = fixtureDoc("passed");
 	scenarioAt(doc, 0).status = "failed";
@@ -216,7 +190,6 @@ export function failedReplayReport(): string {
 	return path;
 }
 
-/** A report left on disk by an earlier run, which the gate must not read. */
 export function stalePassedReport(project: string): void {
 	mkdirSync(join(project, ".ai-bdd", "report"), { recursive: true });
 	writeFileSync(

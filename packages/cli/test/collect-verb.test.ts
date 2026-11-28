@@ -16,10 +16,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject, JsonValue } from "../src/json.js";
 
-// S1-20: `hobo collect` runs run-to-collect on the project Bindle and prints /
-// emits the manifest IR, with --check failing on drift against the committed
-// golden.
-
 const COMPONENT_HOST = { kind: "wasmtime", version: "46.0.1" } as const;
 
 function helloTarget(): CollectionTarget {
@@ -41,7 +37,6 @@ async function withProject(
 	golden?: JsonValue,
 ): Promise<void> {
 	const dir = await mkdtemp(path.join(tmpdir(), "hobo-collect-"));
-	// A minimal project marker so the project-scoped verb resolves a projectDir.
 	await writeFile(path.join(dir, "hobo.bindle.json"), "{}\n");
 	if (golden !== undefined) {
 		await writeFile(

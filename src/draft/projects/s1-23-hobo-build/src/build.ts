@@ -31,7 +31,6 @@ import {
 } from "./parse.js";
 import { isJsonObject, isJsonString, type JsonValue, type JsonObject } from "./json.js";
 
-
 export const BUILD_MANIFEST_PATH = ".hobo/build/build-manifest.json";
 export const BUILD_ARTIFACT_DIR = ".hobo/build/artifacts";
 

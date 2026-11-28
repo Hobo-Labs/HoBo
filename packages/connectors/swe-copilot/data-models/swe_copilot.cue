@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Copilot SWE adapter wire records. One constraint
-// per protobuf message in swe_copilot.proto.
 
 #CopilotLaunchRecord: {
 	command: "copilot"

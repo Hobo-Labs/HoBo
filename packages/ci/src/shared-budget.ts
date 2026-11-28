@@ -25,7 +25,6 @@ import {
 	SandboxPricingSchema,
 } from "./_generated/ci_pb.js";
 
-/** Ports only: financial records remain the Broker's generated, shared ledger records. */
 export interface CiSharedBudgetHooks {
 	reserve(lease: Lease, measurements?: CiPolicyMeasurements): BudgetReservation;
 	claim(lease: Lease, measurements?: CiPolicyMeasurements): BudgetReservation;
@@ -33,7 +32,6 @@ export interface CiSharedBudgetHooks {
 	settle(lease: Lease, evidence: BudgetSettlementEvidence): BudgetReservation;
 	releaseUnused(lease: Lease, evidenceRef: string): BudgetReservation;
 }
-/** Store-owned workload-local measurements captured under the lease transaction. */
 export type CiPolicyMeasurements =
 	BudgetPolicyEvaluationContext["measurements"];
 export type CiAsyncSharedBudgetHooks = {
@@ -44,29 +42,22 @@ export type CiAsyncSharedBudgetHooks = {
 export type { AsyncBudgetAdmissionAuthority } from "@hobo/broker";
 
 export interface CiSharedBudgetOptions {
-	/** A trusted quote publisher itemizes every provider charge and credit claim. */
 	quoteLease(lease: Lease): HostingQuote;
-	/** Optional host restriction. It must agree with the pinned common policy. */
 	mode?: "strict" | "conservative";
-	/** Trusted host integration revalidates provider scope, amount, time and native adapter incarnation. */
 	verifyProviderLiabilityBound?: (
 		lease: Lease,
 		quote: HostingQuote,
 		at: string,
 	) => boolean;
-	/** Trusted native publisher must prove complete runner/Sandbox credit quantities,
-	 * their scales and units, and original provider-account bucket ownership. */
 	verifyAllocationCoverage?: (
 		lease: Lease,
 		quote: HostingQuote,
 		ledger: BudgetLedgerSnapshot,
 	) => boolean;
-	/** Verify authoritative final usage AND stopped-source evidence against this exact execution. */
 	verifyFinalUsage?: (
 		lease: Lease,
 		evidence: BudgetSettlementEvidence,
 	) => boolean;
-	/** Verify a durable cancelled-before-claim CAS receipt, never absence or a deadline. */
 	verifyUnused?: (lease: Lease, evidenceRef: string) => boolean;
 	now?: () => string;
 }
@@ -116,7 +107,6 @@ function jobScope(lease: Lease): (string | number)[] {
 		lease.pipelineDigest,
 	];
 }
-/** Independent of random lease IDs; a retry cannot buy a second hold for the same job. */
 export function ciReservationId(lease: Lease): string {
 	return `ci:${hash(jobScope(lease))}`;
 }
@@ -127,7 +117,6 @@ export function ciRequestDigest(lease: Lease): string {
 		lease.pipelineId ? "native-pipeline" : required(lease.repository),
 	]);
 }
-/** Pins the whole approved financial plan, including price duration and both resource schedules. */
 export function ciFinancialPlanHash(lease: Lease): string {
 	return hash([
 		...jobScope(lease),
@@ -152,7 +141,6 @@ export function ciFinancialPlanHash(lease: Lease): string {
 			: "",
 	]);
 }
-/** One concrete lease owns execution; copied leases cannot reuse an admitted job. */
 export function ciExecutionDigest(lease: Lease): string {
 	return hash([
 		"hobo.ci.execution/v1",
@@ -485,8 +473,6 @@ function checkedUnused(
 		throw new Error("durable cancelled-before-claim CAS evidence required");
 }
 
-/** Uses the SAME authority as hosting. The caller reserves before its lease transaction commits.
- * Unknown cross-database outcomes keep the parent hold; reconciliation never releases by absence. */
 export function createCiSharedBudgetHooks(
 	options: CiSharedBudgetOptions & { authority: BudgetAdmissionAuthority },
 ): CiSharedBudgetHooks {
@@ -599,7 +585,6 @@ export function createCiSharedBudgetHooks(
 	};
 }
 
-/** Distributed hosts use an asynchronous, shared transactional parent, never host-local SQLite. */
 export function createCiAsyncSharedBudgetHooks(
 	options: CiSharedBudgetOptions & { authority: AsyncBudgetAdmissionAuthority },
 ): CiAsyncSharedBudgetHooks {

@@ -1,12 +1,3 @@
-/**
- * The fix for a checkout whose repository cannot be used moves it aside
- * (`mv <path> <path>.kept`), so no printed fix deletes work. When
- * `<path>.kept` is already taken, a plain `mv` either nests the checkout in
- * it (an empty directory, a symlink to a directory) or fails (a directory
- * with content, a file) and status then prints the same fix again. The name is
- * chosen when the fix is printed: the first of `<path>.kept`,
- * `<path>.kept.1`, `<path>.kept.2`, ... with nothing at it, a link included.
- */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -33,7 +24,6 @@ import {
 
 const MINE = "MY UNCOMMITTED WORK\n";
 
-/** external/lib cloned, changed, and made to name another clone's `.git`: the checkout must be moved aside. */
 function setUp() {
 	const dir = scratch("aside");
 	const remote = makeRemote(dir);
@@ -46,7 +36,6 @@ function setUp() {
 	return { dir, root };
 }
 
-/** The fix `status` prints, and the name it says the checkout goes to. */
 interface PrintedFix {
 	readonly fix: string;
 	readonly target: string;
@@ -63,7 +52,6 @@ function printedFix(root: string): PrintedFix {
 	return { fix: fix[1] ?? "", target: fix[2] ?? "" };
 }
 
-/** What was at `<path>.kept` before, and how to tell it is untouched. */
 interface Taken {
 	readonly label: string;
 	readonly make: (kept: string, dir: string) => void;
@@ -155,8 +143,6 @@ describe("the move-aside fix when <path>.kept is taken", () => {
 	});
 
 	it("this repository's .gitignore keeps a moved-aside checkout out of git add -A", () => {
-		// Left in the tree, a checkout with a .git file is an embedded repository
-		// that `git add -A` stages; it is local and machine-specific scratch.
 		for (const name of [
 			"external/ts-autocode.kept",
 			"external/ts-autocode.kept.1",

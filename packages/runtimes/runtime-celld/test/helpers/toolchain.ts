@@ -2,16 +2,6 @@ import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/**
- * Live-lane toolchain paths.
- *
- * Both entries honour their environment variable first (`CELLD_BIN`,
- * `CELLD_ESBUILD` — both listed in `turbo.json` `globalPassThroughEnv`, so they
- * reach tasks) and otherwise resolve something that exists on this machine.
- * A missing binary remains a **failure, not a skip**: these helpers only decide
- * *where* to look, never whether to run.
- */
-
 const repoRoot = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",
@@ -21,7 +11,6 @@ const repoRoot = join(
 	"..",
 );
 
-/** Where `scripts/fetch-celld.mts` installs the pinned binary. */
 export const DEFAULT_CELLD_BIN = "/tmp/hobo-live/bin/celld";
 
 export function celldBinPath(): string {
@@ -70,10 +59,6 @@ export function esbuildPath(): string {
 	return join(repoRoot, "node_modules", ".bin", "esbuild");
 }
 
-/**
- * A missing binary is a failure, not a skip (see the package README). Throwing
- * from `describe` turns the whole live file red, which is the intended policy.
- */
 export function requireCelldBin(): void {
 	const binPath = celldBinPath();
 	if (!existsSync(binPath)) {

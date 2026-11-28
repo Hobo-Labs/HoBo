@@ -89,8 +89,6 @@ describe("membrane failure semantics (S1-23)", () => {
 
 	it("a slow provider past the deadline is cancelled with a typed deadline-exceeded (cancelled)", async () => {
 		const layer = createLayer({
-			// Never resolves within the budget: a real 200ms delay against an
-			// already-elapsed deadline (remaining budget 0).
 			get: async () => {
 				await new Promise((resolve) => setTimeout(resolve, 200));
 				return { value: "too-late" };
@@ -116,7 +114,6 @@ describe("membrane failure semantics (S1-23)", () => {
 		// SAFETY: assertion to `caught as DeadlineExceededError` is required at this boundary.
 		expect((caught as DeadlineExceededError).kind).toBe("cancelled");
 		expect(classifyToRuntimeError(caught).tag).toBe("cancelled");
-		// The failed call is not recorded as a completed link.Called.
 		expect(layer.events.some((event) => event.type === "link.Called")).toBe(
 			false,
 		);
@@ -137,7 +134,6 @@ describe("membrane failure semantics (S1-23)", () => {
 			{ maxInFlight: 1 },
 		);
 
-		// Occupy the single in-flight slot (call stays pending on the gate).
 		const first = layer.callImport("api", KV, "get", { key: "a" });
 
 		let caught: unknown;
@@ -160,7 +156,6 @@ describe("membrane failure semantics (S1-23)", () => {
 
 	it("a mid-call crash with unknown commit surfaces an explicit ambiguous-commit", async () => {
 		const layer = createLayer({
-			// The provider severs mid-call after possibly applying the effect.
 			put: () => {
 				throw new AmbiguousCommitError({
 					providerId: "local-kv",
@@ -194,7 +189,6 @@ describe("membrane failure semantics (S1-23)", () => {
 		expect(classifyToRuntimeError({ ambiguousCommit: true }).tag).toBe(
 			"ambiguous-commit",
 		);
-		// An unrecognized error is fatal — never optimistically retried.
 		expect(classifyToRuntimeError(new Error("boom")).tag).toBe("fatal");
 	});
 

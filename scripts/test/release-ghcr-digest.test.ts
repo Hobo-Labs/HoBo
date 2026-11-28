@@ -23,7 +23,6 @@ const DIGEST_B =
 const DIGEST_DEAD =
 	"sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
-/** Empirical alpine:3.20 index digest (docker 27.3.1 + buildx 0.19.3, 2026-11-12). */
 const EMPIRICAL_ALPINE_INDEX_DIGEST =
 	"sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
 

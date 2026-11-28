@@ -179,7 +179,7 @@ stating plainly rather than inflating.
 - **Borrow** — already done and worth crediting explicitly: the Trait concept (ADR-0145) and the
   Application/Component/Trait/Scope role separation (ADR-0144) come from here.
 - **Standard** — OAM is spoken at HoBo's boundary, never absorbed as HoBo's internal model, per the
-  governing rule in [`lineage.md`](../design/lineage.md) and
+  governing rule in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) and
   [ADR-0046](../design/adr/02-identity-security.md#adr-0046). That posture remains correct.
 - **Render-target** — HoBo renders to `wadm` (ADR-0108), which speaks the same vocabulary; emitting
   OAM Applications for KubeVela is a natural extension of the same seam.
@@ -208,7 +208,7 @@ stating plainly rather than inflating.
 - [Architecture](https://kubevela.io/docs/getting-started/architecture/) — control plane as CRD controller, CUE parsing/execution, revisions, garbage collection
 - [OAM definition protocol](https://kubevela.io/docs/platform-engineers/oam/x-definition/) — X-Definition structure
 - [Built-in workflow steps](https://kubevela.io/docs/end-user/workflow/built-in-workflow-defs/) and [built-in policies](https://kubevela.net/docs/v1.5/end-user/policies/references) — shipped step and policy types
-- HoBo-side: [`standards/oam`](../standards/oam.md), [`design/lineage.md`](../design/lineage.md), ADR-0144/0145/0108
+- HoBo-side: [`standards/oam`](../standards/oam.md), [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md), ADR-0144/0145/0108
 
 Current project activity, release cadence and contributor breadth were not verified in this pass and
 are deliberately not characterized.

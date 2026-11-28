@@ -30,7 +30,6 @@ import "list"
 	digest:       #D1JournalDigest
 }
 
-// Runtime parsing also checks the digest chain, exact scope and byte bounds.
 #D1JournalLog: {
 	contract:         "hobo.d1-immutable-journal/v1"
 	anchorDigest:     #D1JournalDigest

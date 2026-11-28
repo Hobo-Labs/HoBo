@@ -17,12 +17,6 @@ import {
 	readOwnerTurn,
 } from "../support/remote-owner.js";
 
-// SPEC: every refusal a handed-off run can give a remote owner is one they
-// can act on from where they are. They have a browser on their own device
-// and the agent's chat; they cannot reach this box's 127.0.0.1, open its
-// terminal or run anything on it. Each case below is a refusal the ceremony
-// really produces, read by the simulated remote owner.
-
 function handOff(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
@@ -215,8 +209,6 @@ describe("SPEC remote reach: Infisical's API origin is the owner's own", () => {
 
 describe("SPEC remote reach: the store opens at the owner's own Infisical", () => {
 	it("an EU or self-hosted Infisical store opens at the site the owner saved, as provisioning does", async () => {
-		// Derived from the real-binary smoke: the identity was provisioned on the
-		// owner's site, then the store opened against US cloud and never answered.
 		const sites: (string | undefined)[] = [];
 		await prepareGithubConnection(handOff(), {
 			env: {},

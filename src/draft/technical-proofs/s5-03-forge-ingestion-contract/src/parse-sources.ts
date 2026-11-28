@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { ForgeIngestionError, sha256Digest } from "./events.js";
 import { type JsonObject } from "./json.js";
 
-
 const fixtureSchema = "hobo.forge.fixture/v1";
 
 export type ForgeFixtureIndex = {

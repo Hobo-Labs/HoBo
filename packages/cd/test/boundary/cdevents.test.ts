@@ -25,7 +25,6 @@ const goldenPath = join(
 const SOURCE = "/hobo/cd/acme";
 
 function render(events: readonly CdEvent[]): string {
-	// One canonical CDEvent per line: byte-stable and diff-friendly.
 	// SAFETY: CdEvent is a JSON-shaped record.
 	return `${events.map((e) => canonicalJson(e as never)).join("\n")}\n`;
 }

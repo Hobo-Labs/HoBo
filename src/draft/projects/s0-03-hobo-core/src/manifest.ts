@@ -17,7 +17,6 @@ import {
 } from "./parse-utils.js";
 import { type JsonValue, type JsonObject } from "./json.js";
 
-
 export const CORE_SCHEMA_VERSION = "hobo.core/v1";
 
 const STABILITIES = new Set<InterfaceStability>(["stable", "preview", "experimental"]);

@@ -1,15 +1,3 @@
-/**
- * Derive the Examples console's claim terms from the shipped recipes.
- *
- * This is the only place the site is allowed to learn what a deploy commits a
- * visitor to. Every field below is read off a `SolutionRecipe` in
- * `@hobo/recipes`; none of it is written here, so the console cannot describe
- * a deployment in friendlier terms than the compiler will enforce.
- *
- * Node-only: `generate-recipe-terms.mts` runs it at build time and the browser
- * reads the JSON it wrote. Keeping the derivation out of the bundle is what
- * lets the console stay a static page.
- */
 import {
 	type SolutionRecipe,
 	STANDARD_SOLUTION_RECIPES,
@@ -23,7 +11,6 @@ export type RecipePlacementTerm = {
 	readonly capabilityRef: string;
 	readonly profileId: string;
 	readonly productDefinitionId: string;
-	/** Absent when the recipe leaves the runtime to Matching. */
 	readonly runtimeModel: string | null;
 	readonly claimMode: string;
 	readonly claimActionCount: number;
@@ -37,9 +24,7 @@ export type RecipeTerm = {
 	readonly description: string;
 	readonly providerIds: readonly string[];
 	readonly primitives: readonly string[];
-	/** Ownership ceremonies the human inherits, summed across placements. */
 	readonly claimActionCount: number;
-	/** Soonest a placement is reaped if nobody claims it, in ms from deploy. */
 	readonly earliestClaimDeadlineMs: number | null;
 	readonly claimKind: string;
 	readonly persistence: string;

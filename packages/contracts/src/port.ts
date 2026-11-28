@@ -1,13 +1,9 @@
 import type { ProviderPort } from "@hobo/core";
 import { createPortDescriptor } from "@hobo/core";
 
-// The Gatekeeper and contract-engine seams (contracts-policy-flags.md,
-// ADR-0015). The contract engine is a WIT port with a built-in HoBo
-// implementation; the Gatekeeper composes it with the policy engine. Concrete
-// adapters bind behind these descriptors via Matching — never in app code. The
-// only inward dependency is the shared @hobo/core port vocabulary.
-
+// public-contract: contract-engine port interface id.
 export const CONTRACT_ENGINE_INTERFACE = "hobo:contract-engine/can-deploy";
+// public-contract: gatekeeper port interface id.
 export const GATEKEEPER_INTERFACE = "hobo:gatekeeper/verify";
 
 const contractEngineDescriptor = createPortDescriptor({

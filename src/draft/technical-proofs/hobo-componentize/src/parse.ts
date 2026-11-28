@@ -10,7 +10,6 @@ import {
 } from "./types.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 const jcoVersion = pkgVersion("@bytecodealliance/jco");
 const componentizeJsVersion = pkgVersion("@bytecodealliance/componentize-js");
 
@@ -76,7 +75,6 @@ function parseToolchainPin(raw: JsonValue): ToolchainPin {
     }
   }
 
-  // Equality check above proves the parsed pins match the literals in ToolchainPin.
   return PINNED_TOOLCHAIN;
 }
 

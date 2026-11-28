@@ -18,14 +18,10 @@ import {
 	write,
 } from "./support/typescript-project.js";
 
-// Generated code imported in-process registers trainables in the shared
-// registry; with files sharing a worker (isolate: false), clear it after each test.
 afterEach(() => {
 	resetTrainables();
 });
 
-// One of four files split from typescript-project-codegen.test.ts so the
-// files can spread across workers; helpers are in ./support/typescript-project.ts.
 describe("TypeScript app codegen executes the compiler-inferred app contract: source overlays, assets and CommonJS", {
 	timeout: slow(60_000),
 }, () => {

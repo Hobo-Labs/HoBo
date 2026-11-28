@@ -93,6 +93,36 @@ describe("source policy", () => {
 		);
 	});
 
+	it("preserves comments used as training input and flags other comments", () => {
+		const lines = [
+			"// ordinary comment",
+			"export function rank(items: string[]) {",
+			'  "use training";',
+			"  // TODO rank the items",
+			"  /* Keep ties stable. */",
+			"  return items;",
+			"}",
+			"class Ranker {",
+			"  @trainable()",
+			"  rank() {",
+			"    // Rank the items.",
+			"  }",
+			"  ordinary() {",
+			'    const marker = "use training";',
+			"    // ordinary method comment",
+			"    return marker;",
+			"  }",
+			"}",
+		];
+		const added = new Set(lines.map((_, index) => index + 1));
+		assert.deepEqual(
+			commentViolations("example.ts", lines.join("\n"), added).map(
+				(issue) => issue.line,
+			),
+			[1, 15],
+		);
+	});
+
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
 			"// @ts-expect-error required by the compiler test",
@@ -158,7 +188,7 @@ describe("source policy", () => {
 		assert.equal(commentViolations("x.ts", text, new Set([4])).length, 0);
 	});
 
-	it("parses shell, Python, CSS, and HTML without confusing strings or heredocs with comments", () => {
+	it("parses shell, Python, CSS, HTML, and YAML without confusing data with comments", () => {
 		const shell =
 			"#!/usr/bin/env sh\ncat <<'EOF'\n# data\nEOF\necho ok # explanation\n";
 		assert.deepEqual(
@@ -187,6 +217,53 @@ describe("source policy", () => {
 			commentViolations(
 				"example.html",
 				"<div><!-- explanation --></div>",
+				new Set([1]),
+			).length,
+			1,
+		);
+		const yaml =
+			"run: |\n  # script data\n  echo ok\n# explanation\n# yamllint disable rule:line-length\n";
+		assert.deepEqual(
+			commentViolations("example.yaml", yaml, new Set([2, 4, 5])).map(
+				(issue) => issue.line,
+			),
+			[4],
+		);
+	});
+
+	it("checks CUE, protobuf, and WIT comments without mistaking strings for comments", () => {
+		const cue = [
+			"package sample",
+			'url: "https://example.test/path"',
+			'raw: #"// string data"#',
+			'block: #"""',
+			"// multiline string data",
+			'"""#',
+			"// explanation",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("sample.cue", cue, new Set([2, 3, 5, 7])).map(
+				(issue) => issue.line,
+			),
+			[7],
+		);
+		const proto = [
+			'syntax = "proto3";',
+			'option java_package = "example//data";',
+			"/* explanation */",
+			"// buf:lint:ignore FIELD_NOT_REQUIRED",
+			"// TODO resolve this",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("sample.proto", proto, new Set([2, 3, 4, 5])).map(
+				(issue) => issue.line,
+			),
+			[3, 5],
+		);
+		assert.equal(
+			commentViolations(
+				"sample.wit",
+				"/// explanation\nworld app {}",
 				new Set([1]),
 			).length,
 			1,
@@ -231,7 +308,8 @@ f: /* TODO: remove block */`;
 				},
 				{
 					line: 2,
-					message: "finish deferred work instead of adding a marker",
+					message:
+						"resolve the work or track it in Linear instead of adding a marker",
 				},
 			],
 		);
@@ -252,7 +330,8 @@ f: /* TODO: remove block */`;
 			[
 				{
 					line: 1,
-					message: "finish deferred work instead of adding a marker",
+					message:
+						"resolve the work or track it in Linear instead of adding a marker",
 				},
 				{
 					line: 2,
@@ -280,7 +359,8 @@ f: /* TODO: remove block */`;
 			[
 				{
 					line: 1,
-					message: "finish deferred work instead of adding a marker",
+					message:
+						"resolve the work or track it in Linear instead of adding a marker",
 				},
 				{
 					line: 2,
@@ -663,6 +743,27 @@ f: /* TODO: remove block */`;
 		assert.match(result.stderr, /docs\/design\/new\.md/u);
 	});
 
+	it("checks staged schema comments while preserving vendored WASI definitions", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"schema/model.cue",
+			"package model\n// explanation\nvalue: string\n",
+		);
+		write(repo, "schema/model.proto", 'syntax = "proto3";\n// explanation\n');
+		write(
+			repo,
+			"packages/hobo/wit/wasi-http/proxy.wit",
+			"/// upstream\nworld proxy {}\n",
+		);
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /schema\/model\.cue:2/u);
+		assert.match(result.stderr, /schema\/model\.proto:2/u);
+		assert.doesNotMatch(result.stderr, /wasi-http\/proxy\.wit/u);
+	});
+
 	it("enforces contract and design artifact rules on staged files", () => {
 		const repo = fixture();
 		write(
@@ -893,9 +994,9 @@ f: /* TODO: remove block */`;
 		assert.match(result.stderr, /literal\[1\]\.ts:1/u);
 	});
 
-	it("rejects changes that retain an existing design document", () => {
+	it("allows removing text from an existing design document but rejects additions", () => {
 		const repo = fixture();
-		write(repo, "docs/design/existing.md", "# Existing\n");
+		write(repo, "docs/design/existing.md", "# Existing\nOld content\n");
 		git(repo, "add", "--all");
 		git(
 			repo,
@@ -908,12 +1009,67 @@ f: /* TODO: remove block */`;
 			"-m",
 			"add design",
 		);
+		write(repo, "docs/design/existing.md", "# Existing\n");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
 		write(repo, "docs/design/existing.md", "# Changed\n");
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 1);
 		unlinkSync(join(repo, "docs/design/existing.md"));
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 0);
+	});
+
+	it("rejects a new empty design document", () => {
+		const repo = fixture();
+		write(repo, "docs/design/empty.md", "");
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+	});
+
+	it("allows existing design links to move to Linear or immutable history without adding prose", () => {
+		const repo = fixture();
+		write(repo, "docs/design/existing.md", "# Existing\n[Scope](./old.md)\n");
+		git(repo, "add", "--all");
+		git(
+			repo,
+			"-c",
+			"user.name=fixture",
+			"-c",
+			"user.email=fixture@example.invalid",
+			"commit",
+			"--quiet",
+			"-m",
+			"add design",
+		);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://linear.app/team/doc)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://github.com/Hobo-Labs/HoBo/blob/0123456789012345678901234567890123456789/old.md)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 0);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[Scope](https://example.test/doc)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
+		write(
+			repo,
+			"docs/design/existing.md",
+			"# Existing\n[New scope](https://linear.app/team/doc)\n",
+		);
+		git(repo, "add", "--all");
+		assert.equal(guard(repo, "--staged").status, 1);
 	});
 
 	it("allows tracked planning documents to be removed before staging", () => {

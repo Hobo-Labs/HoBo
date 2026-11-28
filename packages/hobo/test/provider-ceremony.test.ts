@@ -4,10 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { createProviderCeremonyUp } from "../src/provider-ceremony.js";
 
-// hobo up holds a ceremony for providers: a resource no connected provider
-// serves opens the setup page, offers the providers for its port, connects
-// the chosen one and runs up again.
-
 const rejected = {
 	ok: false,
 	status: "rejected",
@@ -215,7 +211,6 @@ describe("hobo up's provider ceremony", () => {
 		}).run(input());
 		await browsing;
 		expect(asked).toEqual(["Provider for db: neon,supabase"]);
-		// Registered held, then approved by the second add.
 		expect(calls).toEqual(["supabase", "supabase"]);
 		expect(up.runs()).toBe(2);
 		expect(result).toMatchObject({

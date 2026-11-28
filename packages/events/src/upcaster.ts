@@ -1,14 +1,3 @@
-/**
- * Golden-replay corpus + upcaster-totality gate (ADR-0032 / data-plane
- * Plan 9-11). Canonical home of the promoted `event-body-upcaster-gate`
- * draft proof.
- *
- * The corpus pins one real encoded body per (event type, version) ever
- * shipped, append-only. CI replays every entry through the current upcaster
- * chain; a body that cannot be lifted to the current version fails the gate —
- * and with it `can-deploy`. Adding a version bump without extending the
- * corpus is itself a gate failure (coverage check).
- */
 import { createHash } from "node:crypto";
 
 // public-contract: gate report schema id.
@@ -19,12 +8,6 @@ export const CORPUS_ENTRY_SCHEMA = "hobo.golden-replay-corpus-entry/v1";
 // public-contract: corpus baseline schema id.
 export const CORPUS_BASELINE_SCHEMA = "hobo.golden-replay-corpus-baseline/v1";
 
-/**
- * What a field holds. `string` and `u32` are scalars. `bool` is a flag;
- * `strings` a list of strings (`repeated string`); `json` a JSON object,
- * carried on the wire as its canonical text — the form for a small
- * structured value whose members the contract does not pin one by one.
- */
 export type EventFieldType = "string" | "u32" | "bool" | "strings" | "json";
 
 export interface EventFieldSpec {
@@ -40,7 +23,6 @@ export interface EventBodySchema {
 	readonly fields: readonly EventFieldSpec[];
 }
 
-/** A JSON value, as a `json` field holds it. */
 export type EventJsonValue =
 	| string
 	| number
@@ -63,7 +45,6 @@ export interface EventBodyUpcaster {
 	readonly type: string;
 	readonly from: number;
 	readonly to: number;
-	/** Why the semantic change needs an upcaster (review evidence). */
 	readonly reason: string;
 	readonly upcast: (body: EventBody) => EventBody;
 }
@@ -171,7 +152,6 @@ export function boolField(
 	});
 }
 
-/** A list of strings. An empty list is absent on the wire, as in proto3. */
 export function stringsField(
 	name: string,
 	tag: number,
@@ -185,7 +165,6 @@ export function stringsField(
 	});
 }
 
-/** A JSON object, carried as its canonical text. */
 export function jsonField(
 	name: string,
 	tag: number,
@@ -199,7 +178,6 @@ export function jsonField(
 	});
 }
 
-/** Encode + pin a real body as an append-only corpus entry. */
 export function createCorpusEntry(
 	schema: EventBodySchema,
 	id: string,
@@ -264,7 +242,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Append-only: baseline entries may never vanish or change digest.
 	if (options.baselineCorpus) {
 		const current = new Map(
 			corpus.map((entry) => [corpusKey(entry), entry.bodyDigest]),
@@ -285,7 +262,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Totality: every version below current has exactly the next-step upcaster.
 	for (const schema of schemas) {
 		if (schema.version >= contract.currentVersion) continue;
 		const expectedTo = schema.version + 1;
@@ -297,7 +273,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Purity: same input twice → same output; output validates against target.
 	for (const upcaster of upcastersByFrom.values()) {
 		const sourceSchema = schemasByVersion.get(upcaster.from);
 		const targetSchema = schemasByVersion.get(upcaster.to);
@@ -340,7 +315,6 @@ export function runCanDeployUpcasterGate(
 		}
 	}
 
-	// Golden replay: every pinned body must lift to the current version.
 	for (const entry of corpus) {
 		try {
 			replays.push(

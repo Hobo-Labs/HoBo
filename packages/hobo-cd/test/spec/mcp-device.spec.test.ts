@@ -10,18 +10,6 @@ import {
 } from "../../src/index.js";
 import { fakeWorkload, handedOverInfisicalToken } from "../support/workload.js";
 
-// SPEC: `hobo cd up --hand-off` through the HoBo MCP server. The server runs
-// the CLI with --json, so no progress line reaches anyone, and no tool call
-// may block on a person. Derived from the real-binary smoke: the run waited
-// inside the call on a Vercel device code it could only print.
-//
-// So the device grant runs off the request path: the call starts it, shows
-// the link through the owner channel (the host's own link prompt) and
-// returns at once; the grant completes in the server's lifetime and writes
-// the connection to the store; the next call finds it there. Polling is the
-// protocol's (RFC 8628: interval, slow_down, expiry), on a clock this spec
-// drives virtually: no real time passes.
-
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
@@ -39,7 +27,6 @@ function throughMcp(): PrepareInput {
 	};
 }
 
-/** Virtual time: a wait advances the clock and returns; nothing really sleeps. */
 function virtualClock() {
 	let at = 0;
 	const waits: number[] = [];
@@ -53,7 +40,6 @@ function virtualClock() {
 	};
 }
 
-/** Vercel's device grant, answering per RFC 8628. */
 function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 	let approved = false;
 	let polls = 0;
@@ -225,7 +211,6 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 		});
 		expect(JSON.stringify(first)).not.toMatch(/HANDOFF_SILENT|--json/u);
 		expect(h.shown).toEqual([LINK]);
-		// The owner approves; the grant completes in the background.
 		provider.approve();
 		await h.jobs.settled();
 		expect(await h.port.access("HOBO_CD_VERCEL_TOKEN")).toMatchObject({

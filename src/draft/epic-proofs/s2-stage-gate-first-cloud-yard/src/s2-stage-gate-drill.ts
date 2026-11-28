@@ -2,7 +2,6 @@ import { type JsonObject } from "./json.js";
 
 export const S2_STAGE_GATE_SCHEMA = "hobo.s2StageGate/v1";
 
-/** NFR-009: deploy resume after node loss must complete within 30s. */
 export const NFR_009_RESUME_BUDGET_MS = 30_000;
 
 export const HELLO_BINDLE_FIXTURE = "examples/hello-bindle";

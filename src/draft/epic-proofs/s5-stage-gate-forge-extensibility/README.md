@@ -80,3 +80,7 @@ Feature: Gated live-fix with auto-rollback
 - `architecture.md` — parse-don't-validate and event-sourcing notes
 - `contracts/pacts/` — four mocked service boundaries
 - `tests/reference-architecture.test.ts` — architecture artifact boundary test pins proto/CUE/Pact/event-architecture evidence (S3-08 pattern)
+
+## Cascade reconciliation
+
+The `SAFETY:` type-assertion notes restored from main in `eval-promotion-gate-contract`, `generation-reference-run-contract`, `live-fix-gated-candidate-contract`, `signed-artifact-publish-install-contract` are absorbed without changing this rollup's evidence.

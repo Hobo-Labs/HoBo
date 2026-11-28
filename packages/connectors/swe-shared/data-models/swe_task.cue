@@ -1,6 +1,5 @@
 package swe_shared
 
-// CUE constraints for the shared SWE-task session records (swe_task.proto).
 
 #SweTask: {
 	task_id:     string & !=""
@@ -23,7 +22,6 @@ package swe_shared
 	workspace_root:     string & !=""
 	granted_actions:    [...string]
 	out_of_scope_access: [...string]
-	// clean holds exactly when no out-of-scope access was recorded.
 	clean: bool
 	if len(out_of_scope_access) > 0 {
 		clean: false

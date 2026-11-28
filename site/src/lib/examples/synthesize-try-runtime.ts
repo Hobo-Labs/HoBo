@@ -2,12 +2,6 @@ import { scanDeclaredTrainables } from "../../../../packages/runtime/src/trainin
 
 import type { ExampleRuntimeDescriptor, RuntimeAction } from "./catalog-contract.js";
 
-/**
- * Cold-start stub path for try-site examples that declare ambient @trainable
- * operations instead of hand-authoring `export const runtime`. Uses the same
- * scanDeclaredTrainables surface as `hobo stub` (ADR-0128); deterministic
- * mock/baseline handlers — not a live LLM optimize loop.
- */
 export function synthesizeTryRuntimeFromDeclared(
 	source: string,
 ): ExampleRuntimeDescriptor {

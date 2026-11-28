@@ -44,7 +44,6 @@ export function isJsonArray<T>(value: T): value is T & JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-/** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
 	return parseJsonValue(JSON.stringify(value ?? null));
 }

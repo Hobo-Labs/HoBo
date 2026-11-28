@@ -80,7 +80,6 @@ function take(requested: Units, available: Units) {
 			requested[field] < available[field] ? requested[field] : available[field];
 	return result;
 }
-/** Rates and optional remaining free units come from an explicitly trusted, current publisher. */
 export function validateSandboxPricing(pricing: SandboxPricing): void {
 	const cpus = integer(pricing.vcpus, "vcpus", 1);
 	if (cpus > 32n || (cpus !== 1n && cpus % 2n !== 0n))
@@ -191,9 +190,6 @@ function total(
 			hostMicros,
 	);
 }
-/** Conservative reservation over all resource dimensions. Shared free snapshots are
- * reduced by every active reservation and every completed usage since observation.
- * Network headroom is an estimate; billed network may exceed the reservation. */
 export function sandboxReservationQuote(
 	pricing: SandboxPricing,
 	minutes: number,
@@ -244,7 +240,6 @@ export function sandboxReservationMicros(
 	return sandboxReservationQuote(pricing, minutes, hostMicrosPerMinute)
 		.paidMicros;
 }
-/** The consumed free units never exceed the units previously reserved for this lease. */
 export function sandboxUsageQuote(
 	pricing: SandboxPricing,
 	usage: {
@@ -314,7 +309,6 @@ export function sandboxUsageQuote(
 		usedAllowance: message(used),
 	};
 }
-/** Settle the proxy alone only after the caller proves guest creation never began. */
 export function sandboxProxyOnlyUsageQuote(
 	pricing: SandboxPricing,
 	usage: {

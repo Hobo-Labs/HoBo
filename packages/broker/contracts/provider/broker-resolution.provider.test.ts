@@ -18,11 +18,6 @@ const pact = JSON.parse(
 	),
 );
 
-// PROVIDER verification: the hosted HTTP surface (http.ts) replays every
-// interaction in broker_resolution.pact.json and must reproduce the recorded
-// status and body layout. The consumer suite exercises the same pact from the
-// caller's side, so the boundary is pinned from both directions.
-
 function definition(
 	providerId: string,
 	marginalPrice: string,

@@ -1,5 +1,4 @@
 import { isJsonString, isJsonNumber, isJsonBoolean, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
-/** Recursive subset: every field in `expected` must exist with equal value in `actual`. */
 export function isRecursiveSubset(expected: JsonValue, actual: JsonValue, path = "$"): boolean {
   if (expected === actual) {
     return true;
@@ -38,7 +37,6 @@ export function isRecursiveSubset(expected: JsonValue, actual: JsonValue, path =
   return false;
 }
 
-/** Find first path where expected is not a subset of actual. */
 export function subsetMismatchPath(
   expected: JsonValue,
   actual: JsonValue,

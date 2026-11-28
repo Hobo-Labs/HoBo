@@ -101,7 +101,6 @@ describe("journal RailEventReader (HOBO_RAIL driver input)", () => {
 		store.push("s", RAIL_EVENT_TYPES.retired, { contentHash: DIGEST_A });
 		const after = await collect(read(cursor, new AbortController().signal));
 		expect(after.map((e) => e.status)).toEqual(["active", "retired"]);
-		// A retirement names the Rail even though its event carries only the digest.
 		expect(after[1]?.railId).toBe("rail-1");
 	});
 

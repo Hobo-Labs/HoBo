@@ -9,7 +9,6 @@ import {
   type ResourceHandle,
 } from "../src/closure-builder-resource-handles.ts";
 
-
 test("closure-builder authoring creates anonymous handles and dependsOn relationships without starting workloads", () => {
   let started = false;
   const myApi = {

@@ -1,15 +1,3 @@
-/**
- * The read boundary for a matrix that came from somewhere else.
- *
- * A matrix that has been committed to a repository, shipped over a wire, or
- * round-tripped through JSON is untrusted input. This is the one place it
- * crosses back into a derived domain type: past `parseCapabilityMatrix` an
- * incomplete grid, an unknown verdict, an unsorted bucket, or a digest that
- * does not describe the body is unrepresentable, so no consumer re-checks
- * them.
- *
- * Parse, don't validate — the return type is the proof, not a boolean.
- */
 import {
 	isBindlePrimitive,
 	isBindleRuntime,
@@ -182,7 +170,6 @@ function member<T extends string>(
 	return parsed as T;
 }
 
-/** Definition ids must arrive sorted and unique, or the digest is unstable. */
 function definitionIds(value: JsonValue, path: string): readonly string[] {
 	const entries = array(value, path).map((entry, index) =>
 		nonEmptyText(entry, `${path}[${index}]`),
@@ -262,8 +249,6 @@ function candidate(
 			`${primitive}/${runtime} is not a Bindle primitive and runtime pair`,
 		);
 	}
-	// A candidate filed under the wrong cell would make every per-cell count a
-	// lie while the grid still looked complete.
 	if (primitive !== coordinate.primitive || runtime !== coordinate.runtime) {
 		throw new CapabilityMatrixError(
 			"INVALID_CAPABILITY_MATRIX",
@@ -350,8 +335,6 @@ function cell(
 		record.verdict,
 		`${path}.verdict`,
 	);
-	// The verdict is a pure function of the buckets, so a recorded verdict that
-	// disagrees with them is evidence the record was edited by hand.
 	const derived = deriveCoverageVerdict(parsedBuckets);
 	if (verdict !== derived) {
 		throw new CapabilityMatrixError(
@@ -398,12 +381,6 @@ function exclusion(value: JsonValue, path: string): CapabilityMatrixExclusion {
 	};
 }
 
-/**
- * Parse an untrusted matrix document into a `CapabilityMatrix`.
- *
- * Rejects, rather than repairs: a grid missing a cell is not a matrix with a
- * gap, it is not a matrix.
- */
 export function parseCapabilityMatrix(
 	value: CapabilityMatrixDocument,
 ): CapabilityMatrix {
@@ -456,7 +433,6 @@ export function parseCapabilityMatrix(
 	return { ...body, digest: recomputed };
 }
 
-/** Non-throwing variant, for callers surveying several stored matrices. */
 export function tryParseCapabilityMatrix(
 	value: CapabilityMatrixDocument,
 ): CapabilityMatrix | undefined {

@@ -13,7 +13,6 @@ describe("Contract IR", () => {
 		const contract = createBoundaryContract();
 		expect(contract.schemaVersion).toBe("hobo.contract-ir/v1");
 		expect(contract.contractHash).toMatch(/^sha256:[a-f0-9]{64}$/);
-		// deterministic hash for identical content
 		expect(createBoundaryContract().contractHash).toBe(contract.contractHash);
 	});
 
@@ -66,7 +65,6 @@ describe("Contract IR", () => {
 				providedFields: ["id", "tenantId"],
 			},
 		});
-		// api@v3 removed tenantId — the exact skew the design calls out.
 		const next = createBoundaryContract({
 			version: "3.0.0",
 			requiredLayout: {

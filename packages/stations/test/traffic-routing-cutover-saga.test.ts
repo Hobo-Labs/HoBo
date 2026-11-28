@@ -1,7 +1,3 @@
-// Promoted domain-cutover-saga-contract invariants, re-expressed over the
-// routing port: fail-closed preconditions refuse before any traffic moves,
-// TTL/RTO evidence rides the event ladder, and rollback hysteresis absorbs
-// single-sample health flaps.
 import assert from "node:assert/strict";
 import { createSimpleTrafficRouting } from "@hobo/connectivity";
 import {
@@ -181,7 +177,6 @@ test("a stale incumbent plan refuses the cutover (live-zone precondition)", asyn
 
 test("a satisfied precondition emits TtlLowered with the effective RTO, then completes the ramp", async () => {
 	const port = seededSimplePort();
-	// Seed the incumbent so port.status reports it active.
 	const seed = synthesizeRoutingPlan({
 		topology: {
 			...TOPOLOGY,
@@ -245,7 +240,6 @@ test("hysteresis: one health flap below the threshold holds and re-probes instea
 			consecutiveFailuresToRollback: 2,
 			healthGate: ({ percent }) => {
 				probes += 1;
-				// Single flap at 50%; healthy on the re-probe.
 				return !(percent === 50 && probes === 2);
 			},
 		}),

@@ -1,21 +1,9 @@
-/**
- * The cue binary record-cue.test.ts vets the records with (ADR-0172), found
- * as the bindles CUE gate finds it: HOBO_CUE_BIN, else the cache the root
- * test:schema lane fills at .tools/cue/<CUE_VERSION>, else cue on PATH.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-/** The version the root test:schema lane caches, and the one the CUE suite is written against. */
 export const CUE_VERSION = "v0.14.0";
 
-/**
- * `binary` when the first line of its `cue version` is `cue version v0.14.0`,
- * or `cue version 0.14.0` (schema-tools takes both); otherwise a thrown error
- * naming what was found. Only that line counts: every cue of 0.14.x also
- * prints `cue.lang.version v0.14.0`, and another patch version is refused.
- */
 function pinned(binary: string, source: string): string {
 	let version: string;
 	try {
@@ -37,11 +25,6 @@ function pinned(binary: string, source: string): string {
 	return binary;
 }
 
-/**
- * HOBO_CUE_BIN when set and not empty (it must exist; empty is unset, as the
- * bindles CUE gate reads it), else the cached binary under `repoRoot`, else
- * cue on PATH; each must be CUE_VERSION.
- */
 export function cueBinary(env: NodeJS.ProcessEnv, repoRoot: string): string {
 	const configured = env.HOBO_CUE_BIN;
 	if (configured !== undefined && configured !== "") {

@@ -1,11 +1,3 @@
-// CUE constraints for every protobuf type in provider_npm.proto, over the
-// JSON (camelCase) spellings the realizer actually exchanges.
-//
-// The invariants written down here are the ones the realizer's correctness
-// rests on: a version npm will publish under exactly the string desired (no
-// build metadata), a dist-tag that cannot be read as a semver range, artifacts
-// addressed by digest only, and outputs that claim readiness only when the
-// dist-tag was observed pointing at the version.
 
 package provider_npm
 

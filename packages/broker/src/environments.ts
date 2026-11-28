@@ -7,13 +7,6 @@ import {
 } from "./json.js";
 import { BrokerParseError } from "./policies.js";
 
-// Broker Environments (the HOBO-526/HOBO-527 admin-controls requirements, now
-// runtime): the approved input state a resolution must validate against —
-// which providers may be used, and which catalog snapshot the decision must
-// be made over. Publication PROPOSES an environment; approval is a separate
-// admin fact; the broker only ever resolves against APPROVED state. This is
-// the backend the Admin Console's broker-environment UX drives.
-
 // domain-view: approved broker input state; wire form is BrokerEnvironment in data-models/broker.proto.
 export interface BrokerEnvironment {
 	environmentId: string;
@@ -92,8 +85,6 @@ export function approveEnvironmentFact(
 	});
 }
 
-// Fold publication/approval facts into the environment read model —
-// rebuildable from zero; only the fold decides what counts as approved.
 export function foldBrokerEnvironments(
 	events: Iterable<{ type: string; data?: unknown }>,
 ): BrokerEnvironment[] {

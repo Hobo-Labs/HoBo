@@ -1,12 +1,3 @@
-// createDesiredState (WP4): the command side (DeltaLedger) and the query side
-// (DesiredStateReader) of per-Camp desired state.
-//
-// - Spec stream `cd-camp-<id>`: delta.Opened/Updated/Applied/Rejected and
-//   set.Created, appended with expected-version CAS so one writer wins.
-// - Status stream `cd-camp-status-<id>`: observations, written by reconcilers.
-//   This module only reads it, so observations never contend with applies.
-// - Resolved sets are content-addressed blobs in the ArtifactStore (B3); a Set
-//   carries only the digest and size, and every read verifies them (B4).
 import { create } from "@bufbuild/protobuf";
 import {
 	createResolvedDeploymentSet,
@@ -93,35 +84,20 @@ import {
 
 export type DesiredStateDeps = CdBase & {
 	readonly artifacts: ArtifactStore;
-	/** Metrics sink (WP19). Failures to emit never fail a command. */
 	readonly telemetry?: TelemetrySink;
-	/** Attribute paths each Camp's posture packs need (D25); empty when absent. */
 	readonly posture?: Pick<PostureService, "observeFields">;
-	/** Fallback poll for cross-process writers while tailing `changes()`. */
 	readonly pollIntervalMs?: number;
 };
 
 export type LegacyAdoption = Readonly<{
 	adopted: readonly SetRecord[];
-	/** Legacy deployments that could not be folded, with the reason. */
 	skipped: readonly ReasonRecord[];
 }>;
 
-/**
- * The ports plus two operator surfaces. `get` is the intersection of
- * `DesiredStateReader.get(SetId)` and `DeltaLedger.get(DeltaId)`; Set ids are
- * always `set_<hex>` and Delta ids may never start with `set_`, so one
- * function serves both.
- */
 export type DesiredState = DesiredStateReader &
 	DeltaLedger &
 	Readonly<{
-		/**
-		 * Fold legacy `deployment.*` estates into a current Set (SET_ORIGIN_LEGACY_FOLD)
-		 * for every Camp that has no desired state yet. Idempotent.
-		 */
 		adoptLegacy(ctx: CdContext): Promise<LegacyAdoption>;
-		/** The folded spec projection of one Camp (operator and test surface). */
 		spec(campId: CampId): Promise<CampSpecState>;
 	}>;
 
@@ -132,7 +108,6 @@ const CHANGE_TYPES: ReadonlySet<string> = new Set([
 	CD_EVENTS.CampManagementChanged,
 ]);
 
-/** Catch-up read options: after the cursor, optionally one stream. */
 function readOptions(
 	after: EventPosition | undefined,
 	streamId: string | undefined,
@@ -144,7 +119,6 @@ function readOptions(
 	return {};
 }
 
-/** Camp ids are opaque, non-empty strings recorded by parsed records. */
 function asCampId(value: string): CampId {
 	// SAFETY: brand applied to a camp id taken from a parsed record.
 	return value as CampId;
@@ -183,9 +157,7 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			await d.telemetry.metrics([
 				{ name, kind, value, unit, atMs: d.now(), attributes },
 			]);
-		} catch {
-			// Telemetry is best-effort; a collector outage never fails a delivery command.
-		}
+		} catch {}
 	}
 
 	async function readStream(streamId: string): Promise<EventEnvelope[]> {
@@ -211,7 +183,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		});
 	}
 
-	/** The Camp a Delta or Set id was recorded on (ids are immutable, so hits are cached). */
 	async function findCamp(
 		type: string,
 		idField: "deltaId" | "setId",
@@ -277,7 +248,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		}
 	}
 
-	/** Check a Delta's changes against the resources of its base Set. */
 	async function checkChanges(
 		delta: DeltaRecord,
 		state: CampSpecState,
@@ -331,13 +301,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		return comparable(a) === comparable(b);
 	}
 
-	/**
-	 * The open Delta a new one may supersede, if any. Only a rollback marker
-	 * qualifies: an open rollback Delta that declares no changes (the rollout
-	 * records intent and target, never a resolved diff), on the same base, being
-	 * replaced by a concrete rollback Delta that does declare its changes. Every
-	 * other overlap stays refused (one in-flight Delta per Camp).
-	 */
 	function supersedable(
 		state: CampSpecState,
 		delta: DeltaRecord,
@@ -357,7 +320,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		return undefined;
 	}
 
-	/** Run a spec-stream command, retrying when another writer moved the head. */
 	async function withCas<T>(
 		campId: CampId,
 		attempt: (state: CampSpecState, conflicted: boolean) => Promise<Outcome<T>>,
@@ -424,8 +386,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 			}
 			const changes = await checkChanges(delta, state);
 			if (!changes.ok) return changes;
-			// Close the superseded rollback marker and open its replacement in one
-			// CAS append, so the Camp never has two open Deltas (D12, I7).
 			const events: EventInput[] = [];
 			if (superseded !== undefined)
 				events.push({
@@ -626,7 +586,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 					state.current &&
 					state.current.contentHash === blob.resolved.contentHash
 				) {
-					// Empty Delta: an explicit no-op that mints no Set (delta-set-apply-reconcile).
 					await append(
 						campId,
 						state,
@@ -764,7 +723,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 		}
 	};
 
-	/** One function serves both ports' `get`: Set ids are always `set_<hex>`, Delta ids never are. */
 	function getById(setId: SetId): Promise<SetRecord | undefined>;
 	function getById(deltaId: DeltaId): Promise<DeltaRecord | undefined>;
 	function getById(
@@ -964,8 +922,6 @@ export function createDesiredState(d: DesiredStateDeps): DesiredState {
 	}
 
 	async function adoptLegacy(ctx: CdContext): Promise<LegacyAdoption> {
-		// Per-stream seqs are not comparable across `deployment:<id>` streams,
-		// so recency is the global position of each stream's last Deployed.
 		const deployedAt = new Map<string, bigint>();
 		for await (const { event, position } of store.readAll({
 			filter: { type: LEGACY_EVENTS.deployed },

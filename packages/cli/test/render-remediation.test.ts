@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { renderSuccess } from "../src/shell/render.js";
 
-// A command that does not succeed shows, in human output, its code and every
-// way forward: a refusal that names only its message is a dead end.
-
 const context = {
 	cwd: "/tmp",
 	projectDir: null,

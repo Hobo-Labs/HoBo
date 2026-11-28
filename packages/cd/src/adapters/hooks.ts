@@ -1,8 +1,3 @@
-// Pipeline hooks (D4): RUNBOOK through the existing RunbookExecutor, NOTIFY
-// through NotificationPort, SUITE through VerifyPort. Hooks replace any
-// imperative step runner; there is no shell escape hatch (R2). This module
-// also ships the NotificationPort that speaks the CloudEvents HTTP binding
-// (structured mode) to an operator-configured endpoint.
 import type { HttpTransport, JsonObject } from "@hobo/core";
 import {
 	HookKind,
@@ -37,11 +32,6 @@ export type HookSubject = Readonly<{
 }>;
 
 export interface HookRunner {
-	/**
-	 * Run the hooks declared for `point`, in declaration order. RUNBOOK and
-	 * SUITE failures fail the point; NOTIFY is best-effort (recorded, never
-	 * fatal). ON_FAILURE never fails: it runs every hook and reports.
-	 */
 	run(
 		input: Readonly<{
 			hooks: readonly HookRecord[];
@@ -184,7 +174,6 @@ export function createHookRunner(
 				});
 				if (failure) {
 					failures.push(failure);
-					// Failure hooks all run; forward points stop at the first failure.
 					if (point !== HookPoint.ON_FAILURE) break;
 				}
 			}
@@ -199,15 +188,9 @@ export function createHookRunner(
 export const NOTIFY_EVENT_TYPE =
 	"dev.cdeventsx.hobo.promotion.hook.notified" as const;
 
-/**
- * NotificationPort over the CloudEvents HTTP binding (structured mode,
- * `application/cloudevents+json`). The event id is a digest of the content,
- * so a retried delivery is recognisable as the same event downstream.
- */
 export function createCloudEventsNotifier(
 	d: Readonly<{
 		http: HttpTransport;
-		/** Endpoint for a channel; a channel without one is refused. */
 		endpoint: (channel: string) => string | undefined;
 		source: string;
 		timeoutMs?: number;

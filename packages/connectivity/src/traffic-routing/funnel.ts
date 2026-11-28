@@ -17,10 +17,6 @@ import { cloneAsJson } from "../json.js";
 export interface FunnelTrafficRouting extends TrafficRoutingPort {
 	readonly provider: "funnel";
 	readonly revoke: NonNullable<TrafficRoutingPort["revoke"]>;
-	/**
-	 * Weighted backend selection for an applied multi-backend plan.
-	 * Public Funnel tip is the selected (or primary) backend's published host.
-	 */
 	select(
 		planId: RoutingPlanId,
 		routingKey: string,
@@ -31,10 +27,6 @@ export interface FunnelTrafficRouting extends TrafficRoutingPort {
 export interface FunnelTrafficRoutingOptions {
 	readonly overlay: OverlayNetwork;
 	readonly metering?: MeteringBus;
-	/**
-	 * When true, multi-backend plans require simultaneous multi-public Funnel
-	 * hosts. Default false: weighted selection + single public tip is full.
-	 */
 	readonly requireMultiPublic?: boolean;
 }
 
@@ -85,8 +77,6 @@ export function createFunnelTrafficRouting(
 				return result;
 			}
 
-			// Weighted selection among backends; public tip is highest-weight primary
-			// (deterministic first backend after weight sort for stable gateway).
 			// SAFETY: assertion required at this I/O or test boundary.
 			const primary = primaryBackend(rule as RoutingRule);
 			if (!primary?.endpoint || !isLocalFunnelTarget(primary.endpoint)) {
@@ -338,7 +328,5 @@ async function meter(
 				outcome,
 			}),
 		);
-	} catch {
-		// Provider realization remains authoritative when observation delivery fails.
-	}
+	} catch {}
 }

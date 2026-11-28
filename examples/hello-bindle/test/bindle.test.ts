@@ -14,24 +14,18 @@ afterEach(() => {
 	delete process.env.APP_TITLE;
 });
 
-/** Camp env injected by `env({ … })` on both resources (not a placement pin). */
 const injectedEnv = {
 	provider: "hobo",
 	option: "env",
 	config: { GREETING_PREFIX: "howdy", APP_TITLE: "howdy" },
 } as const;
 
-/** Default Session Replay annotation auto-attached to every App Kit (ADR-0137). */
 const sessionReplayDefault = {
 	provider: "hobo",
 	option: "session-replay",
 	config: { enabled: true, defaultSupply: "kit-local-on" },
 } as const;
 
-/**
- * Default-state authoring graph from `bindle()` — what the example constructs
- * before collection / plan / serve.
- */
 const DEFAULT_DEFINITION = {
 	name: "hello-bindle",
 	resources: {
@@ -49,19 +43,12 @@ const DEFAULT_DEFINITION = {
 			stableId: "web:web",
 			declaredAllow: [],
 			annotations: [sessionReplayDefault, injectedEnv],
-			// dependsOn stores dependency *kinds* (api resource kind is "api").
 			dependsOn: ["api"],
 		},
 	},
 	edges: [{ from: "web", to: "api" }],
 } as const;
 
-/**
- * Provider-agnostic manifest IR from run-to-collect (`hobo collect`).
- * Component→component edges (web→api) stay on the definition graph; they are
- * not wiring binds. Camp env annotations are injected at serve time, not
- * baked into this IR.
- */
 const DEFAULT_MANIFEST = {
 	schema: "hobo.manifest/v1",
 	componentHost: {
@@ -89,13 +76,11 @@ const DEFAULT_MANIFEST = {
 	},
 } as const;
 
-/** Canonical hash of DEFAULT_MANIFEST — fails if the default IR drifts. */
 const DEFAULT_MANIFEST_HASH =
 	"sha256:e9472d81fa38b4bd9e25aafc869e061d3fb25395494bdc6bc0048845a8a4e189";
 
 describe("hello-bindle", () => {
 	it("constructs the default bindle definition (authoring graph)", () => {
-		// Full snapshot so devs can read exactly what bindle() builds.
 		expect({
 			name: definition.name,
 			resources: definition.resources,
@@ -111,12 +96,10 @@ describe("hello-bindle", () => {
 
 		expect(first.bindleId).toBe("hello-bindle");
 		expect(first.resources).toEqual(["api", "web"]);
-		// No backing-data binds: only two HTTP components + app-level edge.
 		expect(first.binds).toEqual([]);
 		expect(first.manifest.value).toEqual(DEFAULT_MANIFEST);
 		expect(first.manifestHash).toBe(DEFAULT_MANIFEST_HASH);
 
-		// Deterministic: same source → same IR + hash every run.
 		expect(second.manifestHash).toBe(first.manifestHash);
 		expect(second.manifest).toEqual(first.manifest);
 	});

@@ -6,8 +6,6 @@ import type { JsonValue } from "./json.js";
 export const IAC_CROSSPLANE_INTERFACE = "hobo:iac/provider";
 
 // domain-view: the IaC provider port shape adapters satisfy — the same
-// boundary contract the Pulumi and Terraform adapters declare, so provisioning
-// callers depend on the port rather than a concrete cluster client.
 export interface IacProvider {
 	readonly id: string;
 	readonly model: string;
@@ -17,8 +15,6 @@ export interface IacProvider {
 	destroy(program: JsonValue): Promise<JsonValue>;
 }
 
-// The provider-port descriptor for this boundary, built through @hobo/core so
-// the adapter's only inward dependency is the shared port vocabulary.
 const crossplanePortDescriptor = createPortDescriptor({
 	kind: "provider",
 	name: "iac-crossplane",

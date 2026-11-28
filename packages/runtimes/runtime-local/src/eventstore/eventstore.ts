@@ -76,7 +76,6 @@ export function createManualClock(
 export interface RuntimeLocalEventStoreOptions {
 	dataDir: string;
 	clock?: Clock;
-	/** Override db path (tests). */
 	dbPath?: string;
 	partitionId?: string;
 }
@@ -114,7 +113,6 @@ export function createRuntimeLocalEventStore(
 			events: EventInput[],
 			appendOptions: AppendOptions,
 		): Promise<AppendResult> {
-			// Parse boundary for back-compat validation
 			parseAppendContext(streamId, appendOptions);
 			parseEventInputs(events);
 			return storage.append(streamId, events, appendOptions);
@@ -288,15 +286,6 @@ async function appendQuarantine({
 	quarantinedSeqs: Set<string>;
 }): Promise<EventEnvelope> {
 	const quarantineKey = `${streamId}:${event.seq}`;
-	// The stream, not `quarantinedSeqs`, decides whether this event has already
-	// been quarantined. The set lives in one store instance, so it is empty
-	// after a restart — and a fold is not read-only, so re-folding a stream
-	// that contains a poison event is the ordinary case (a projection rebuild,
-	// a replica catching up). Gating this scan on the set meant the second
-	// fold *after a restart* appended a second marker for the same event:
-	// unbounded stream growth on a real clock, and a hard
-	// `UNIQUE constraint failed: events.id` on a manual one. The set is still
-	// the fast path inside a single instance; this is the durable one.
 	for await (const candidate of storage.read(streamId)) {
 		if (
 			isQuarantineEvent(candidate) &&
@@ -324,7 +313,6 @@ async function appendQuarantine({
 	});
 	void nextUlid;
 	void clock;
-	// Quarantine must not bypass fencing: use current owner_epoch when fenced.
 	const head = storage.getStreamHead(streamId);
 	const appendOpts: AppendOptions = {
 		expectedSeq: storage.getStreamLength(streamId),
@@ -405,7 +393,6 @@ export async function collectStream(
 	return events;
 }
 
-// keep parse imports used for side-effect validation paths
 export type { ParsedAppendContext, ParsedEventInput };
 
 void parseEventEnvelope;

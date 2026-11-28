@@ -86,7 +86,6 @@ describe("receipt integrity — Ed25519 over canonical JSON", () => {
 		if (signature === undefined) throw new Error("expected a signature");
 		expect(verifyResolution(receipt, signature)).toBe(true);
 
-		// Tampering with a single placement field fails verification.
 		const tampered: ResolutionReceipt = {
 			...receipt,
 			placements: receipt.placements.map((placement) => ({
@@ -151,10 +150,8 @@ describe("metered billing plane", () => {
 				"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			billingPlane: createMeteredBillingPlane(usage.slice(0, 3)),
 		});
-		// Budget 100, metered spend 75.5 → remaining 24.5: 10 fits...
 		const ok = await broker.resolve(baseRequest);
 		expect(ok.outcome).toBe("resolved");
-		// ...30 does not.
 		const over = await broker.resolve({
 			...baseRequest,
 			requestId: "req-2",
@@ -191,8 +188,6 @@ describe("rejection matrix", () => {
 		];
 		for (const result of rejections) {
 			for (const reason of result.rejection?.reasons ?? []) {
-				// contracts-plane codes are owned by @hobo/contracts' compat gate;
-				// every broker-owned plane must be cataloged.
 				if (reason.plane === "contracts") continue;
 				expect(
 					isCatalogedRejectionCode(reason.code),

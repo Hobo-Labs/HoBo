@@ -1,8 +1,3 @@
-/**
- * Legacy same-origin anonymous host helpers (residual).
- * OOB Examples yards use Temporary Accounts / Drop / provider-temp APIs instead.
- * Railway removed from OOB; Vercel uses Drop (`/api/vercel-temp`).
- */
 import { mkdir, readFile, writeFile, cp, access } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";

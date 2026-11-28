@@ -1,6 +1,3 @@
-// data-models/freight.cue and the TypeScript parse boundary must agree: what
-// writeFreightManifest emits and what the ledger records vets clean, and what
-// the parser refuses, CUE refuses too.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +30,6 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = resolve(here, "../../data-models/freight.cue");
 
-/** `cue` on PATH, else the repo-pinned binary under an ancestor's `.tools/cue/<version>/cue`. */
 function findCue(): string | undefined {
 	try {
 		execFileSync("cue", ["version"], { stdio: "ignore" });

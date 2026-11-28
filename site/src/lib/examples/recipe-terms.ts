@@ -24,7 +24,6 @@ export const RECIPE_TERMS: readonly RecipeTerm[] = Object.freeze(
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 
-/** "24h", "45m" — a deadline a visitor can read without doing arithmetic. */
 export function formatDeadline(ms: number | null): string {
 	if (ms === null) return "no deadline";
 	if (ms >= HOUR_MS) {
@@ -35,13 +34,6 @@ export function formatDeadline(ms: number | null): string {
 	return `${minutes}m`;
 }
 
-/**
- * Recipes that cover every primitive an app declares.
- *
- * Superset, not intersection: a recipe that places a database an app never
- * asked for would provision something the visitor did not request, and one
- * that covers only half the app is not a deployment.
- */
 export function recipesForPrimitives(
 	primitives: readonly string[],
 ): readonly RecipeTerm[] {
@@ -56,7 +48,6 @@ export function recipesForPrimitives(
 	});
 }
 
-/** One line summarising what the visitor takes on, for the collapsed view. */
 export function summarizeTerms(term: RecipeTerm): string {
 	const claims =
 		term.claimActionCount === 1

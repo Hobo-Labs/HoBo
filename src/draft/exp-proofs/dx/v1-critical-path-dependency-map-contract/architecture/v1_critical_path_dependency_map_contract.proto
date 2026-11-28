@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the V1 Critical Path Dependency Map
-// Contract draft package reasons about. This is a design-time contract artifact.
 
 enum ReleaseDependencyDomain {
   RELEASE_DEPENDENCY_DOMAIN_UNSPECIFIED = 0;

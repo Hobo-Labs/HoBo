@@ -22,10 +22,6 @@ export interface PortForwardHandle {
 	readonly close: () => Promise<void>;
 }
 
-/**
- * Minimal Kubernetes client surface used by the oci Camp host.
- * All cluster I/O goes through {@link KubectlTransport} (PACT boundary).
- */
 export interface KubernetesClient {
 	readonly kind: "kubectl";
 	readonly namespace: string;
@@ -36,7 +32,6 @@ export interface KubernetesClient {
 		opts?: { readonly timeoutMs?: number },
 	): Promise<void>;
 	portForward(service: string, targetPort: number): Promise<PortForwardHandle>;
-	/** Proxy HTTP to a port-forwarded service (mesh hop). */
 	httpProxy(options: {
 		readonly service: string;
 		readonly method: string;
@@ -63,12 +58,7 @@ export interface KubectlProbeResult {
 
 export interface KubectlKubernetesClientOptions {
 	readonly namespace?: string;
-	/**
-	 * Integration transport. Defaults to real process kubectl.
-	 * Tests inject `createMockProviderFromPact(pact)` from the kubectl-cluster pact.
-	 */
 	readonly transport?: KubectlTransport;
-	/** Used only when transport is omitted (process kubectl). */
 	readonly kubectlBin?: string;
 	readonly context?: string;
 	readonly env?: NodeJS.ProcessEnv;
@@ -82,10 +72,6 @@ async function call(
 	return transport.handle(request);
 }
 
-/**
- * Kubernetes client over a PACT-shaped transport.
- * Production: process kubectl. Tests: pact mock provider.
- */
 export function createKubectlKubernetesClient(
 	options: KubectlKubernetesClientOptions = {},
 ): KubernetesClient {
@@ -229,7 +215,6 @@ export function createKubectlKubernetesClient(
 				localPort: body.localPort,
 				close: async () => {
 					openForwards.delete(service);
-					// Best-effort: delete tears down process forwards.
 				},
 			};
 			openForwards.set(service, handle);

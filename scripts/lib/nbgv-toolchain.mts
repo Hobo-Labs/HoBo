@@ -1,4 +1,3 @@
-/** Release-scoped mise toolchain for Nerdbank.GitVersioning (not in CI runner image). */
 import { spawn, spawnSync } from "node:child_process";
 import { delimiter, dirname, join, resolve } from "node:path";
 
@@ -31,10 +30,6 @@ export function nbgvMiseExecPath(
 	return [nodeDir, ...(basePath ? [basePath] : [])].join(delimiter);
 }
 
-/**
- * Env for `mise exec` from repo root with `release/mise.toml` tools (dotnet).
- * `-C release` would chdir into `release/` and break root `pnpm exec nbgv`.
- */
 export function nbgvMiseExecEnv(
 	repoRoot: string,
 	base: NodeJS.ProcessEnv = process.env,
@@ -51,7 +46,6 @@ export function nbgvMiseExecEnv(
 	};
 }
 
-/** True when `mise which dotnet` resolves using `release/mise.toml`. */
 export function nbgvDotnetResolvable(
 	repoRoot: string,
 	log: NbgvToolchainLog = defaultLog,

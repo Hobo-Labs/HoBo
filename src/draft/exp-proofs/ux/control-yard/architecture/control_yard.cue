@@ -1,7 +1,5 @@
 package control_yard_exp
 
-// CUE constraints for every protobuf message in control_yard_exp.proto.
-
 #ControlYardAcceptanceRecord: {
 	proof:                 "control-yard"
 	adr:                   "ADR-0135"

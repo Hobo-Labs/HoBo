@@ -1,18 +1,3 @@
-/**
- * A deterministic reference store.
- *
- * Two jobs. First, the suite itself needs testing: a conformance suite nobody
- * has run against a known-good implementation is a suite whose passing result
- * means nothing. Second, an adapter author needs something to point their
- * transport at — running the suite through a REST or RESP adapter backed by
- * this store proves the *adapter*, offline and deterministically, without
- * anyone's staging cluster.
- *
- * It is not a Redis. It implements exactly the commands the cases use, in
- * memory, and time is arithmetic rather than sleep so the expiry case is exact
- * rather than flaky. Anything unimplemented is an error reply, which is also
- * what `transport.unknown-command-is-an-error` requires.
- */
 import type { KvRedisExecutor, RedisCommand, RedisReply } from "./protocol.js";
 
 type Entry = {
@@ -25,23 +10,12 @@ type Entry = {
 };
 
 export type ReferenceStoreOptions = {
-	/** Values strictly larger than this are rejected, as a real store would. */
 	readonly maxValueBytes?: number;
-	/** Break a specific command verb, to prove a failing run reports `fail`. */
 	readonly breakVerb?: string;
 };
 
 export type ReferenceStore = KvRedisExecutor & {
-	/** Commands seen, for assertions about what the suite actually exercised. */
 	readonly commands: readonly RedisCommand[];
-	/**
-	 * Required here, unlike on the executor port.
-	 *
-	 * Time control is optional for a real adapter — a live endpoint has a
-	 * clock nobody can wind. The reference store always has one, and saying so
-	 * in the type is what lets an adapter harness borrow the *server's* clock
-	 * without a cast.
-	 */
 	advanceTime(ms: number): Promise<void>;
 };
 
@@ -316,7 +290,6 @@ export function createReferenceRedisStore(
 	};
 }
 
-/** The same store with no time control, to exercise the skip path. */
 export function createTimelessReferenceStore(
 	options: ReferenceStoreOptions = {},
 ): KvRedisExecutor {

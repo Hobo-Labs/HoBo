@@ -1,7 +1,3 @@
-// Deterministic identifiers of the promotion saga. Ids derive from the tenant
-// and the caller's idempotency key, so a repeated command finds its record
-// (I12) and replay mints the same ids (I8).
-
 import type { CampId, PromotionId } from "../ports.js";
 import { canonicalJson, sha256Hex } from "./journal.js";
 
@@ -36,7 +32,6 @@ export function previewPromotionIdFor(
 // public-contract: separator between a source Camp id and a preview suffix.
 export const PREVIEW_CAMP_SEPARATOR = "--pv-" as const;
 
-/** The ephemeral Camp a preview clones from `sourceCampId`. */
 export function previewCampIdFor(
 	tenant: string,
 	sourceCampId: string,
@@ -46,7 +41,6 @@ export function previewCampIdFor(
 	return `${sourceCampId}${PREVIEW_CAMP_SEPARATOR}${short({ tenant, sourceCampId, key: idempotencyKey }).slice(0, 10)}` as CampId;
 }
 
-/** The source Camp of a preview Camp id; undefined for an ordinary Camp. */
 export function previewSourceOf(campId: string): CampId | undefined {
 	const at = campId.lastIndexOf(PREVIEW_CAMP_SEPARATOR);
 	if (at <= 0) return undefined;

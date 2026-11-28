@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# POST the sample OTLP/JSON logs to a running otel-office server.
-# Usage: examples/post-logs.sh [port]
 set -euo pipefail
 PORT="${1:-${PORT:-8080}}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * bash -n + shellcheck on changed shell scripts (release/CI paths).
- * shellcheck is pinned in mise.toml / mise.lock and invoked via `mise exec`.
- *
- * Usage:
- *   node --import tsx scripts/lint-shell-changed.mts --staged
- *   node --import tsx scripts/lint-shell-changed.mts --base=origin/main
- */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";

@@ -8,28 +8,6 @@ import {
 	declaredFields,
 } from "./fixtures/declared-fields.js";
 
-/**
- * This package and `packages/cloud/src/plan-types.ts` must describe the same
- * shape, field for field, optionality included.
- *
- * Both sides are read from disk with the same reader. Asserting my declaration
- * against a list written out in this file would only prove that I can copy a
- * list; asserting the two *files* against each other is what notices the day
- * one of them changes.
- *
- * Two states are correct, and the test distinguishes them:
- *
- *  - Today: `plan-types.ts` declares `ResourceIntent` itself, and the two
- *    declarations must agree.
- *  - After Swarm I lands the re-export wiring: `plan-types.ts` no longer
- *    declares it and re-exports from `@hobo/manifest-declaration` instead, at
- *    which point there is nothing left to drift and the parity check is
- *    satisfied by the re-export itself.
- *
- * Anything else — the interface gone with no re-export, or present but
- * different — fails, with a message that says which.
- */
-
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 function read(relativePath: string): string {
@@ -89,8 +67,6 @@ describe("parity with packages/cloud/src/plan-types.ts", () => {
 			expect(PLAN_TYPES).toContain(declaration);
 			expect(OWN_SOURCE).toContain(declaration);
 		}
-		// PlacementSelectorOp is wrapped across lines by the formatter in both
-		// files, so it is compared with whitespace removed.
 		const squash = (value: string): string => value.replace(/\s+/gu, "");
 		const ops =
 			'exporttypePlacementSelectorOp=|"eq"|"ne"|"in"|"not-in"|"lt"|"lte"|"gt"|"gte"|"exists";';
@@ -101,7 +77,6 @@ describe("parity with packages/cloud/src/plan-types.ts", () => {
 	it("the parsed derived type mirrors the authoring type field for field", () => {
 		const authoring = declaredFields(OWN_SOURCE, "ResourceIntent");
 		const parsed = declaredFields(OWN_SOURCE, "ParsedResourceIntent").filter(
-			// The brand is a phantom key with no wire form.
 			(field) => field.name !== "readonly",
 		);
 		expect(parsed.map((field) => field.name)).toEqual(
@@ -129,10 +104,6 @@ describe("the wire schema covers the declared shape", () => {
 	});
 
 	it("gives every optional scalar explicit presence in the proto", () => {
-		// The whole point of the divergence from cloud.proto. An optional *scalar*
-		// without `optional` is indistinguishable from its default on the wire;
-		// an optional *message* already has presence. So: every optional field
-		// whose TypeScript type is a primitive must be declared `optional`.
 		const scalarTypes = new Set(["string", "number", "boolean"]);
 		const source = OWN_SOURCE;
 		const body = /export interface ResourceIntent \{([\s\S]*?)\n\}/u.exec(
@@ -153,7 +124,6 @@ describe("the wire schema covers the declared shape", () => {
 			optionalScalars.push(match[1] as string);
 		}
 
-		// If this ever becomes empty the assertions below stop meaning anything.
 		expect(optionalScalars).toEqual(["region", "cadence"]);
 		for (const field of optionalScalars) {
 			expect(PROTO).toMatch(
@@ -163,9 +133,6 @@ describe("the wire schema covers the declared shape", () => {
 	});
 
 	it("records that cloud.proto still declares region without explicit presence", () => {
-		// Not a failure — cloud.proto is not this package's file. It is pinned so
-		// the divergence is a recorded fact rather than a claim in a README, and
-		// so that the day someone fixes it upstream this test says so.
 		const cloudProto = read("packages/cloud/data-models/cloud.proto");
 		const regionLine = /^\s*(optional\s+)?string region = 7;/mu.exec(
 			cloudProto,

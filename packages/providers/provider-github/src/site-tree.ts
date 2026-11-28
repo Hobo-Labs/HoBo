@@ -1,29 +1,3 @@
-/**
- * The static-site tree Freight, parsed once and hashed as git would.
- *
- * A Pages Freight is two kinds of blob in the artifact store: one **tree
- * index** (the Freight's `artifactDigest`) and one blob per file it lists.
- * The index is a small JSON document:
- *
- * ```json
- * { "contract": "hobo.static-site-tree/v1",
- *   "files": [ { "path": "index.html", "digest": "sha256:…", "size": 512 } ] }
- * ```
- *
- * Parse, don't validate: `parseStaticSiteTree` checks the index against its
- * own digest, refuses any path that could escape the tree or touch `.git`, and
- * hands back a `StaticSiteTree`. `loadSiteContent` then reads every file blob
- * one at a time, checks it against its digest and size, and computes the git
- * object ids — blob ids and the tree id — locally, keeping no file bytes:
- * `readSiteBlob` re-reads (and re-checks) only the blobs a publish uploads.
- *
- * A pages-deployment Freight also binds the Actions Pages artifact the build
- * workflow uploaded: its index carries `pagesArtifactDigest`, so the artifact
- * GitHub would serve is tied to this tree by the Freight digest itself. That local tree id is what makes the
- * realizer idempotent by digest: the desired state is known *before* anything
- * is uploaded, and convergence is the observed published tree id being equal
- * to it, byte for byte, with no clock and no guesswork.
- */
 import { createHash } from "node:crypto";
 import { reject } from "./errors.js";
 import {
@@ -46,7 +20,6 @@ export const STATIC_SITE_MAX_FILES = 20_000;
 const MAX_INDEX_BYTES = 8 * 1024 * 1024;
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/u;
-// A path segment: no separators, no control characters, not `.`/`..`.
 const SEGMENT = /^[^\p{Cc}/\\]{1,255}$/u;
 
 // domain-view: parse-time derived file entry; `executable` is resolved (never absent) and the path is checked.
@@ -60,9 +33,7 @@ export interface StaticSiteFile {
 // domain-view: parse-time derived type of the Freight tree index.
 export interface StaticSiteTree {
 	readonly digest: string;
-	/** sha256 digest of the Actions Pages artifact built from this tree, or null. */
 	readonly pagesArtifactDigest: string | null;
-	/** Sorted by path (code unit order), unique. */
 	readonly files: readonly StaticSiteFile[];
 	readonly totalBytes: number;
 }
@@ -71,9 +42,7 @@ export interface StaticSiteTree {
 export interface SiteBlob {
 	readonly path: string;
 	readonly mode: "100644" | "100755";
-	/** Git blob object id (sha1 hex). */
 	readonly sha: string;
-	/** sha256 digest of the file blob in the artifact store. */
 	readonly digest: string;
 	readonly size: number;
 }
@@ -82,7 +51,6 @@ export interface SiteBlob {
 export interface SiteContent {
 	readonly tree: StaticSiteTree;
 	readonly blobs: readonly SiteBlob[];
-	/** Git tree object id of the whole site, computed locally. */
 	readonly treeSha: string;
 }
 
@@ -90,7 +58,6 @@ export function sha256Of(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-/** Git object id of `bytes` as a blob: sha1("blob <size>\0" + bytes). */
 export function gitBlobSha(bytes: Uint8Array): string {
 	return createHash("sha1")
 		.update(`blob ${bytes.byteLength}\0`)
@@ -107,7 +74,6 @@ export function parseSha256Digest(
 	return value;
 }
 
-/** Parse the tree index; `digest` is the Freight digest it was fetched under. */
 export function parseStaticSiteTree(
 	bytes: Uint8Array,
 	digest: string,
@@ -151,7 +117,6 @@ export function parseStaticSiteTree(
 			reject(`static-site tree lists ${JSON.stringify(file.path)} twice`);
 		seen.add(file.path);
 	}
-	// A path that is both a file and a directory cannot be a git tree.
 	for (const file of files) {
 		const segments = file.path.split("/");
 		for (let depth = 1; depth < segments.length; depth += 1) {
@@ -220,7 +185,6 @@ function parseFile(entry: JsonValue, index: number): StaticSiteFile {
 
 type BlobReader = (digest: string) => Promise<Uint8Array | undefined>;
 
-/** Read one file blob from the artifact store and check it against its digest and size. */
 async function readChecked(
 	file: {
 		readonly path: string;
@@ -243,10 +207,6 @@ async function readChecked(
 	return bytes;
 }
 
-/**
- * Read every file blob, one at a time, check it, and compute the git object
- * ids. No file bytes are kept: peak memory is one file, not the site.
- */
 export async function loadSiteContent(
 	tree: StaticSiteTree,
 	read: BlobReader,
@@ -271,7 +231,6 @@ export async function loadSiteContent(
 	});
 }
 
-/** Re-read one blob for upload; it must still hash to its digest and git blob id. */
 export async function readSiteBlob(
 	blob: SiteBlob,
 	read: BlobReader,
@@ -289,7 +248,6 @@ interface Directory {
 	readonly dirs: Map<string, Directory>;
 }
 
-/** Git tree object id of a set of blobs, built bottom-up exactly as git does. */
 export function gitTreeSha(
 	blobs: readonly {
 		readonly path: string;
@@ -327,7 +285,6 @@ function hashDirectory(directory: Directory): string {
 			name,
 			sha: file.sha,
 		});
-	// git sorts a tree entry as if its name ended in "/".
 	for (const [name, child] of directory.dirs)
 		entries.push({
 			key: Buffer.from(`${name}/`),

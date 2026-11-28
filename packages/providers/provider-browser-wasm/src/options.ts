@@ -17,11 +17,6 @@ export const browserWasm = {
 		guest(options: JsonObject = {}): TypedOptionBlock {
 			return optionBlock("compute", "guest", { runtime: "wit" }, options);
 		},
-		/**
-		 * A guest bound for a real browser runtime. Unlike `guest`, the option
-		 * bag crosses `parseGuestPlacement` here, so the block either holds a
-		 * placement a document could actually host or it does not exist.
-		 */
 		placement(options: JsonObject): TypedOptionBlock & {
 			readonly placement: GuestPlacement;
 		} {

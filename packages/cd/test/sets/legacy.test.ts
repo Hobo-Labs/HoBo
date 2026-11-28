@@ -177,8 +177,6 @@ describe("legacy fold: deployment.Planned/Deployed/RolledBack → Sets", () => {
 	it("two deployments sharing a Camp: the most recently Deployed one becomes the current Set", async () => {
 		const store = createFakeEventStore();
 		const config = { campId: "prod-aws", environment: "production" };
-		// Older deployment: three matches, so its Deployed event has the
-		// higher per-stream seq (6) than the newer one's (5).
 		await legacyDeployment(store, "older", "deployed", config);
 		await store.append(
 			"deployment:newer",

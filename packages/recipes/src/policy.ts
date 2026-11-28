@@ -1,13 +1,3 @@
-/**
- * Recipe policy: the operator's ceiling on what a compiled deployment may cost
- * whoever inherits it.
- *
- * The selection-level {@link TrustPolicy} already gates a single product. This
- * adds the whole-solution gates a per-product check cannot see — how many
- * provider boundaries the deployment spans, how many human claim actions it
- * totals, how soon the earliest deadline falls, and which downgrades may be
- * traded for feasibility.
- */
 import {
 	DEFAULT_TRUST_POLICY,
 	type TrustPolicy,
@@ -16,18 +6,12 @@ import {
 import { isWideningKind, type WideningKind } from "./widening.js";
 
 export type RecipePolicyInput = {
-	/** Per-product gates, reused verbatim from selection. */
 	readonly trust?: TrustPolicy;
 	readonly maximumProviderCount: number;
 	readonly maximumClaimActions: number;
 	readonly maximumSponsoredCostMinorUnits: number;
-	/**
-	 * The shortest claim window a caller may be offered, measured from the
-	 * compile instant. A ten-minute deadline on a real handover is a trap.
-	 */
 	readonly minimumClaimWindowMs: number;
 	readonly maximumEvidenceAgeMs: number;
-	/** Downgrades the operator has explicitly accepted. Absent means none. */
 	readonly allowedWidenings?: readonly WideningKind[];
 	readonly requireSourceDisclosure?: boolean;
 };
@@ -112,12 +96,6 @@ export function parseRecipePolicy(input: RecipePolicyInput): RecipePolicy {
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-/**
- * The policy HoBo applies when an operator states nothing else.
- *
- * No widening is permitted by default: an operator who wants a Postgres ask
- * answered by a generic relational store has to say so.
- */
 export const DEFAULT_RECIPE_POLICY: RecipePolicy = parseRecipePolicy({
 	maximumProviderCount: 2,
 	maximumClaimActions: 2,

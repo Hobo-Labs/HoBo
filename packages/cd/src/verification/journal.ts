@@ -1,11 +1,3 @@
-// The cd-verification-<id> stream: event bodies and the fold that rebuilds a
-// verification from it. Bodies are protobuf JSON of the generated records,
-// so the stream is the whole truth — the engine's memory is only a cache, and
-// replay reads exactly what the live engine decided from.
-//
-//   verification.Started     VerificationStartedBody (identity + spec)
-//   rollout.EvidenceObserved EvidenceObservationRecord (one per sample)
-//   verification.Completed   VerificationResultRecord
 import {
 	fromJson,
 	type JsonObject,
@@ -30,12 +22,10 @@ export type VerificationState = Readonly<{
 	freightId: FreightId;
 	campId: CampId;
 	cohortAware: boolean;
-	/** Undefined when the spec was refused at start (the stream then completes FAIL at once). */
 	spec: ParsedVerificationSpec | undefined;
 	startedAtMs: number;
 	evidence: readonly EvidenceObservationRecord[];
 	result: VerificationResultRecord | undefined;
-	/** Stream revision, for the expected-seq CAS on the next append. */
 	seq: number;
 }>;
 
@@ -43,7 +33,6 @@ function text(value: JsonValue | undefined): string {
 	return isJsonString(value) ? value : "";
 }
 
-/** verification.Started body. */
 export function startedBody(
 	input: Readonly<{
 		id: VerificationId;
@@ -109,7 +98,6 @@ function decodeRecord<T>(decode: () => T): T | undefined {
 	}
 }
 
-/** Fold a cd-verification stream; undefined when it has no Started event. */
 export function foldVerification(
 	events: Iterable<EventEnvelope>,
 ): VerificationState | undefined {

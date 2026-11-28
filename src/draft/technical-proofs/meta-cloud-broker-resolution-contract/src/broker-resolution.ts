@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { isJsonObject, type JsonValue } from "./json.js";
 
-
 export const RESOLUTION_RECEIPT_SCHEMA = "hobo.resolution-receipt/v1";
 export const RESOLUTION_REJECTION_SCHEMA = "hobo.resolution-rejection/v1";
 export const BROKER_AUTHORITY = "meta-cloud-broker";

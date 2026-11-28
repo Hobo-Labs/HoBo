@@ -1,12 +1,3 @@
-// FanoutController (WP23; C18, D21, I20). One controller per fan-out holds
-// lease `cd:fanout:<id>` and drives a `defineSaga` over `cd-fanout-<id>`:
-// the forward step classifies in-flight Camps, schedules the next ones under
-// `max_concurrency`, mandatory groups and the failure budget, and requests an
-// ordinary per-Camp promotion for each (idempotency key `fanout:<id>:<camp>`);
-// the compensation halts the run and, with `rollback_on_halt`, rolls back
-// the failed Camps only (D12). Every transition is journaled before its side
-// effect (write-ahead), so a crash resumes by re-folding and re-requesting
-// idempotently, and the in-flight bound holds across restarts and replicas.
 import { create, type JsonObject } from "@bufbuild/protobuf";
 import type { ActorLeaseHost, EventInput } from "@hobo/core";
 import { defineSaga } from "@hobo/events";
@@ -98,20 +89,16 @@ export const FANOUT_METRIC = Object.freeze({
 } as const);
 
 export type FanoutStartInput = Parameters<FanoutController["start"]>[0] & {
-	/** The node's change windows (D10). Selector-matched windows apply regardless. */
 	readonly windows?: readonly string[];
 };
 
 export type FanoutControllerDeps = Parameters<
 	CdFactories["createFanoutController"]
 >[0] & {
-	/** Lease holder identity; defaults to a per-process id. */
 	readonly holderId?: string;
-	/** Lease TTL; defaults to CD_DEFAULTS.leaseTtlMs. */
 	readonly leaseTtlMs?: number;
 };
 
-/** The saga records its own facts and dispatches no aggregate commands. */
 const NO_DISPATCH: ActorLeaseHost = {
 	acquire() {
 		throw new Error(
@@ -120,7 +107,6 @@ const NO_DISPATCH: ActorLeaseHost = {
 	},
 };
 
-/** Thrown by the saga step when the run must halt; the compensation halts it. */
 class FanoutHalt extends Error {
 	constructor(readonly reason: ReasonRecord) {
 		super(reason.message);
@@ -164,10 +150,6 @@ function selectedCamps(decision: PlacementDecisionRecord): string[] {
 		: decision.candidates.filter((c) => c.selected).map((c) => c.campId);
 }
 
-/**
- * The decision with completed failovers applied: each `from` Camp replaced
- * by its replacement (D21 late entry, D23). Pure over recorded facts.
- */
 export function effectiveDecision(
 	decision: PlacementDecisionRecord,
 	moves: readonly Readonly<{ from: string; to: string }>[],
@@ -260,7 +242,6 @@ export function createFanoutController(
 		return out;
 	}
 
-	/** Completed failovers per node, in journal order (D23 → D21 late entry). */
 	async function moves(
 		pipeline: string,
 		node: string,
@@ -285,7 +266,6 @@ export function createFanoutController(
 		return out;
 	}
 
-	/** Appends facts at the view's head and applies them to the view. */
 	async function write(
 		view: FanoutView,
 		ctx: CdContext,
@@ -332,7 +312,6 @@ export function createFanoutController(
 				}),
 			},
 		]);
-		// The status snapshot rides on the next fact; consumers read statusOf.
 		metric(FANOUT_METRIC.transitions, atMs, {
 			pipeline: view.pipeline,
 			node: view.node,
@@ -375,7 +354,6 @@ export function createFanoutController(
 			);
 	}
 
-	/** Roll back each Camp through the same gate (D12, I7). Refusals are recorded, never hidden. */
 	async function rollbackCamps(
 		view: FanoutView,
 		slots: readonly Slot[],
@@ -452,7 +430,6 @@ export function createFanoutController(
 		return found === undefined ? undefined : msOf(found.qualifiedAt);
 	}
 
-	/** Bind a write-ahead slot to its promotion (re-requesting is idempotent). */
 	async function request(
 		view: FanoutView,
 		slot: Slot,
@@ -528,7 +505,6 @@ export function createFanoutController(
 				);
 			} catch (error) {
 				if (isConflict(error)) throw error;
-				// A port threw (transient): nothing is decided; the next tick retries.
 				metric(FANOUT_METRIC.stepError, ctx.now(), {
 					pipeline: view.pipeline,
 					node: view.node,
@@ -566,7 +542,6 @@ export function createFanoutController(
 		});
 	}
 
-	/** In catch-up, a Camp already carrying (or moving to) other promotions is left alone this tick. */
 	async function catchUpBlocked(
 		view: FanoutView,
 		campId: string,
@@ -629,7 +604,6 @@ export function createFanoutController(
 				if (check.blocked) continue;
 				bindTo = check.promotionId;
 			}
-			// Write-ahead: the slot is in flight before the promotion exists.
 			await transition(view, slot, "requested", ctx, {
 				promotionId: bindTo ?? "",
 				catchUp,
@@ -675,7 +649,6 @@ export function createFanoutController(
 		});
 	}
 
-	/** D21 departure: Camps the new decision dropped get a `depart` Delta per DepartureAction. */
 	async function depart(view: FanoutView, ctx: CdContext): Promise<void> {
 		for (const campId of view.departing) {
 			if (view.departed.has(campId)) continue;
@@ -749,7 +722,6 @@ export function createFanoutController(
 		}
 	}
 
-	/** One saga pass for one fan-out. Caller holds the lease. */
 	async function advance(
 		view: FanoutView,
 		ctx: CdContext,
@@ -843,8 +815,6 @@ export function createFanoutController(
 					}
 				}
 				if (view.state === FanoutState.COMPLETED) {
-					// Late entrants converge to the node's current qualified Freight:
-					// only the newest fan-out of the node catches its Camps up.
 					const newer = everyone.some(
 						(other) =>
 							other.fanoutId !== view.fanoutId &&
@@ -889,7 +859,6 @@ export function createFanoutController(
 				await advance(view, ctx, await all());
 			} catch (error) {
 				if (!isConflict(error)) throw error;
-				// Another writer moved the stream; the next tick re-folds.
 			}
 		});
 	}
@@ -1053,7 +1022,6 @@ export function createFanoutController(
 				if (raced !== undefined) return { ok: true, value: statusOf(raced) };
 				throw error;
 			}
-			// Newer Freight supersedes active fan-outs on the node at their next group boundary.
 			for (const other of others) {
 				if (
 					!isActive(other) ||

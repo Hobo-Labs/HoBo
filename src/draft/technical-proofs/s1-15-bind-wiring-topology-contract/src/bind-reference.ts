@@ -9,7 +9,6 @@ import {
 } from "./types.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export class BindReferenceError extends Error {
   readonly path: string;
 

@@ -1,5 +1,3 @@
-// TrafficShifter conformance (ADR-0182 D7/D8, I5, I6). The one path a
-// rollout uses to move exposure; it reports what was realized, honestly.
 import type { ApplyResult, RoutingPlan, RoutingPlanId } from "@hobo/core";
 import {
 	abortedSignal,
@@ -31,9 +29,7 @@ export interface TrafficShifterHarness<TCtx> {
 	readonly subject: string;
 	readonly campId: string;
 	create(): Promise<TrafficShifterLike<TCtx>>;
-	/** A shifter for a Camp whose provider realizes no traffic offering. */
 	createWithoutTraffic?(): Promise<TrafficShifterLike<TCtx>>;
-	/** A plan sending `percent` to the candidate backend. */
 	plan(percent: number): RoutingPlan;
 	ctx(): TCtx;
 }

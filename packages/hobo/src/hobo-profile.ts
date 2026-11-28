@@ -1,8 +1,3 @@
-/**
- * Persisted HOBO_HOME profile: default Station occupancy + broker association + login.
- * Local `hobo up` never requires this file; remote authenticated paths prefer it.
- */
-
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PrincipalKind, PrincipalRef } from "@hobo/core";
@@ -22,7 +17,6 @@ export interface HoboProfileSession {
 	readonly tenant: string;
 	readonly token: string;
 	readonly issuedAt: string;
-	/** Optional DPoP / sender-constrained proof material id (never the raw key). */
 	readonly proofKeyId?: string;
 	readonly brokerUri?: string;
 }
@@ -34,12 +28,7 @@ export interface HoboProfileDefaultStation {
 
 export interface HoboProfile {
 	readonly schemaVersion: typeof HOBO_PROFILE_SCHEMA;
-	/**
-	 * Optional remote Conductor HTTP base URI for login/placement over the network.
-	 * Local setup is always Station occupancy — this is not a parallel setup path.
-	 */
 	readonly defaultBrokerUri?: string;
-	/** Required for control-plane work once Station is initialized. */
 	readonly defaultStation?: HoboProfileDefaultStation;
 	readonly activeRail?: string;
 	readonly session?: HoboProfileSession;

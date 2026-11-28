@@ -1,8 +1,3 @@
-/**
- * Back-compat facade over @hobo/storage-sqlite.
- * Prefer SqliteJournal / createRuntimeLocalEventStore for new code.
- */
-
 import { join } from "node:path";
 
 import type { EventEnvelope, SnapshotRecord } from "@hobo/core";
@@ -47,20 +42,13 @@ export class SqliteEventStore {
 		streamId: string,
 		idempotencyKey: string,
 	): EventEnvelope | undefined {
-		// Use sync path via private journal internals through commit pre-check:
-		// reimplemented as stream scan for back-compat callers.
-		// Prefer journal.append which handles this internally.
 		void streamId;
 		void idempotencyKey;
 		return undefined;
 	}
 
 	readStream(streamId: string, fromSeq = 1): EventEnvelope[] {
-		// Sync helper used by fold path — collect from async not available sync.
-		// Use driver-level read via journal.getStreamLength + temporary approach:
 		const out: EventEnvelope[] = [];
-		// journal.read is async iterable; for sync callers we use a blocking collect via deasync-like pattern:
-		// Instead expose async API only; this method is used by eventstore.ts fold which we will update.
 		void fromSeq;
 		void streamId;
 		return out;
@@ -79,8 +67,6 @@ export class SqliteEventStore {
 			context: ParsedAppendContext,
 		) => EventEnvelope,
 	): { appended: EventEnvelope[]; deduped: EventEnvelope[] } {
-		// Synchronous facade is no longer correct for production.
-		// Callers must use createRuntimeLocalEventStore which is async.
 		void context;
 		void pending;
 		throw new Error(

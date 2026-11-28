@@ -17,13 +17,7 @@ import {
 	validateResilienceAgainstEffects,
 } from "./resilience.js";
 
-// Parse, don't validate: the exported interfaces below are the parsed, derived
-// domain types the contract engine works with. Their protobuf wire forms live in
-// data-models/contracts.proto with a CUE constraint per message in
-// data-models/contracts.cue; the constructors here (parseBoundaryContract) are
-// the only supported way to build a contract value, so downstream code — the
-// can-deploy engine, the Gatekeeper — never re-validates a raw record.
-
+// public-contract: stable exported contract literal
 export const CONTRACT_IR_SCHEMA_VERSION = "hobo.contract-ir/v1";
 
 export const CONTRACT_MODES = Object.freeze([
@@ -94,16 +88,7 @@ export interface BoundaryContract {
 	edge: ContractEdge;
 	requiredLayout: RequiredLayout;
 	contractHash: `sha256:${string}`;
-	/**
-	 * Optional Verse-inspired effect exposure (ADR-0136). When omitted, treated
-	 * conservatively (noRollback + decides + network/externalCall) for external
-	 * reasoning, but hash stability preserves absence as undefined.
-	 */
 	effects?: EffectSpec;
-	/**
-	 * Optional secondary ResilienceProfile (ADR-0136). Visible metadata + thin
-	 * applicator; never elevates resiliency to a primary control-plane noun.
-	 */
 	resilience?: ResilienceProfile;
 }
 
@@ -201,15 +186,10 @@ export function createBoundaryContract(
 	});
 }
 
-/** Effective effects: declared or conservative default for external reasoning. */
 export function effectiveEffects(contract: BoundaryContract): EffectSpec {
 	return contract.effects ?? parseEffectSpec(undefined);
 }
 
-// checkCompatibility(prev, next) is the version-skew answer the design calls for
-// (contracts-policy-flags.md §can-deploy): does the `next` revision of a boundary
-// contract still satisfy every consumer the `prev` revision served? A removed
-// field a consumer depended on is a breaking change; adding fields is safe.
 export function checkCompatibility(
 	prev: BoundaryContract,
 	next: BoundaryContract,
@@ -228,8 +208,6 @@ export function checkCompatibility(
 		);
 	}
 
-	// A field the prior revision guaranteed (provided or required) that the next
-	// revision no longer provides breaks any consumer that reads it.
 	const guaranteed = new Set([
 		...prev.requiredLayout.providedFields,
 		...prev.requiredLayout.requiredFields,
@@ -262,9 +240,6 @@ export function checkCompatibility(
 		);
 	}
 
-	// Effect axis (ADR-0136): widening purity/domains/capabilities is breaking
-	// when either revision declares effects (or both use effective defaults).
-	// Missing effects on both sides: no effect-axis check (opt-in migration).
 	if (prev.effects !== undefined || next.effects !== undefined) {
 		const prevFx = effectiveEffects(prev);
 		const nextFx = effectiveEffects(next);

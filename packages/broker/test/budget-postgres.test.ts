@@ -93,7 +93,6 @@ function input(
 	};
 }
 
-/** Set HOBO_TEST_POSTGRES_URL to an isolated real server. pg-mem cannot prove row locks. */
 describe.skipIf(!URL)(
 	"PostgreSQL shared financial authority with independent connections",
 	() => {
@@ -257,7 +256,6 @@ describe.skipIf(!URL)(
 		it("retains a committed hold when the COMMIT acknowledgement is lost", async () => {
 			const { snapshot, pool, second } = setup();
 			let dropAck = false;
-			// Inject response loss AFTER a real PostgreSQL commit, not a simulated transaction engine.
 			const lossyPool = new Proxy(pool, {
 				get(target, key) {
 					if (key === "connect")
@@ -374,7 +372,6 @@ describe.skipIf(!URL)(
 				await ciTransaction.query("ROLLBACK");
 				ciTransaction.release();
 			}
-			// Wait for this exact queued acquisition to be handed back and returned.
 			for (let attempt = 0; attempt < 50 && pool.idleCount !== 1; attempt++)
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			expect(pool.waitingCount).toBe(0);

@@ -1,11 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-// The mirrored .agents/skills tree as a distributable module. Skills are static markdown content; this module parses them into the
-// typed manifest a Registry listing serves. Parse, don't validate: the
-// frontmatter lowers onto parsed derived types or throws — no boolean checks
-// over raw strings escape this boundary.
-
 // public-contract: manifest schema id Registry listings pin.
 export const AGENT_SKILLS_MANIFEST_SCHEMA = "hobo.agent-skills-manifest/v1";
 
@@ -13,7 +8,6 @@ export const AGENT_SKILLS_MANIFEST_SCHEMA = "hobo.agent-skills-manifest/v1";
 export interface SkillManifestEntry {
 	readonly name: string;
 	readonly description: string;
-	/** Bundle-relative path to the skill's SKILL.md. */
 	readonly entry: string;
 }
 
@@ -29,7 +23,6 @@ export type SkillConformanceIssue = {
 	readonly message: string;
 };
 
-/** Typed parse failure raised at the skill authoring boundary. */
 export class SkillParseError extends TypeError {
 	constructor(message: string) {
 		super(message);
@@ -37,13 +30,6 @@ export class SkillParseError extends TypeError {
 	}
 }
 
-/**
- * Parse a SKILL.md's YAML frontmatter into a manifest entry (minus the
- * entry path, which the tree scan supplies). Only the `name:` and
- * `description:` scalar lines are read — the deliberately tiny YAML subset
- * every skill in the tree actually uses; anything else in the block is
- * ignored. Missing block, missing name, or missing description throws.
- */
 export function parseSkillFrontmatter(
 	markdown: string,
 ): Omit<SkillManifestEntry, "entry"> {
@@ -71,10 +57,6 @@ export function parseSkillFrontmatter(
 	return Object.freeze({ name, description });
 }
 
-/**
- * Scan a skills tree (one directory per skill, each holding a SKILL.md)
- * into the typed manifest, deterministically sorted by skill name.
- */
 export async function loadSkillsManifest(
 	root: string,
 ): Promise<SkillsManifest> {
@@ -93,11 +75,6 @@ export async function loadSkillsManifest(
 	});
 }
 
-/**
- * The bundle conformance gate: every skill directory has a SKILL.md that
- * parses, and no two skills share a name. Returns every issue found rather
- * than failing fast, so a bundle author sees the whole repair list.
- */
 export async function checkSkillsConformance(
 	root: string,
 ): Promise<readonly SkillConformanceIssue[]> {

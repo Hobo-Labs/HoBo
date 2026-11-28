@@ -14,13 +14,6 @@ import {
 	readOwnerTurn,
 } from "../support/remote-owner.js";
 
-// SPEC: a ceremony run through the HoBo MCP server. The server calls the CLI
-// with --json, so no progress line reaches the agent: everything the owner
-// must do arrives in the refusal or through the owner channel. Derived from
-// the real-binary smoke: after the Infisical sign-in, `cd up` answered
-// "omit --json and -q", which no agent can do through MCP, and hid why the
-// store did not open.
-
 function throughMcp(): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 		emitProgress: () => undefined,
@@ -141,9 +134,6 @@ describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () 
 
 describe("SPEC hand-off through MCP: one sign-in serves every later run", () => {
 	it("the store sign-in HoBo created is kept for the server's lifetime (memory only), not asked for again", async () => {
-		// Derived from the real-binary smoke: the run after provisioning asked
-		// the owner to sign in to Infisical again, because the token lived
-		// only in that run's vault.
 		const kept = createTrustedVault();
 		const owner = { ...heldOwnerChannel(), vault: kept };
 		let provisioned = 0;
@@ -194,7 +184,6 @@ describe("SPEC hand-off through MCP: one sign-in serves every later run", () => 
 		expect(provisioned).toBe(1);
 		expect(JSON.stringify(second)).not.toMatch(/INFISICAL_SIGN_IN/u);
 		expect(tokens.at(-1)).toBe("identity-token");
-		// Memory only: nothing about it was written to the owner's settings.
 		expect(JSON.stringify(await deps.locator.read())).not.toContain(
 			"identity-token",
 		);

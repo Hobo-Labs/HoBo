@@ -1,7 +1,3 @@
-// The body-schema field types beyond string and u32: a flag, a list of
-// strings, and a JSON object. They exist so a pinned contract can describe the
-// body an emitter really writes — `phases` as a list, `lossless` as a flag, a
-// phase checkpoint as an object — instead of a flattened stand-in for it.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
@@ -44,7 +40,6 @@ test("a body with a flag, a list and an object validates and round-trips through
 		decodeEventBody(SCHEMA, encodeEventBody(SCHEMA, body)),
 		body,
 	);
-	// A false flag is on the wire: absent and false are different bodies.
 	const absent = { id: "e-1", flag: false, names: ["a"] };
 	assert.deepEqual(
 		decodeEventBody(SCHEMA, encodeEventBody(SCHEMA, absent)),
@@ -157,8 +152,6 @@ test("migration.Planned v1 lifts to the list the executors emit, named as the in
 			migrationId: "m",
 			plannedAt: "t",
 			phases: ["expand", "backfill", "contract"],
-			// Only the in-place executor plans these three phases; the lifted
-			// plan says so, which is what a resume is checked against.
 			pattern: "in-place-evolve",
 		},
 	);

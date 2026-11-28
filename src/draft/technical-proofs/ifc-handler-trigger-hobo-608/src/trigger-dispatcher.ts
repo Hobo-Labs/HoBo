@@ -8,7 +8,6 @@ import type {
 } from "./runtime-ports.js";
 import { isJsonObject, type JsonValue } from "./json.js";
 
-
 export interface ParsedManifest {
   readonly schema: "hobo.manifest/v1";
   readonly triggerEdges?: readonly TriggerEdge[];

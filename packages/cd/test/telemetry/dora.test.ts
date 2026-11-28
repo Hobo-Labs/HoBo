@@ -1,6 +1,3 @@
-// WP19 Accept: "DORA metrics match hand-computed fixtures". The fixture below
-// is computed by hand in the comments; the same facts are checked through the
-// pure definition and end-to-end from the journal through createCdTelemetry.
 import { describe, expect, it } from "vitest";
 import { FreightSubject } from "../../src/_generated/cd_pb.js";
 import type { CampId } from "../../src/ports.js";
@@ -33,18 +30,6 @@ import {
 	rolledBack,
 } from "./journal.js";
 
-// Hand-computed fixture (now = T0 + 7d, window 7d → (T0, T0+7d]):
-//   F0 recorded T0−10d; P0 F0→prod-1 at T0−1d       (outside the window)
-//   F1 recorded T0;     P1 F1→prod-1 at T0+2h        lead 2h
-//   F2 recorded T0+1d;  P2 F2→prod-1 at T0+1d+3h     lead 3h, rolled back at +1h → failure, restore 1h
-//   F3 recorded T0+2d;  P3 F3→prod-1 at T0+2d+5h     lead 5h
-//                       P4 F3→prod-2 at T0+2d+6h     lead 6h, rolled back at +30m → failure, restore 30m
-//   F4 recorded T0+3d;  P5 F4→prod-2 at T0+3d+12h    lead 12h
-//   Rail promotion R1 → staging at T0+4d              (excluded: not a Bindle deployment)
-// All Camps: 5 deployments → 5/7 per day; lead p50 = 3rd of [2,3,5,6,12]h = 5h;
-//            CFR 2/5 = 0.4; restore p50 = 1st of [30m, 1h] = 30m.
-// prod-1:    3 deployments → 3/7 per day; lead p50 = 2nd of [2,3,5]h = 3h;
-//            CFR 1/3; restore p50 = 1h.
 const NOW = T0 + 7 * DAY;
 const EXPECTED_ALL = {
 	windowMs: 7 * DAY,
@@ -153,7 +138,6 @@ describe("DORA four keys", () => {
 			now: j.clock.now,
 		});
 		const at = T0 + 3 * DAY + 12 * HOUR;
-		// Window (T0+2d+12h, T0+3d+12h]: only P5 (exactly at `now`, inclusive).
 		expect(
 			await telemetry.dora(
 				{ windowMs: DAY },
@@ -278,7 +262,6 @@ describe("reconcile lag", () => {
 			),
 		).toBe(40_000);
 		await desiredSet(j, T0 + 100_000, "prod-1", "set-2");
-		// A late observation of the old Set does not count as converging set-2.
 		await converged(j, T0 + 110_000, "prod-1", "set-1");
 		expect(
 			await telemetry.reconcileLagMs(

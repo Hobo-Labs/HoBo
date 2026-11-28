@@ -8,7 +8,6 @@ import {
 	ProductSchema,
 } from "./_generated/shop_pb.js";
 
-/** The in-memory product catalog the shop API serves. */
 const catalog = create(ProductListSchema, {
 	products: [
 		create(ProductSchema, {
@@ -73,10 +72,6 @@ export function parseOrderRequest(raw: JsonValue): OrderRequest {
 
 let orderCounter = 0;
 
-/**
- * The shop API: a plain fetch handler (no framework) exposing
- * `GET /products` and `POST /orders`.
- */
 export async function shopApi(request: Request): Promise<Response> {
 	const url = new URL(request.url);
 

@@ -1,0 +1,70 @@
+{
+  "messages": {
+    "CloseTicketInput": {
+      "fields": {
+        "ticketId": {
+          "id": 1,
+          "type": "string"
+        }
+      }
+    },
+    "CloseTicketResult": {
+      "fields": {
+        "closed": {
+          "id": 1,
+          "type": "bool"
+        }
+      }
+    },
+    "Ticket": {
+      "fields": {
+        "id": {
+          "id": 1,
+          "type": "string"
+        },
+        "status": {
+          "id": 3,
+          "type": "string"
+        },
+        "title": {
+          "id": 2,
+          "type": "string"
+        }
+      }
+    },
+    "TicketDraft": {
+      "fields": {
+        "body": {
+          "id": 2,
+          "type": "string"
+        },
+        "title": {
+          "id": 1,
+          "type": "string"
+        }
+      }
+    },
+    "TicketEmailInput": {
+      "fields": {
+        "recipient": {
+          "id": 2,
+          "type": "string"
+        },
+        "ticketId": {
+          "id": 1,
+          "type": "string"
+        }
+      }
+    },
+    "TicketEmailResult": {
+      "fields": {
+        "sent": {
+          "id": 1,
+          "type": "bool"
+        }
+      }
+    }
+  },
+  "package": "hobo.generated",
+  "syntax": "proto3"
+}

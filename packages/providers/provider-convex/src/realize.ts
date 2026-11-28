@@ -1,8 +1,3 @@
-// Realization: a provider-neutral ResourcePlan becomes a convex-deploy
-// DRIVER program (not IaC). Every program provisions into one Convex
-// deployment resource and wires port-specific resources beside it; outputs
-// use the platform's `${resources.<name>.outputs.<key>}` placeholder syntax
-// so dependent resources resolve through the normal manifest path.
 import {
 	assertDriverProgram,
 	CONVEX_DRIVER,

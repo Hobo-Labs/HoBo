@@ -27,11 +27,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
-// Consumer pact pinning the CLI <-> Yard (@hobo/cloud) boundary. The CLI's cloud
-// verbs share one call path (the yard-client seam); this contract asserts that
-// seam's observable responses against the recorded expectations, so MCP parity
-// (S3-01) can reuse the same boundary.
-
 const pactPath = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",
@@ -91,9 +86,7 @@ function inMemoryIac(): IacProvider {
 		async apply(program: IacProgram) {
 			return { endpoint: `${program.resourceId}.local` };
 		},
-		async destroy() {
-			/* no-op */
-		},
+		async destroy() {},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},
@@ -159,7 +152,6 @@ describe("CLI <-> Yard boundary pact", () => {
 		expect(rendered.dependencyOrder).toEqual(expected.dependencyOrder);
 		expect(rendered.resources.map((r) => r.name)).toEqual(expected.resources);
 
-		// Read-only: the pure Planner appended nothing to the deployment stream.
 		const events = await collectStream(runtime.store, "deployment:pact-plan");
 		expect(events).toEqual(expected.sideEffectEvents);
 	});

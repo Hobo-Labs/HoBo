@@ -1,11 +1,5 @@
 package data_models
 
-// CUE constraints for every protobuf type in vercel_blob_ephemeral_state.proto.
-// They mirror the parse boundary in src/record.ts and src/env.ts: the record
-// format is fixed, incarnations carry no ':' (the version separator),
-// revisions start at 1, write ids are opaque printable tokens, and the
-// documented per-call cost of an uncontended call stays within two reads,
-// two uploads and one delete per key.
 
 #RecordFormat: "hobo.vercel-blob.ephemeral/v1"
 #Incarnation:  =~"^[!-9;-~]{1,64}$"

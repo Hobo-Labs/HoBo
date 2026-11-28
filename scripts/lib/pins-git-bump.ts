@@ -1,9 +1,3 @@
-/**
- * `pins:bump` for a git pin: resolve a commit, branch or tag, ask the server
- * whether it serves it (from a throwaway repository), check the submodule out there and stage the gitlink.
- *
- * Erasable TypeScript with node builtins only.
- */
 import { join } from "node:path";
 import { type GitPin, isSafeRef, PinsError } from "./pins.ts";
 import {
@@ -39,23 +33,16 @@ function peel(cwd: string, value: string): string | null {
 
 interface Resolved {
 	readonly commit: string;
-	/** The server was asked for it just now, so nobody has to ask again. */
 	readonly served: boolean;
-	/** Where a commit the server may not have came from. */
 	readonly from: string;
 }
 
-/**
- * `--depth 1` for a shallow clone; nothing for a full one, which a depth
- * fetch would turn shallow (even for a commit it already has).
- */
 function depthFor(sub: string): string[] {
 	return git(sub, ["rev-parse", "--is-shallow-repository"]).stdout === "true"
 		? ["--depth", "1"]
 		: [];
 }
 
-/** A commit id (or a short one) this clone, or the --reference clone, already has. */
 function localCommit(
 	sub: string,
 	ref: string,
@@ -91,7 +78,6 @@ function localCommit(
 	};
 }
 
-/** Fetch `what` (a full id or a ref name) from the pin's repository; null when it has no such ref. */
 function fetchFromPin(
 	sub: string,
 	pin: GitPin,
@@ -116,12 +102,6 @@ function fetchFromPin(
 	return { commit, served: true, from: pin.repo };
 }
 
-/**
- * A commit id is looked up here first (and through --reference); a full id
- * the clones lack is fetched by id. Anything else, including a tag or branch
- * whose name is all hex (`beefcafe`, `2024`), is `refs/tags/<name>` on the
- * server, then `refs/heads/<name>` (peeled to its commit).
- */
 function resolveCommit(
 	sub: string,
 	pin: GitPin,
@@ -157,7 +137,6 @@ export interface Bump {
 	readonly to: string;
 }
 
-/** Check the submodule out at `ref` and stage the new gitlink; nothing else moves. */
 export async function bumpPin(
 	root: string,
 	name: string,
@@ -186,8 +165,6 @@ export async function bumpPin(
 	const here = headOf(root, pin.path);
 	const resolved = resolveCommit(sub, pin, ref, options);
 	const to = resolved.commit;
-	// A commit found here (in the submodule, or a --reference clone) may exist
-	// nowhere else: a pin other checkouts cannot fetch is a broken build.
 	if (!resolved.served && !(await remoteHas(pin.repo, to, options))) {
 		throw new PinsError(
 			"NOT_PUSHED",

@@ -1,8 +1,3 @@
-/**
- * Executable messaging conformance against real adapter factories (ADR-0138).
- * Exercises publish/consume/ack, consumer-group isolation, DLQ, and capability gates.
- */
-
 import type { Messaging } from "@hobo/core";
 import {
 	assertDeliverySupported,
@@ -205,7 +200,6 @@ async function provesExactlyOnceCapabilityGate(
 	const bus = await create();
 	try {
 		assertDeliverySupported(bus.capabilities, "exactly-once");
-		// Backend that supports exactly-once must accept publish with that delivery.
 		await bus.publish(
 			parseTopicName("conf-xo"),
 			{ x: 1 },
@@ -215,8 +209,6 @@ async function provesExactlyOnceCapabilityGate(
 		);
 		return true;
 	} catch (err) {
-		// Portable backends may reject — still a valid gate outcome when they
-		// throw MessagingCapabilityError rather than silently accepting.
 		if (err instanceof MessagingCapabilityError) {
 			return !bus.capabilities.deliveryGuarantees.includes("exactly-once");
 		}

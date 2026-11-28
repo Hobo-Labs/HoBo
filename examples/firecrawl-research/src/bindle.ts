@@ -36,17 +36,6 @@ function defaultFirecrawlClient(options: { apiKey: string }): FirecrawlClient {
 	};
 }
 
-/**
- * A tiny HTTP handler factory kept inline so the example focuses on connector
- * wiring rather than an application framework.
- *
- * The connector symbol declares which external service the Bindle needs. The
- * official Firecrawl SDK remains an ordinary application dependency. At serve
- * time the Station supplies a runtime context, resolves the connector against
- * its Connection inventory, and issues the short-lived token used by the SDK.
- *
- * Tests inject a {@link FirecrawlClientFactory} instead of mocking the module.
- */
 export function createFirecrawlResearchBindle(
 	createClient: FirecrawlClientFactory = defaultFirecrawlClient,
 ) {

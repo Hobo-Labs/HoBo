@@ -6,11 +6,6 @@ import {
 	createDefaultYardRuntime,
 } from "../src/index.js";
 
-// HOBO-718: `hobo add runner-github` registers the GitHub Actions
-// execution-host adapter — BOTH `hobo:runner` and `hobo:build-machine` ports
-// from one Capability Manifest snapshot — and approves it for Dispatcher
-// routing (HOBO-710 registry model).
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();

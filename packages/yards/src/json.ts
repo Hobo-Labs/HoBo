@@ -7,11 +7,6 @@ export interface JsonBag {
 export interface StringBag {
 	[key: string]: string;
 }
-/**
- * The JSON data model this package parses at its boundaries. Structurally
- * identical to `JsonValue` in `@hobo/camps` (readonly arrays and objects) so
- * parsed values flow between the two packages without a conversion step.
- */
 export type JsonValue =
 	| string
 	| number
@@ -49,7 +44,6 @@ export function isJsonArray<T>(value: T): value is T & readonly JsonValue[] {
 	return tagOf.call(value) === "[object Array]";
 }
 
-/** Clone a domain value across the JSON document boundary. */
 export function cloneAsJson<T>(value: T): JsonValue {
 	return parseJsonValue(JSON.stringify(value ?? null));
 }

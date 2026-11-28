@@ -46,14 +46,10 @@ describe("createUpstashClient.createDatabase", () => {
 			(error: Error) =>
 				isProviderError(error) && error.code === "PROVIDER_CONTRACT_CHANGED",
 		);
-		// The provider derives the id from the key, so a bad key must not
-		// reach it at all.
 		assert.equal(transport.requests.length, 0);
 	});
 
 	it("refuses a response whose database id is not the idempotency key", async () => {
-		// If the provider stops deriving the id from the key, re-POST is no
-		// longer a safe adoption and this driver must stop assuming it is.
 		const other = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 		const { client } = clientWith({
 			script: [
@@ -86,8 +82,6 @@ describe("createUpstashClient.createDatabase", () => {
 		assert.equal(first.adopted, false);
 		assert.equal(second.adopted, true);
 		assert.equal(second.database.databaseId, first.database.databaseId);
-		// Two POSTs, but both carry the same key, so the provider returns the
-		// same database rather than minting another.
 		assert.equal(transport.requests.length, 2);
 		assert.deepEqual(
 			transport.requests.map((request) => request.headers["idempotency-key"]),
@@ -134,9 +128,6 @@ describe("createUpstashClient.createDatabase", () => {
 	});
 
 	it("does not silently retry a 500 create; it surfaces the ambiguity", async () => {
-		// A create that got a 500 may or may not have created the database.
-		// Retrying inside `createDatabase` would resolve that quietly; the
-		// caller is told instead, and recovers through `adoptDatabase`.
 		const { client, transport, store } = clientWith({
 			script: [
 				{ status: 500, body: "upstream error" },

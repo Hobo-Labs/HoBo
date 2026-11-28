@@ -28,7 +28,7 @@
 | 0003 | Event sourcing + CQRS (command store, actor-produced events, cached materializations) | [architecture-core](01-architecture-core.md#adr-0003) |
 | 0004 | Choreography sagas + virtual actors for orchestration | [architecture-core](01-architecture-core.md#adr-0004) |
 | 0005 | One ports/adapters shape for cloud, IaC & build (dagger-adjacent, wasm-on-OCI) | [architecture-core](01-architecture-core.md#adr-0005) |
-| 0006 | IaC mechanism: pluggable adapters (Pulumi · Crossplane · Terraform · OpenTofu); Nix optional not default; per-resource stacks | [architecture-core](01-architecture-core.md#adr-0006) · [devx-devenv-nix](../devx-devenv-nix.md) |
+| 0006 | IaC mechanism: pluggable adapters (Pulumi · Crossplane · Terraform · OpenTofu); Nix optional not default; per-resource stacks | [architecture-core](01-architecture-core.md#adr-0006) · [devx-devenv-nix](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/devx-devenv-nix.md) |
 | 0007 | Provider-specific options via an idiomatic typed-options builder (`.with(...)`) | [architecture-core](01-architecture-core.md#adr-0007) |
 | 0008 | Keyless agent identity (SVID/OIDC federation) + token broker | [identity-security](02-identity-security.md#adr-0008) |
 | 0009 | Capability Manifest capability/auth standard + Registry | [identity-security](02-identity-security.md#adr-0009) |
@@ -147,7 +147,7 @@
 | 0133 | Hard environment network isolation + optional Privileged Access Gateway | [identity-security](02-identity-security.md#adr-0133) |
 | 0134 | HoBo Trails: app-owned continuous migration recipes that compose continuous identity | [identity-security](02-identity-security.md#adr-0134) |
 | 0135 | SQLite is the default embedded EventStore/runtime journal behind HoBo ports; single-owner partitions; not the public portability boundary | [data-plane sqlite default](03-data-plane-sqlite-default.md) |
-| 0136 | Effects on Contracts (Verse-inspired EffectSpec) + visible secondary ResilienceProfile; no Effect-TS/Polly/XState public deps | [data-plane effects+resiliency](03-data-plane-effects-resiliency.md) |
+| 0136 | Effects on Contracts (Verse-inspired EffectSpec) + visible secondary ResilienceProfile; no Effect-TS/Polly/XState public deps | [data-plane effects+resiliency](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/adr/03-data-plane-effects-resiliency.md) |
 | 0137 | Session Replay on every App Kit (`@hobo/replay`); Kit ≠ WIT membrane; `replay.*`; dual fixtures; distinct from event-log replay | [data-plane](03-data-plane.md#adr-0137) |
 | 0138 | Messaging plane unification; Kafka first-class capability provider; Dapr optional Camp runtime / ActorHost dual realization | [architecture-core](01-architecture-core.md#adr-0138) |
 | 0139 | HoBo Code: coding harness and harness multiplexer (`hobo-code` / `@hobo/code`) | [data-plane](03-data-plane.md#adr-0139) |

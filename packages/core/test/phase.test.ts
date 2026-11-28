@@ -1,7 +1,3 @@
-// ADR-0158: deployment phases as vocabulary + enforcement primitives. The
-// cases below pin the two rules that make the phase model worth having — a
-// phase token is never defaulted, and a phase-scoped capability touched
-// outside its phase is refused — plus the independence of dev mode.
 import { describe, expect, it } from "vitest";
 
 import {

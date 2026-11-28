@@ -1,4 +1,3 @@
-// Recorded registry exchanges for every package ecosystem.
 import { createHash } from "node:crypto";
 import { latin1Text } from "../../src/sources/json.js";
 import { type Exchange, json } from "./support.js";
@@ -9,7 +8,6 @@ export const tarball = new Uint8Array([
 export const tarballBody = latin1Text(tarball);
 export const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
 
-/** Recorded registry exchanges for every package ecosystem. */
 export const PACKAGE_FIXTURES: readonly Exchange[] = [
 	{
 		url: "https://registry.npmjs.org/@acme%2fweb",

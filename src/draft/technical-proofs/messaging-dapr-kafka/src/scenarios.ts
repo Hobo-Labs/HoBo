@@ -1,7 +1,3 @@
-/**
- * End-to-end scenarios for ADR-0138 proof (ports only — no Kafka/Dapr app imports).
- */
-
 import {
 	type Messaging,
 	parseTopicName,
@@ -24,7 +20,6 @@ import {
 	createInMemoryDaprClient,
 } from "@hobo/runtime-dapr";
 import { isJsonNumber } from "./json.js";
-
 
 export const OrderActor = defineActor<{ total: number }>({
 	name: "Order",
@@ -51,7 +46,6 @@ export async function runNativeKafkaPath(tenantId = "acme"): Promise<{
 	events: readonly string[];
 	fidelity: "simulated" | "live";
 }> {
-	// Live client code path via harness transport (same methods as real broker).
 	const bus = createKafkaMessaging({
 		cluster: localRedpandaCluster(tenantId),
 		transport: createInMemoryKafkaTransport(),
@@ -142,11 +136,6 @@ export function createProofHosts(tenantId = "acme") {
 	const dapr = createDaprActorHost({
 		config: createDaprRuntimeHost({ tenantId, campId: "proof" }).config,
 	});
-	// Minimal native-compatible host reusing dapr host structure is wrong —
-	// use a second dapr host instance labeled via placement only when dual.
-	// Prefer true native-shaped host from runtime-local when available; for the
-	// proof we construct a second independent DaprActorHost and also a thin
-	// native-compatible wrapper for the default placement path.
 	const native: ActorHost = {
 		acquire(key, req) {
 			return dapr.acquire(`native/${key}`, req);

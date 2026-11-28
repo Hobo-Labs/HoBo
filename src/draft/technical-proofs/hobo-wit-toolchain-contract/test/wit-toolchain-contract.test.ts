@@ -20,8 +20,6 @@ import {
 } from "../src/wit-toolchain-contract.js";
 
 const requireFromPackage = createRequire(join(PACKAGE_ROOT, "package.json"));
-// These tests run the jco generator up to three times: about 1 s alone, over the
-// 10 s default on a loaded CI runner.
 const GENERATOR_TIMEOUT = { timeout: 30_000 };
 
 test("hobo:sdk WIT package skeleton validates without filling downstream interfaces", async () => {

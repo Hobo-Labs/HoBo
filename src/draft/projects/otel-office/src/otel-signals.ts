@@ -1,23 +1,6 @@
-/**
- * OTLP/JSON logs + metrics → office model mappers (Phase 2 slice 2).
- *
- * Logs (ExportLogsServiceRequest):
- *   resourceLogs[] → resource.attributes (service.name, hobo.*)
- *     → scopeLogs[] → logRecords[] { timeUnixNano, severityNumber/severityText,
- *                                   body, attributes, traceId }
- * WARN and above raise a speech bubble; ERROR also flips the character to the
- * stuck attention state. Every record lands in the character's ActivityLog.
- *
- * Metrics (ExportMetricsServiceRequest):
- *   resourceMetrics[] → resource.attributes → scopeMetrics[] → metrics[]
- *     { name, sum.dataPoints | gauge.dataPoints { asDouble | asInt, timeUnixNano } }
- * A small explicit mapping table (METRIC_HEALTH_MAP) drives the health bar;
- * unknown metric names still land in the ActivityLog for the inspect panel.
- */
 import type { AgentEvent, OfficeState } from "./model.js";
 import { attributesToRecord, ensureCharacter } from "./otel.js";
 import { isJsonString } from "./json.js";
-
 
 interface OtlpValue {
 	stringValue?: string;
@@ -79,7 +62,6 @@ function nanoToMs(value: string | number | undefined): number {
 
 type Severity = "INFO" | "WARN" | "ERROR";
 
-/** OTLP severityNumber ranges: WARN = 13–16, ERROR = 17–24. */
 export function severityFromOtlp(
 	severityNumber: number | undefined,
 	severityText: string | undefined,
@@ -95,7 +77,6 @@ export function severityFromOtlp(
 	return "INFO";
 }
 
-/** Bubble text stays one-liner short. */
 const BUBBLE_MAX = 120;
 
 function bodyToText(body: OtlpValue | undefined): string {
@@ -104,7 +85,6 @@ function bodyToText(body: OtlpValue | undefined): string {
 	return text.length > BUBBLE_MAX ? `${text.slice(0, BUBBLE_MAX - 1)}…` : text;
 }
 
-/** Map one OTLP/JSON logs request into log-record events. */
 export function mapLogsPayload(
 	payload: OtlpLogsRequest,
 	state: OfficeState,
@@ -133,12 +113,6 @@ export function mapLogsPayload(
 	return events;
 }
 
-/**
- * Explicit metric → health-bar mapping (documented in README):
- *   hobo.health     gauge 0..1 → health = value
- *   hobo.error.rate gauge/sum 0..1 → health = 1 - value
- * Anything else is recorded in the ActivityLog under its own name only.
- */
 interface MetricHealthMap {
 	"hobo.health": (value: number) => number;
 	"hobo.error.rate": (value: number) => number;
@@ -149,7 +123,6 @@ export const METRIC_HEALTH_MAP: MetricHealthMap = {
 	"hobo.error.rate": (value) => 1 - value,
 };
 
-/** Map one OTLP/JSON metrics request into metric-sample events. */
 export function mapMetricsPayload(
 	payload: OtlpMetricsRequest,
 	state: OfficeState,

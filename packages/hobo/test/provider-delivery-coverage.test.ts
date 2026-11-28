@@ -86,7 +86,6 @@ function packageFor(row: ProviderDeliveryCoverage): ProviderPackage {
 	return found;
 }
 
-/** Exports a row names, which must appear in the package's public entry point. */
 function namedExports(row: ProviderDeliveryCoverage): readonly string[] {
 	if (row.realization !== "resolver") return [];
 	return [
@@ -103,7 +102,6 @@ function missingExports(row: ProviderDeliveryCoverage): readonly string[] {
 	);
 }
 
-/** A provider entry point's exports, read by name. */
 async function load(
 	row: ProviderDeliveryCoverage,
 ): Promise<ReadonlyMap<string, object>> {

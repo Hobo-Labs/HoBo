@@ -1,6 +1,5 @@
 package hobo
 
-// The package's fixture gate accepts each persisted composition record.
 #Composition: #CiRepositoryLink | #ComposedRuntimeManifest | #LocalDeploymentReceipt | #LocalDeploymentLaunch | #LocalDeploymentLifecycleEvent
 
 #CiRepositoryLink: {
@@ -9,10 +8,6 @@ package hobo
 	repository: string & =~"^[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$"
 }
 
-// The legacy explicit fixture manifest remains pinned to its mock backend.
-// Actual product self-hosting is represented separately by the persisted
-// LocalDeploymentReceipt and lifecycle facts below; fixture metadata never
-// establishes that the product deployed an application.
 #ComposedRuntimeManifest: {
 	lane:       "local-mocked"
 	eventStore: "runtime-local"

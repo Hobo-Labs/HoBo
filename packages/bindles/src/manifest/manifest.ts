@@ -52,7 +52,6 @@ type ManifestRecord = {
 	};
 	resources: Record<string, ResourceRecord>;
 	triggerEdges?: TriggerEdgeRecord[];
-	/** Scope policy is part of the canonical deployment input and hash. */
 	policy?: JsonObject;
 };
 

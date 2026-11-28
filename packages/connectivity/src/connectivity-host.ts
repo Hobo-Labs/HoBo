@@ -1,9 +1,3 @@
-/**
- * In-process HTTP-shaped façade for the ConnectivityHost integration boundary.
- * Used by PACT consumer/provider tests (structurally compatible with
- * `@hobo/contract-harness` ProviderStub — no production harness dependency).
- */
-
 import {
 	createMeteringBus,
 	getNamedEndpoint,
@@ -39,9 +33,6 @@ export interface ConnectivityHostHandler {
 	): ConnectivityHostResponse | Promise<ConnectivityHostResponse>;
 }
 
-/**
- * Real package surface behind an HTTP-shaped boundary for contract capture.
- */
 export function createConnectivityHostHandler(): ConnectivityHostHandler {
 	const sink = createInMemoryMeteringSink("connectivity-host");
 	const bus = createMeteringBus([sink]);
@@ -154,8 +145,6 @@ async function handlePolicy(
 	const resourceTags = Array.isArray(body.resourceTags)
 		? body.resourceTags.filter((t): t is string => isJsonString(t))
 		: [];
-	// Env isolation: ensure both sides carry env: tags (default development for
-	// same-tenant contract paths when omitted).
 	const subjectEnv =
 		tags.find((t) => t.startsWith("env:")) ?? "env:development";
 	const resourceEnv =

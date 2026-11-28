@@ -179,9 +179,6 @@ export async function typecheckGeneratedAliases(declarations: string): Promise<v
       "ES2022",
       "consumer.ts",
     ];
-    // Resolve the workspace TypeScript compiler directly instead of a bare
-    // `tsc` on PATH: test lanes that do not put node_modules/.bin on PATH
-    // (the root sharded runner) otherwise fail with spawnSync tsc ENOENT.
     const tscJs = createRequire(import.meta.url).resolve(
       "typescript/lib/tsc.js",
     );

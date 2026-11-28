@@ -1,8 +1,3 @@
-/**
- * Yard placement / generation command-event family.
- * Every decision is a fact; inventory and generation sagas rebuild via pure folds.
- */
-
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -30,7 +25,6 @@ export const YARD_EVENTS = {
 	GenerationCompensated: "yard.GenerationCompensated",
 	PlacementResolved: "yard.PlacementResolved",
 	PlacementRejected: "yard.PlacementRejected",
-	/** Provider-native signal normalized into the yard stream. */
 	ProviderSignalNormalized: "yard.ProviderSignalNormalized",
 } as const;
 
@@ -61,7 +55,6 @@ export function yardEvent<T>(
 	});
 }
 
-/** All yard.* types the inventory/generation folds consume. */
 export const YARD_EVENT_READ_SET: readonly string[] = Object.freeze(
 	Object.values(YARD_EVENTS),
 );

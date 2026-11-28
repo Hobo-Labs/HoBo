@@ -1,11 +1,3 @@
-/**
- * Golden resolved topologies and offers.
- *
- * One pair of files per shipped recipe. They exist so a change in the compiler,
- * the profile registry, or a recipe's data shows up as a reviewable diff rather
- * than as a silently different deployment. Regenerate deliberately with
- * `HOBO_UPDATE_GOLDEN=1`.
- */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -124,7 +116,6 @@ describe("golden resolutions", () => {
 	}
 
 	it("was not run in update mode", () => {
-		// A golden suite that silently rewrites itself asserts nothing.
 		expect(UPDATE).toBe(false);
 	});
 });

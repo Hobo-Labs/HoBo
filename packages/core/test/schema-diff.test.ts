@@ -1,8 +1,3 @@
-// ADR-0160: the canonical schema IR parse boundary and the forward-only
-// expand/backfill/contract differ. The cases below pin what makes a plan
-// reviewable — determinism under input permutation, destructive work confined
-// to the contract phase, no inverse steps, and a digest that moves when the
-// engine version moves even though the steps are identical.
 import { describe, expect, it } from "vitest";
 
 import {

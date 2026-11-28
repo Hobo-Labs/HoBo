@@ -1,6 +1,3 @@
-/**
- * The compiler is pure, and these tests are what make that claim checkable.
- */
 import { describe, expect, it } from "vitest";
 
 import { PINNED_CREATE_DB_SPECIFIER } from "../src/cli.js";

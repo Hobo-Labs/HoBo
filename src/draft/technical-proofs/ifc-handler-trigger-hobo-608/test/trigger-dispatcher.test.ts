@@ -14,7 +14,6 @@ import {
 } from "../src/index.js";
 import { type JsonValue } from "../src/json.js";
 
-
 describe("HOBO-608 TriggerDispatcher", () => {
   it("dispatches all five trigger kinds and emits trigger.Fired events", async () => {
     const ports = createRuntimeLocalPorts();

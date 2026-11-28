@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the Grok SWE adapter wire records. One constraint
-// per protobuf message in swe_grok.proto.
 
 #GrokLaunchRecord: {
 	command: "grok-acp"

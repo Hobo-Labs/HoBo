@@ -1,9 +1,3 @@
-// One Camp's posture evaluation (ADR-0182 D25) as a pure function of its
-// recorded inputs: the bound packs, their remediation modes, the status
-// observation (and its journal position), the current Set, the Camp's
-// management mode and the instant. The posture service calls it on every
-// due tick; replay calls it with the same recorded inputs and must get the
-// same ComplianceRecord back.
 import { create } from "@bufbuild/protobuf";
 import type { ResolvedDeploymentSet } from "@hobo/cloud";
 import {
@@ -46,9 +40,7 @@ export function postureStateOf(state: ComplianceState): PostureState {
 	}
 }
 
-/** A remediation the service must act on: one noncompliant finding under an effective `enforce`. */
 export type RemediationPlan = Readonly<{
-	/** `<pack>/<rule>`, as recorded on findings. */
 	rule: string;
 	resource: string;
 	ownership: Ownership;
@@ -60,12 +52,9 @@ export type CampEvaluationInput = Readonly<{
 	campId: string;
 	railDigest: string;
 	candidate: boolean;
-	/** Parsed packs, or undefined when a bound pack is missing or invalid (the record is then UNKNOWN). */
 	packs: readonly PosturePack[] | undefined;
-	/** Remediation mode per pack name, from the Rail's posture bindings. */
 	modes: ReadonlyMap<string, RemediationMode>;
 	observation: ReconcileObservationRecord;
-	/** Decimal journal position of the status observation evaluated. */
 	position: string;
 	resolved: ResolvedDeploymentSet | undefined;
 	management: CampManagement;
@@ -81,7 +70,6 @@ export function ruleKey(rule: Readonly<{ pack: string; id: string }>): string {
 	return `${rule.pack}/${rule.id}`;
 }
 
-/** Evaluate one Camp against one Rail's bound packs. Pure. */
 export function evaluateCamp(input: CampEvaluationInput): CampEvaluation {
 	const base = {
 		campId: input.campId,
@@ -111,7 +99,6 @@ export function evaluateCamp(input: CampEvaluationInput): CampEvaluation {
 	});
 	const packByName = new Map(input.packs.map((pack) => [pack.pack, pack]));
 	const ruleByKey = new Map(rules.map((rule) => [ruleKey(rule), rule]));
-	// Candidates are shadowed, never enforced; OBSERVE_ONLY Camps get posture in inform only (D25).
 	const mayEnforce =
 		!input.candidate && input.management !== CampManagement.OBSERVE_ONLY;
 	const remediations: RemediationPlan[] = [];
@@ -165,11 +152,6 @@ export function evaluateCamp(input: CampEvaluationInput): CampEvaluation {
 	};
 }
 
-/**
- * The noncompliant ratio a compliance record carries: (noncompliant +
- * unknown) / applicable findings. An UNKNOWN record without findings (packs
- * unresolved) counts as fully noncompliant, so it can never read as healthy.
- */
 export function noncompliantRatio(record: ComplianceRecord): number {
 	if (record.state === ComplianceState.UNKNOWN && record.findings.length === 0)
 		return 1;

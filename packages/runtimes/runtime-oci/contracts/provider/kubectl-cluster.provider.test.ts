@@ -14,14 +14,6 @@ const contractsDir = path.resolve(
 	"..",
 );
 
-/**
- * Provider verification for the kubectl cluster API boundary.
- *
- * The production provider is `createProcessKubectlTransport`.
- * Offline CI verifies identity + non-blocking probe paths.
- * Full apply/port-forward verification requires a live cluster
- * (`HOBO_REQUIRE_KUBECTL=1`).
- */
 describe("kubectl-cluster provider verification", () => {
 	it("process transport identity matches pact provider name", async () => {
 		const pacts = await loadPactDirectory(path.join(contractsDir, "pacts"));
@@ -38,7 +30,6 @@ describe("kubectl-cluster provider verification", () => {
 			path: "/kubectl/version",
 			body: { client: true },
 		});
-		// 200 when kubectl is installed; 503 when missing — never hang.
 		expect([200, 503]).toContain(version.status);
 		if (version.status === 200) {
 			expect(version.body).toMatchObject({ ok: true });
@@ -60,8 +51,6 @@ describe("kubectl-cluster provider verification", () => {
 		const provider: ProviderStub = {
 			name: "KubernetesClusterApi",
 			async handle(request) {
-				// Guard long-running paths offline: return structured unavailable
-				// instead of spawning port-forward against a missing cluster.
 				if (
 					process.env.HOBO_REQUIRE_KUBECTL !== "1" &&
 					(request.path === "/kubectl/port-forward" ||
@@ -88,7 +77,6 @@ describe("kubectl-cluster provider verification", () => {
 			expect(actual.status, interaction.description).not.toBe(404);
 		}
 
-		// Full body verification only when a live cluster is required.
 		if (process.env.HOBO_REQUIRE_KUBECTL === "1") {
 			const report = await verifyPact(must(pact), {
 				name: "KubernetesClusterApi",

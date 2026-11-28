@@ -1,6 +1,3 @@
-// The self-host matcher reads declared feature tokens and catalog profiles.
-// These cases use synthetic declarations; the cases driven from the real
-// provider packages live in @hobo/cloud-providers.
 import assert from "node:assert/strict";
 import { test } from "vitest";
 
@@ -131,8 +128,6 @@ test("no rule reads the provider id", () => {
 	assert.deepEqual(new Set(verdicts), new Set(["undetermined"]));
 });
 
-// --- cited host forms: per-product verdicts ---------------------------------
-
 const cite = {
 	url: "https://vendor.example/docs/product",
 	checkedAt: "2026-11-10",
@@ -185,7 +180,6 @@ test("a container form with every facet cited can, and names its Yard volume", (
 	assert.equal(result.resourceClass, "p.stateful/v1");
 	assert.deepEqual(result.caveats, []);
 	assert.match(result.findings[1]?.reason ?? "", /mounts p\.volume\/v1/u);
-	// The untouched equivalence class is still listed, still undetermined.
 	assert.deepEqual(
 		result.forms.map((entry) => [entry.target, entry.verdict]),
 		[
@@ -202,7 +196,6 @@ test("a cited volume with no Yard product behind it is a caveat, not a refusal",
 	});
 	assert.equal(result.verdict, "can");
 	assert.match(result.caveats[0] ?? "", /no bucket\.filesystem\/v1 product/u);
-	// Naming the resource class supersedes its token reading.
 	assert.equal(result.forms.length, 1);
 });
 

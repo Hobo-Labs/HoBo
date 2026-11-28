@@ -1,5 +1,3 @@
-// Reference adapters and harnesses for the nine @hobo/cd port suites. Each
-// harness takes an optional mutant that breaks exactly one port property.
 import {
 	type ArtifactStoreHarness,
 	type ArtifactVerifierHarness,
@@ -34,8 +32,6 @@ import {
 } from "@hobo/core";
 import { createHmac } from "node:crypto";
 import { abortedRefusal, ManualClock, ok, type RefCtx, reason, refCtx, refuse, sha256 } from "./common.js";
-
-// ── Realizer ─────────────────────────────────────────────────────────────────
 
 export type RefSet = Readonly<{ setId: string; campId: string; freightId: string }>;
 export type RefResolved = Readonly<{ digests: readonly string[] }>;
@@ -120,8 +116,6 @@ export function refRealizerHarness(mutant?: RealizerMutant): RealizerHarness<Ref
 	};
 }
 
-// ── TrafficShifter ───────────────────────────────────────────────────────────
-
 export type TrafficMutant = "claims-full-without-capability" | "forgets-status";
 
 export function routingPlan(percent: number): RoutingPlan {
@@ -162,8 +156,6 @@ export function refTrafficHarness(mutant?: TrafficMutant): TrafficShifterHarness
 	};
 }
 
-// ── HealthSource ─────────────────────────────────────────────────────────────
-
 export type HealthMutant = "fabricates-on-empty" | "ignores-cohort";
 export type RefHealthQuery = Readonly<{ name: string; cohortLabel: string }>;
 
@@ -186,8 +178,6 @@ export function refHealthHarness(mutant?: HealthMutant): HealthSourceHarness<Ref
 		}),
 	};
 }
-
-// ── PublisherPort ────────────────────────────────────────────────────────────
 
 export type PublisherMutant = "converged-on-publish" | "writes-every-time";
 
@@ -230,8 +220,6 @@ export function refPublisherHarness(mutant?: PublisherMutant): PublisherHarness<
 		},
 	};
 }
-
-// ── ReconcilerTransport ──────────────────────────────────────────────────────
 
 export type TransportMutant = "no-fencing" | "replays-checkpointed";
 type RefLease = ReconcilerLeaseLike;
@@ -300,8 +288,6 @@ export function refTransportHarness(mutant?: TransportMutant): ReconcilerTranspo
 	};
 }
 
-// ── ArtifactStore ────────────────────────────────────────────────────────────
-
 export type StoreMutant = "no-verify-on-read" | "duplicate-listing";
 
 export function refStoreHarness(mutant?: StoreMutant): ArtifactStoreHarness<RefCtx> {
@@ -344,8 +330,6 @@ export function refStoreHarness(mutant?: StoreMutant): ArtifactStoreHarness<RefC
 	};
 }
 
-// ── ArtifactVerifier ─────────────────────────────────────────────────────────
-
 export type ArtifactVerifierMutant = "passes-unreachable" | "rewrites-digest";
 export type RefManifest = Readonly<{ bindle: string; artifacts: readonly Readonly<{ name: string; digest: string; coordinate: string }>[] }>;
 
@@ -373,8 +357,6 @@ export function refArtifactVerifierHarness(mutant?: ArtifactVerifierMutant): Art
 		}),
 	};
 }
-
-// ── ProvenanceVerifier ───────────────────────────────────────────────────────
 
 export type ProvenanceMutant = "skips-signer-pin" | "skips-subject-binding" | "throws-on-garbage";
 
@@ -453,8 +435,6 @@ export function refProvenanceHarness(mutant?: ProvenanceMutant): import("@hobo/c
 	};
 	return { subject: mutant ? `reference-provenance[${mutant}]` : "reference-provenance", create: async () => ({ verify }), cases: () => cases, ctx: () => refCtx() };
 }
-
-// ── SubscriptionDriver ───────────────────────────────────────────────────────
 
 export type SubscriptionMutant = "ignores-cursor" | "ignores-limit" | "unpinned";
 export type RefSubscription = Readonly<{ name: string; limit: number }>;

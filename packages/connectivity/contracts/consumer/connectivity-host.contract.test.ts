@@ -21,7 +21,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 		const pacts = await loadPactDirectory(path.join(contractsDir, "pacts"));
 		const pact = requirePact(pacts, "ConnectivityHost");
 
-		// Consumer: mock provider returns contracted responses.
 		const mock = createMockProviderFromPact(pact);
 		const named = await mock.handle({
 			method: "GET",
@@ -32,7 +31,6 @@ describe("ConnectivityHost consumer contract (PACT)", () => {
 			url: "https://web.myapp.local.hobo.localhost",
 		});
 
-		// Real host implements the same paths (provider verification path).
 		const host = createConnectivityHostHandler();
 		const report = await verifyPact(pact, {
 			name: host.name,

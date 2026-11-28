@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentPolicies, type ParsedAgentConfig } from "./config.js";
 
-/** The three sides of one conflicted file. */
 export type StructuredMergeInput = Readonly<{
 	path: string;
 	base: string;
@@ -13,12 +12,6 @@ export type StructuredMergeInput = Readonly<{
 	signal: AbortSignal;
 }>;
 
-/**
- * A syntax-aware three-way merge. It returns the merged file only when it
- * merged with no conflict left; anything else (a conflict it could not
- * settle, an unsupported language, a failure) is `undefined`, and the merge
- * goes on as git left it.
- */
 export interface StructuredMerger {
 	readonly id: string;
 	merge(input: StructuredMergeInput): Promise<string | undefined>;
@@ -48,21 +41,11 @@ const runProcess: Run = (command, args, options) =>
 		);
 	});
 
-/** Conflict markers mergiraf writes, at any length from git's default. */
 const MARKER = /^(?:<{7,}|>{7,}|\|{7,}|={7,})(?: |\r?$)/m;
 
-/**
- * [mergiraf](https://mergiraf.org) as the structured merge, run as
- * `mergiraf merge BASE LEFT RIGHT -p PATH -o OUT -t MS`: exit 0 is a clean
- * merge, 1 a merge with conflicts left, anything else a failure (mergiraf
- * v0.20). The path names the file's language by its extension. It runs in an
- * empty directory, with an environment of `PATH` alone and its cache there,
- * so it reads no repository settings and keeps nothing between merges.
- */
 export function createMergirafMerger(
 	options: Readonly<{
 		command?: string;
-		/** How long one file may take before git's merge stands (ms). */
 		timeoutMs?: number;
 		run?: Run;
 	}> = {},
@@ -108,7 +91,6 @@ export function createMergirafMerger(
 				);
 				if (code !== 0) return undefined;
 				const merged = await readFile(output, "utf8");
-				// A clean exit with markers in the text is not trusted.
 				return MARKER.test(merged) ? undefined : merged;
 			} catch {
 				return undefined;
@@ -119,7 +101,6 @@ export function createMergirafMerger(
 	};
 }
 
-/** Whether the command answers at all: run once at start-up, so a missing install fails early. */
 export async function checkMergiraf(
 	options: Readonly<{ command?: string; run?: Run }> = {},
 ): Promise<void> {
@@ -143,10 +124,6 @@ export async function checkMergiraf(
 	}
 }
 
-/**
- * The structured merge a configuration asks for: none, or mergiraf, checked
- * to be installed. A file gets as long as an engine call would.
- */
 export async function configuredStructuredMerger(
 	config: ParsedAgentConfig,
 	options: Readonly<{ command?: string; run?: Run }> = {},

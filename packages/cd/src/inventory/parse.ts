@@ -1,6 +1,3 @@
-// Parse boundaries for inventory commands (parse, don't validate): each
-// returns a branded record or typed refusals with remediation. The CUE
-// constraints in data-models/inventory.cue mirror these rules.
 import { create } from "@bufbuild/protobuf";
 import {
 	type CampClaimRecord,

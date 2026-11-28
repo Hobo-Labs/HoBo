@@ -12,13 +12,6 @@ import {
 } from "../src/index.js";
 import { isJsonObject, isJsonString } from "../src/json.js";
 
-// `hobo derivative <read|upgrade>` manages a derived HoBo fork via its
-// derivative.json descriptor (ADR-0057): read reports it; upgrade records the
-// upgrade ceremony on the durable log AND actually EXECUTES the pinned
-// event-body upcaster chain over the affected stored events — the
-// seam-conformance verdict comes from that execution, so a failing upcaster
-// fails the ceremony.
-
 const DESCRIPTOR = {
 	name: "acme-hobo",
 	version: "1.0.0",
@@ -55,8 +48,6 @@ function envelope(stdout: string): any {
 	return JSON.parse(stdout);
 }
 
-// Seed a stored event corpus at schema v1 on the given stream — the "affected
-// stored events" a derivative upgrade's upcaster chain must replay.
 async function seedTicketCorpus(
 	runtime: YardRuntime,
 	stream: string,
@@ -152,8 +143,6 @@ describe("createDerivativeCommand", () => {
 			expect(up.data.fromVersion).toBe("1.0.0");
 			expect(up.data.toVersion).toBe("1.1.0");
 			expect(up.data.upcastersRun).toEqual(["v1_0_to_v1_1"]);
-			// A bare-string upcaster pins a name without an event binding — it
-			// executes over zero events but the conformance machinery still ran.
 			expect(up.data.conformance.ok).toBe(true);
 			expect(up.data.conformance.upcastedEvents).toBe(0);
 		});
@@ -204,8 +193,6 @@ describe("createDerivativeCommand", () => {
 					};
 				};
 				expect(data.upcastersRun).toEqual(["summary-to-title"]);
-				// The two v1 ticket.Opened events flowed through the chain; the
-				// unrelated ticket.Closed event was untouched.
 				expect(data.conformance.ok).toBe(true);
 				expect(data.conformance.checkedEvents).toBe(2);
 				expect(data.conformance.upcastedEvents).toBe(2);
@@ -215,7 +202,6 @@ describe("createDerivativeCommand", () => {
 					expect(record.toVersion).toBe(2);
 				}
 
-				// The ceremony landed as durable facts: Started then Succeeded.
 				const ceremony = await collectStream(
 					runtime.store,
 					"derivative:acme-hobo",
@@ -240,8 +226,6 @@ describe("createDerivativeCommand", () => {
 						name: "broken-rename",
 						event: "ticket.Opened",
 						fromVersion: 1,
-						// The stored corpus has no `requesterEmail` field: the strict
-						// rename throws, so the executed chain FAILS conformance.
 						rename: { requesterEmail: "requesterRef" },
 					},
 				],
@@ -269,7 +253,6 @@ describe("createDerivativeCommand", () => {
 				expect(conformance.errors.length).toBeGreaterThan(0);
 				expect(conformance.errors[0]).toMatch(/cannot rename missing field/);
 
-				// The failure landed as a durable fact.
 				const ceremony = await collectStream(
 					runtime.store,
 					"derivative:acme-hobo",

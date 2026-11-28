@@ -5,7 +5,6 @@ import {
 } from "./events.js";
 import { isJsonString, isJsonObject, type JsonValue, type JsonObject } from "./json.js";
 
-
 export type AllowProvenance =
   | "inferred-from-usage"
   | "declared-narrow-or-equal"

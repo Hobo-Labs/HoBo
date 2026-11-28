@@ -22,7 +22,6 @@ const MAX_RECORDED_CALLS = 1_000;
 
 type Handler<I, O> = (input: I) => O | Promise<O>;
 
-/** Canonical (key-sorted) JSON so structurally equal inputs match. */
 function canonical<T>(value: T): string {
 	return JSON.stringify(sortKeys(cloneAsJson(value)));
 }
@@ -37,10 +36,6 @@ function sortKeys(value: JsonValue | undefined): JsonValue {
 	);
 }
 
-/**
- * PACT-style subset match: every key the expectation declares must be
- * present and equal in the actual value (extra actual keys are fine).
- */
 export function isSubsetMatch(
 	expected: JsonValue | undefined,
 	actual: JsonValue | undefined,
@@ -68,7 +63,6 @@ export function isSubsetMatch(
 interface BoundaryState {
 	live?: Handler<JsonValue, JsonValue>;
 	mock?: readonly BoundaryExample[];
-	/** Bridged handlers by session tag; "" is the catch-all bridge. */
 	bridges: Map<string, Handler<JsonValue, JsonValue>>;
 	shadow?: Handler<JsonValue, JsonValue>;
 	fault?: FaultOptions | undefined;
@@ -80,23 +74,13 @@ interface BoundaryState {
 
 export interface Boundary<I = JsonValue, O = JsonValue> {
 	readonly name: string;
-	/** The upstream (deployed/remote) implementation of this boundary. */
 	live(handler: Handler<I, O>): Boundary<I, O>;
-	/** PACT-derived canned responses — no hand-written mocks (ADR-0076). */
 	mock(examples: readonly BoundaryExample<I, O>[]): Boundary<I, O>;
-	/**
-	 * Bridge the boundary to a local implementation. Contract-verified
-	 * BEFORE activation; session-scoped unless no session is given.
-	 */
 	bridge(handler: Handler<I, O>, options?: BridgeOptions<I, O>): Promise<void>;
-	/** Tear the bridge down (one session, or every bridge when omitted). */
 	unbridge(session?: string): void;
-	/** Duplicate served traffic to a candidate; its output is never returned. */
 	shadow(candidate: Handler<I, O>): Boundary<I, O>;
-	/** Chaos at the boundary — optionally scoped to one dev session. */
 	fault(options: FaultOptions): Boundary<I, O>;
 	clearFault(): void;
-	/** Serve recorded outputs instead of calling anything. */
 	replay(enabled?: boolean): Boundary<I, O>;
 	call(input: I, context?: { session?: string }): Promise<O>;
 	calls(): readonly RecordedBoundaryCall<I, O>[];
@@ -139,13 +123,6 @@ async function verifyContract<I, O>(
 	}
 }
 
-/**
- * Create a boundary router — the in-process seam every service boundary
- * routes through. A Camp's host wires real transports behind it; tests and
- * `hobo dev` wire it directly. All ADR-0076 modes compose per boundary,
- * and bridged routing is per dev session, which is what turns "fork the
- * whole environment" into "fork exactly your requests".
- */
 export function createBoundaryRouter(): BoundaryRouter {
 	const boundaries = new Map<string, BoundaryState>();
 
@@ -194,8 +171,6 @@ export function createBoundaryRouter(): BoundaryRouter {
 		const runShadow = (input: I, served: JsonValue): void => {
 			const candidate = state.shadow;
 			if (!candidate) return;
-			// Fire the candidate on the same input; its result is captured
-			// for comparison and always discarded.
 			void Promise.resolve()
 				.then(() => {
 					// SAFETY: erased shadow handler is invoked with the boundary input.

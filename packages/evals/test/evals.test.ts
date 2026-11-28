@@ -101,7 +101,6 @@ describe("defineRubric", () => {
 				],
 			},
 			{ ...base, criteria: [base.criteria[0], base.criteria[0]] },
-			// scale must declare its own threshold; boolean must not.
 			{ ...base, criteria: [{ id: "s", weight: 1, kind: "scale" as const }] },
 			{
 				...base,
@@ -113,7 +112,6 @@ describe("defineRubric", () => {
 				...base,
 				criteria: [{ ...base.criteria[0], passThreshold: 0.5 }],
 			},
-			// golden-match must bless an expected value.
 			{
 				...base,
 				criteria: [{ id: "g", weight: 1, kind: "golden-match" as const }],
@@ -136,7 +134,6 @@ describe("scoreRubric", () => {
 		expect(Object.isFrozen(first)).toBe(true);
 		expect(Object.isFrozen(first.scores)).toBe(true);
 		expect(Object.isFrozen(first.scores[0])).toBe(true);
-		// Observation order does not matter.
 		expect(scoreRubric(rubric, passingObservations().reverse())).toEqual(first);
 	});
 
@@ -153,7 +150,6 @@ describe("scoreRubric", () => {
 			{ criterionId: "a", passed: true },
 			{ criterionId: "b", passed: false },
 		]);
-		// (1*1 + 3*0) / 4
 		expect(report.weightedTotal).toBe(0.25);
 		expect(report.ok).toBe(false);
 		expect(report.failures.map((failure) => failure.code)).toEqual([
@@ -232,7 +228,6 @@ describe("scoreRubric", () => {
 			],
 		});
 		const pass = scoreRubric(rubric, [
-			// Key order everywhere is irrelevant.
 			{ criterionId: "g", actual: { d: null, a: [1, { c: 3, b: 2 }] } },
 		]);
 		expect(pass.ok).toBe(true);
@@ -253,13 +248,9 @@ describe("scoreRubric", () => {
 	it("rejects malformed observations with typed ObservationParseError", () => {
 		const rubric = sampleRubric();
 		const cases = [
-			// missing observation for a criterion
 			passingObservations().slice(0, 2),
-			// unknown criterion
 			[...passingObservations(), { criterionId: "nope", passed: true }],
-			// duplicate observation
 			[...passingObservations(), { criterionId: "pii-safe", passed: true }],
-			// wrong field for the kind
 			[
 				{ criterionId: "category-correct", passed: true },
 				{ criterionId: "pii-safe", passed: true },
@@ -275,7 +266,6 @@ describe("scoreRubric", () => {
 				{ criterionId: "pii-safe", passed: true },
 				{ criterionId: "golden-answer", score: 1 },
 			],
-			// nameless observation
 			[...passingObservations().slice(0, 2), { passed: true }],
 		];
 		for (const observations of cases) {
@@ -413,8 +403,6 @@ describe("evaluatePromotionGate", () => {
 		const verdict: PromotionGateVerdict = evaluatePromotionGate({
 			rubricReport: reports().failing,
 		});
-		// Type-level: assignable to the contracts verdict shapes without casts
-		// (the tsc-enforced proof also lives in src/index.ts asGateDimension).
 		const residency: ResidencyGateVerdict = verdict;
 		const canMigrate: CanMigrateGateVerdict = verdict;
 		expect(residency).toBe(verdict);

@@ -1,10 +1,3 @@
-/**
- * Self-hosted PostgreSQL on registered compute, driven from the real provider
- * declarations: each provider package's own `EQUIVALENCE_CLASSES` and its
- * parsed Yard catalog. No verdict below is keyed on a provider id — the
- * expectations are stated per provider only because that is what the answer
- * is *about*.
- */
 import { assessSelfHostedDataStore, SELF_HOST_FACETS } from "@hobo/core";
 import { EQUIVALENCE_CLASSES as HETZNER_CLASSES } from "@hobo/provider-hetzner";
 import { EQUIVALENCE_CLASSES as VERCEL_CLASSES } from "@hobo/provider-vercel";
@@ -130,8 +123,6 @@ describe("verdicts", () => {
 			["digitalocean.droplet/v1", "can"],
 			["digitalocean.app-platform-service/v1", "cannot"],
 		]);
-		// The Deployment equivalence class carries no cited form, so it stays
-		// undetermined beside the StatefulSet that qualifies.
 		expect(forms("kubernetes")).toEqual([
 			["kubernetes.statefulset/v1", "can"],
 			["kubernetes:deployment", "undetermined"],
@@ -152,7 +143,6 @@ describe("verdicts", () => {
 				result.findings.find((f) => f.facet === "persistent-volume")?.reason,
 			).toContain(product);
 		}
-		// The container forms on a network share stay listed, and stay caveated.
 		for (const [provider, target] of [
 			["aws", "aws.ecs-service/v1"],
 			["azure", "azure.container-apps/v1"],
@@ -178,7 +168,6 @@ describe("verdicts", () => {
 				provider,
 			).toEqual(SELF_HOST_FACETS.map(() => "declared"));
 		}
-		// Cloud Run stays listed and stays undetermined beside the VM.
 		expect(
 			verdictOf("gcp").forms.map((form) => [form.target, form.verdict]),
 		).toEqual([

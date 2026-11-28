@@ -27,7 +27,6 @@ describe("local-host catalog — the running machine as a provider host", () => 
 				(definition) => definition.cost.marginalPrice === "0.00",
 			),
 		).toBe(true);
-		// Deterministic content address for the same machine name.
 		expect(catalog.catalogHash).toBe(
 			createLocalHostCatalog("test-machine").catalogHash,
 		);

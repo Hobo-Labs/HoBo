@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.release_notes_ga_handoff;
 
-// Architecture-guard evidence: protobuf data shapes the Release Notes GA
-// Handoff Evidence draft package owns. This is a design-time contract artifact.
 
 message ReleaseNotesGaHandoffEvidence {
   string issue = 1;

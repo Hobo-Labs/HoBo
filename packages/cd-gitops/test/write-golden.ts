@@ -1,5 +1,3 @@
-// Regenerate the rendered-document goldens after an intentional change:
-// `node --import tsx test/write-golden.ts` from packages/cd-gitops; review the diff.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

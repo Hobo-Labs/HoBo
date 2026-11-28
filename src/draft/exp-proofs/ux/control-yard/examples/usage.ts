@@ -1,7 +1,3 @@
-/**
- * Runnable example for control-yard. Gate executes with node --import tsx
- * and diffs stdout against usage.expected.txt.
- */
 import { strict as assert } from "node:assert";
 
 import {

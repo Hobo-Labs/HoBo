@@ -1,20 +1,3 @@
-/**
- * Where a git's death by a signal meets the deadline wrapper's way of passing
- * it on. The wrapper ends by the same signal for the six Node leaves at their
- * default (HUP, INT, TERM, KILL, USR2, ALRM). For the rest it exits with the
- * explicit status 128 + N and the caller reads the name from that status.
- * Re-raising everything had side effects, each measured:
- *
- *  - SIGSEGV, SIGABRT and SIGQUIT in git made the wrapper (node) write a core
- *    file of its own (51 MB) where `ulimit -c` allows one;
- *  - a git killed by SIGUSR1 made the wrapper open Node's inspector, and
- *    "Debugger listening on ws://127.0.0.1:9229/..." became the failure message;
- *  - SIGPIPE, which Node ignores, ended the wrapper only after its 1 s
- *    fallback, with 141 and no signal name.
- *
- * The stand-in git gives up its own core file, so a core file here is the
- * wrapper's.
- */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -27,7 +10,6 @@ const r = core.git(process.cwd(), ["ls-remote", "x"], {}, { ms: 30000, what: "ls
 console.log(JSON.stringify({ status: r.status, signal: r.signal ?? null, said: core.gitFailure("git ls-remote", r), stderr: r.stderr }));
 `;
 
-/** `git()` under the wrapper three times for each of two stand-in actions; the fastest of each, in ms. */
 const TIMED = `
 const core = await import(${lib("pins-git-core.ts")});
 const time = (action) => {
@@ -46,7 +28,6 @@ const CORE_PATTERN = (() => {
 		return "";
 	}
 })();
-/** A core file lands in the working directory only when the pattern is a bare name. */
 const CORE_IN_CWD = /^[^/|]/u.test(CORE_PATTERN);
 
 describe("the wrapper and the signals it does not re-raise", () => {
@@ -71,8 +52,6 @@ describe("the wrapper and the signals it does not re-raise", () => {
 		const { exit, pipe } = JSON.parse(run.stdout);
 		assert.equal(exit.status, 3);
 		assert.deepEqual([pipe.status, pipe.signal], [141, "SIGPIPE"]);
-		// The fallback was 1000 ms on top of node's start; the fastest of three
-		// runs of each leaves out the load of a busy machine.
 		assert.ok(
 			pipe.ms - exit.ms < 700,
 			`SIGPIPE took ${pipe.ms} ms against ${exit.ms} ms for a plain exit`,

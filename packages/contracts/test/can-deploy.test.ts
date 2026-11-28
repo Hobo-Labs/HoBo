@@ -90,7 +90,6 @@ describe("can-deploy engine", () => {
 		expect(result.suggestedFixes.length).toBeGreaterThan(0);
 		expect(result.events.at(-1)?.type).toBe("compat.GateFailed");
 
-		// the decision replays deterministically from its event
 		const replayed = replayCanDeployDecision(result.events);
 		expect(replayed.ok).toBe(false);
 		expect(replayed.reasons[0]?.fields).toContain("tenantId");

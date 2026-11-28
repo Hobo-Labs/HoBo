@@ -100,7 +100,6 @@ export {
 // public-contract: package id compose and Matching pin.
 export const HOBO_RUNTIME_RIVET_PACKAGE = "@hobo/runtime-rivet";
 
-/** Profiles this resolver claims. Grammar-legal kv refinements, not actor.*. */
 export const RIVET_RESOLVER_PROFILES = [
 	"kv.durable-object/v1",
 	"kv.durable-object.event-journal/v1",

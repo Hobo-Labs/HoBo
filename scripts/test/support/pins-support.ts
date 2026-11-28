@@ -1,11 +1,3 @@
-/**
- * Shared fixtures for the sibling-pin tests: scratch directories, manifests,
- * the real script run as a child process, and a loopback HTTP server that
- * counts requests. The git fixtures are `pins-git-support.ts`, re-exported here.
- *
- * Nothing here touches the network beyond 127.0.0.1, the user's git
- * configuration, or the real `external/ts-autocode` submodule.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -41,11 +33,9 @@ export * from "./pins-git-support.ts";
 export const SCRIPT = join(REPO_ROOT, "scripts/bootstrap-siblings.mts");
 
 const made: string[] = [];
-/** What `mkdtemp` makes of `pins-<label>-`: six random characters. */
 const SCRATCH_NAME = /^pins-[a-z-]+-[A-Za-z0-9]{6}$/u;
 const STALE_AFTER_MS = 10 * 60_000;
 
-/** Directories an earlier run leaked (a killed one); young ones may be live runs. */
 function sweepStale(): void {
 	for (const name of readdirSync(tmpdir())) {
 		if (!SCRATCH_NAME.test(name)) continue;
@@ -60,9 +50,7 @@ function sweepStale(): void {
 			) {
 				rmSync(path, { recursive: true, force: true });
 			}
-		} catch {
-			// Gone already, or not ours to read: leave it.
-		}
+		} catch {}
 	}
 }
 
@@ -70,10 +58,6 @@ function removeMade(): void {
 	for (const dir of made) rmSync(dir, { recursive: true, force: true });
 }
 
-/**
- * A fresh temp directory that is removed when this process exits. Stale ones
- * left by an earlier run are swept the first time it is called.
- */
 export function scratch(label: string): string {
 	if (made.length === 0) {
 		sweepStale();
@@ -84,11 +68,6 @@ export function scratch(label: string): string {
 	return dir;
 }
 
-/**
- * Wait for a condition another process makes true (a file with bytes in it).
- * Not a pause: it returns the moment `probe` answers, and says what it was
- * waiting for when it never does.
- */
 export async function waitUntil<T>(
 	what: string,
 	probe: () => T | undefined,
@@ -107,7 +86,6 @@ export function sha256Hex(bytes: Uint8Array | string): string {
 	return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** A root with only a manifest: no git pins, the given `assets` section. */
 export function writeManifest(
 	root: string,
 	assets: string,
@@ -132,11 +110,6 @@ export interface ScriptRun {
 	readonly stderr: string;
 }
 
-/**
- * The asset names the script and these tests know: the real manifest's and the
- * fixtures' (`kit`, `tool`, `x`). Each one's override variable is one the
- * script reads.
- */
 const ASSET_NAMES = [
 	...Object.keys(
 		parsePins(readFileSync(join(REPO_ROOT, PINS_FILE), "utf8")).assets,
@@ -146,13 +119,6 @@ const ASSET_NAMES = [
 	"x",
 ];
 
-/**
- * What the script reads to decide that it is in CI and that an override is
- * set or allowed (`refuseOverridesInCi`, `statusAsset`). A GitHub-hosted
- * runner sets `CI` and `GITHUB_ACTIONS`, so a child that inherits them sees
- * CI whatever the test meant; none of these reach the child unless the test
- * sets it.
- */
 export const AMBIENT_PINS_ENV: readonly string[] = [
 	"CI",
 	"GITHUB_ACTIONS",
@@ -161,7 +127,6 @@ export const AMBIENT_PINS_ENV: readonly string[] = [
 	...new Set(ASSET_NAMES.map(overrideEnv)),
 ];
 
-/** The argv (after `node`) and environment `runBootstrap` runs the script with. */
 export function scriptCall(
 	root: string,
 	args: readonly string[],
@@ -184,7 +149,6 @@ export function scriptCall(
 	};
 }
 
-/** Runs the real script under Node's native type stripping, no loader. */
 export function runBootstrap(
 	root: string,
 	args: readonly string[],
@@ -204,10 +168,6 @@ export function runBootstrap(
 	};
 }
 
-/**
- * The same, without blocking this process: a test that serves the script's
- * downloads from an in-process HTTP server must not freeze its own event loop.
- */
 export async function runBootstrapAsync(
 	root: string,
 	args: readonly string[],
@@ -218,13 +178,11 @@ export async function runBootstrapAsync(
 
 export interface RunningScript {
 	readonly child: ChildProcess;
-	/** Resolves when the script ends, by exit or by signal. */
 	readonly done: Promise<
 		ScriptRun & { readonly signal: NodeJS.Signals | null }
 	>;
 }
 
-/** The script as a child the test can signal; `runBootstrapAsync` is this, awaited. */
 export function spawnBootstrap(
 	root: string,
 	args: readonly string[],
@@ -256,26 +214,20 @@ export function spawnBootstrap(
 
 export interface FileServer {
 	readonly origin: string;
-	/** `METHOD path` of every request, in order. */
 	readonly hits: string[];
 	setFile(path: string, bytes: Uint8Array | string): void;
 	setRedirect(path: string, location: string): void;
-	/** Answer `path` with `first` and then stall: the declared length is `total`, the rest never comes. */
 	setStall(path: string, first: Uint8Array | string, total: number): void;
-	/** Accept the request for `path` and never answer it, not even with headers. */
 	setHang(path: string): void;
-	/** Answer `path` with `first`, hold the rest until `release()`, then send `rest`. */
 	setGate(
 		path: string,
 		first: Uint8Array | string,
 		rest: Uint8Array | string,
 	): { release(): void };
-	/** Resolves once a request for `path` has reached the server. */
 	requested(path: string): Promise<void>;
 	close(): Promise<void>;
 }
 
-/** Loopback HTTP server over an in-memory file table. */
 export async function startServer(): Promise<FileServer> {
 	const files = new Map<string, Uint8Array>();
 	const redirects = new Map<string, string>();

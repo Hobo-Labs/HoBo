@@ -1,10 +1,3 @@
-/**
- * Camp component-host runtime adapter (local | wasm | oci | cloud-native).
- *
- * Implementations live in `packages/runtimes/*`. Composition root wires them;
- * adapters must not import each other.
- */
-
 import { isJsonString, type JsonObject, type JsonValue } from "../json.js";
 
 export const HOBO_RUNTIME_HOST_KINDS = [
@@ -12,7 +5,6 @@ export const HOBO_RUNTIME_HOST_KINDS = [
 	"wasm",
 	"oci",
 	"cloud-native",
-	/** Optional Camp runtime / sidecar adapter (ADR-0138). Not default. */
 	"dapr",
 ] as const;
 
@@ -36,14 +28,8 @@ export interface RuntimeEnsureResult {
 export interface PrivateComponentSpec {
 	readonly resourceName: string;
 	readonly projectDir: string;
-	/** Absolute or project-relative app module override. */
 	readonly modulePath?: string;
-	/**
-	 * Prebuilt wasi:http component path (e.g. after wasm toolchain componentize).
-	 * Used by oci so hobo can build via wasm then deploy without adapter cross-deps.
-	 */
 	readonly wasmPath?: string;
-	/** In-process fetch handler (local / cloud-native mock). */
 	readonly handler?: FetchHandler;
 }
 
@@ -69,9 +55,6 @@ export interface PrivateServeResult {
 	readonly close: () => Promise<void>;
 }
 
-/**
- * Structural port every Camp host runtime package implements.
- */
 export interface HoboRuntimeHost {
 	readonly kind: HoboRuntimeHostKind;
 	ensure(ctx: RuntimeEnsureContext): Promise<RuntimeEnsureResult>;

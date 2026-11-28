@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 const root = join(import.meta.dirname, "..", "..");
 
-/** Release/CI shell entrypoints always validated (not only when git-diff changed). */
 const PINNED_SHELL_SCRIPTS = [
 	"packages/ci-gh-actions/deploy/ci-runner/build.sh",
 ] as const;

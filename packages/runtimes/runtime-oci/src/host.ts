@@ -22,14 +22,9 @@ export interface OciContainerDependency {
 }
 
 export interface OciRuntimeHostOptions {
-	/** Injected Kubernetes client (defaults to real kubectl process transport). */
 	readonly kubernetes?: KubernetesClient;
 	readonly namespace?: string;
 	readonly runtimeImage?: string;
-	/**
-	 * Extra container dependencies (from bindle `b.container(...)`) scheduled
-	 * alongside private app components.
-	 */
 	readonly containerDependencies?: readonly OciContainerDependency[];
 }
 
@@ -52,10 +47,6 @@ function resolveRuntimeImage(
 	);
 }
 
-/**
- * Camp host adapter: pack WASM as OCI, schedule on Kubernetes via
- * PACT-shaped kubectl transport (process or mock provider).
- */
 export function createOciRuntimeHost(
 	options: OciRuntimeHostOptions = {},
 ): HoboRuntimeHost {
@@ -78,8 +69,6 @@ export function createOciRuntimeHost(
 			emit(
 				`hobo: ensuring oci kubernetes host (kubectl transport) namespace=${namespace}`,
 			);
-			// Equip kubectl client offline under HOBO_HOME when using process transport.
-			// Injected Kubernetes clients (PACT mocks) skip download.
 			let kubectlNote = "kubectl client equip skipped (injected transport)";
 			let equippedBin: string | undefined;
 			if (!options.kubernetes) {
@@ -107,7 +96,6 @@ export function createOciRuntimeHost(
 				},
 			});
 			const probe = await k8s.probe();
-			// ready = client available (equippable offline); clusterReachable is separate.
 			const ready =
 				probe.ready ||
 				equippedBin !== undefined ||
@@ -159,7 +147,6 @@ export function createOciRuntimeHost(
 			const scheduled: string[] = [];
 
 			try {
-				// Schedule arbitrary container dependencies first (Aspire AddContainer).
 				for (const dep of options.containerDependencies ?? []) {
 					const name = sanitizeK8sName(dep.resourceName);
 					const port = dep.port ?? 8080;
@@ -275,8 +262,6 @@ export function createOciRuntimeHost(
 					const pf = await k8s.portForward(name, 8080);
 					closes.push(pf.close);
 
-					// Mesh hop goes through the PACT-shaped http-proxy boundary
-					// (process transport fetches the port-forward; mock returns pact body).
 					const invoke: FetchHandler = async (request) => {
 						const url = new URL(request.url);
 						const proxied = await k8s.httpProxy({

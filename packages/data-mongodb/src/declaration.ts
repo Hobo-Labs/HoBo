@@ -1,11 +1,3 @@
-/**
- * What the MongoDB engine declares about itself (ADR-0177 decisions 2 and 10).
- *
- * The declaration is the honest part of the package. Everything a selector
- * needs to refuse a pattern MongoDB cannot run, and everything a plan needs
- * to say where a value might not survive, is stated here rather than
- * discovered in production.
- */
 import {
 	type EngineDeclaration,
 	type JsonObject,
@@ -18,59 +10,28 @@ export const MONGO_ENGINE_ID = "mongodb";
 // public-contract: capability profile id the MongoDB engine implements.
 export const MONGO_ENGINE_PROFILE = "data.mongodb/v1";
 
-/**
- * Impedance this engine can report (ADR-0144). The list is closed: each code
- * is a real limit of MongoDB or of this binding, stated so nobody over-claims
- * fidelity.
- */
 export const MONGO_IMPEDANCE_CODES = [
-	/** MongoDB has no triggers: the fence stops writers that go through the binding, not a client with its own connection. */
 	"MONGODB_FENCE_ENTRY_POINT",
-	/** Change streams and multi-document transactions need a replica set or a sharded cluster; a standalone server offers neither. */
 	"MONGODB_REPLICA_SET_REQUIRED",
-	/** A capture position is resumable only while the oplog still holds it; a reader that falls outside the window must re-seed. */
 	"MONGODB_CAPTURE_OPLOG_WINDOW",
-	/** MongoDB keeps no per-reader log, and a resume token is opaque: `acknowledge` releases nothing, records nothing and checks nothing, so any position is accepted and a read from before an acknowledged one still succeeds while the oplog holds it. */
 	"MONGODB_CAPTURE_ACKNOWLEDGE_RELEASES_NOTHING",
-	/** A write that changes nothing (an identical replace, a delete of an absent record) produces no change event. */
 	"MONGODB_CAPTURE_SKIPS_NOOP_WRITES",
-	/** An in-place update by another client is captured as of the change only while the collection has `changeStreamPreAndPostImages` on, which costs a stored pre-image per change. */
 	"MONGODB_CAPTURE_NEEDS_CHANGE_IMAGES",
-	/** One atomic unit is one transaction: bounded by the 60 s lifetime limit and by cache, so a very large write batch or retire scope is refused. */
 	"MONGODB_TRANSACTION_BOUNDS",
-	/** A record is one BSON document: under 16 MiB. */
 	"MONGODB_DOCUMENT_SIZE_LIMIT",
-	/** Decimal128 holds 34 significant digits; a longer decimal is refused, never rounded. */
 	"MONGODB_DECIMAL128_PRECISION",
-	/** BSON dates are millisecond precision, so timestamps are stored as canonical text and are not BSON dates to native queries. */
 	"MONGODB_TIMESTAMP_STORED_AS_TEXT",
-	/** BSON strings are UTF-8: text with an unpaired surrogate is refused, never stored as U+FFFD. */
 	"MONGODB_TEXT_WELL_FORMED_ONLY",
-	/** JSON object keys may not start with `$` or contain NUL, and JSON numbers are stored as doubles. */
 	"MONGODB_JSON_KEY_RESTRICTIONS",
-	/** The scan behind a snapshot is not a point-in-time image; the executors converge it with the tail. */
 	"MONGODB_SNAPSHOT_FUZZY",
-	/** There is no SQL surface and no transactional DDL: no `schema` port, so `in-place-evolve` is never eligible. */
 	"MONGODB_NO_SCHEMA_PORT",
-	/** Indexes, collations, views, time-series and capped options, and server-side functions do not cross the hub. */
 	"MONGODB_NATIVE_OBJECTS_NOT_CARRIED",
 ] as const;
 
 export type MongoImpedanceCode = (typeof MONGO_IMPEDANCE_CODES)[number];
 
-/**
- * The record bound the declaration states: a BSON document is under 16 MiB
- * (`MONGODB_DOCUMENT_SIZE_LIMIT`). A batch carrying a larger record is
- * refused whole — it is one transaction.
- */
 export const MONGO_MAX_RECORD_BYTES = 16 * 1024 * 1024;
 
-/**
- * What the conformance kit is told this engine does not hold, by case id: the
- * impedance code above that states it. A harness passes this as
- * `declaredLimits`; the kit then reports the case `declared-limit` — and
- * fails it if the engine turns out to hold the property after all.
- */
 export const MONGO_CONFORMANCE_DECLARED_LIMITS: Readonly<
 	Record<string, MongoImpedanceCode>
 > = Object.freeze({
@@ -81,15 +42,6 @@ export const MONGO_CONFORMANCE_DECLARED_LIMITS: Readonly<
 const WELL_FORMED_NOTE =
 	"text must be well-formed Unicode: an unpaired surrogate has no UTF-8 encoding and is refused";
 
-/**
- * How each canonical type lands in BSON, and how faithful the trip is.
- *
- * `read` is judged against the collection as this binding creates it — with a
- * `$jsonSchema` validator that pins each field's BSON type. Where the native
- * type is still wider than the canonical one under that validator (a double
- * can be NaN, a string can be any text), the edge is `widening` and the stray
- * value is refused on read, never coerced.
- */
 export const MONGO_TYPE_MAPPING: JsonObject = Object.freeze({
 	engine: MONGO_ENGINE_ID,
 	edges: [
@@ -185,24 +137,9 @@ const PORTS_WITH_CAPTURE: readonly SpiPortName[] = [
 ];
 
 export interface MongoDeclarationOptions {
-	/** False for a deployment that cannot open change streams. */
 	readonly capture: boolean;
 }
 
-/**
- * The declaration for a MongoDB binding.
- *
- * - No `schema` port: there is no SQL surface, so `in-place-evolve` is
- *   ineligible by declaration.
- * - `fenceEnforcement: "entry-point"`: MongoDB has no triggers. The fence is
- *   checked inside the transaction of every write that goes through this
- *   binding; a client holding its own connection is not stopped.
- * - `snapshotConsistency: "fuzzy"`: the seed is a keyset scan, not a
- *   point-in-time image.
- * - `captureOrdering: "global"`: a change stream is totally ordered by
- *   cluster time. Without change streams the port is absent and the ordering
- *   is `none`.
- */
 export function mongoEngineDeclaration(
 	options: MongoDeclarationOptions,
 ): EngineDeclaration {

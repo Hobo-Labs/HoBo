@@ -1,7 +1,3 @@
-// `composeContinuousDelivery` (ADR-0182 C2): the one composition of
-// @hobo/cd every surface uses (`hobo up`/`down`, `hobo deploy *`, `hobo serve
-// cd`, broker `deliver`, MCP). It is `wireContinuousDelivery` over the default
-// factory bindings; tests and hosts may override any factory.
 import type { CdFactories } from "../ports.js";
 import { defaultCdFactories } from "./defaults.js";
 import {

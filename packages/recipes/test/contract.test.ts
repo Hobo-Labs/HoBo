@@ -1,11 +1,3 @@
-/**
- * Provider verification for the Conductor ↔ recipe-compiler boundary.
- *
- * The pact file is the consumer's expectation; this test runs the real
- * compiler for each interaction and checks the response it would produce. No
- * HTTP is involved, and nothing here is a second implementation of the
- * compiler — it is the same functions, driven by the recorded requests.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,7 +99,6 @@ function requestFor(recipe: SolutionRecipe, realtime: string | undefined) {
 	});
 }
 
-/** `sha256:*` and `offer/*` are shape assertions, everything else is exact. */
 type JsonObject = { readonly [k: string]: Json };
 
 function isJsonObject(value: Json): value is JsonObject {

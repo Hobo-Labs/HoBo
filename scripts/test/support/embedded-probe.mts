@@ -1,13 +1,3 @@
-/**
- * Child of pins-probe-signal.test.ts: a program that embeds `remoteHas` and
- * has a SIGINT handler of its own. It asks a server whose fetch never ends
- * (a held git on PATH), signals itself once that fetch has begun, and reports
- * how the question ended, how often its own handler ran, what is left in the
- * cache, and whether a SIGKILL was sent to a process group after the git
- * had ended (it waits past the 2 s escalation to see).
- *
- * argv: <repository url> <commit> ; env: PROBE_MARK, XDG_CACHE_HOME, PATH
- */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

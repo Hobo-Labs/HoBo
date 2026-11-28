@@ -1,8 +1,3 @@
-// Golden v1 bodies for artifact.Stored / artifact.Deleted (append-only
-// corpus): a journal written by this release must decode identically in every
-// later one, and today's writer must still produce exactly these bodies.
-// Changing a body shape needs an upcaster plus a new corpus entry, never an
-// edit here.
 import { isMessage, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -24,7 +19,6 @@ import {
 	TENANT,
 } from "./fakes.js";
 
-// sha256("golden artifact bytes")
 const DIGEST =
 	"sha256:e70c8305e9ab0c29902eb6fb5b3ab4643ebb265bb0d1820979971d9ef19e7ec4";
 

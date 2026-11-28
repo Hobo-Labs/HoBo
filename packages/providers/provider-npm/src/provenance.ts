@@ -1,18 +1,3 @@
-/**
- * npm provenance: the Sigstore bundle a Freight carries, checked against the
- * tarball before it is attached to a publish.
- *
- * npm (libnpmpublish) attaches the bundle as `_attachments["<name>-<version>.sigstore"]`
- * with the bundle's own `mediaType` as `content_type` and the bundle JSON as
- * `data`. The registry then verifies it, and refuses the whole publish if the
- * attested subject is not this tarball. Doing the subject check here first
- * turns that remote 4xx into a typed local refusal that names the cause.
- *
- * This is a binding check, not a signature check: certificate chains and the
- * transparency log are verified by `@hobo/cd/provenance` at ingest and again
- * by the registry. What this module guarantees is that the bundle we attach is
- * *about these bytes and this package version*.
- */
 import { reject } from "./errors.js";
 import {
 	isJsonArray,

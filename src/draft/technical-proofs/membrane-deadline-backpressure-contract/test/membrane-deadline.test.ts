@@ -8,7 +8,6 @@ import {
 } from "../src/index.js";
 import { type JsonValue } from "../src/json.js";
 
-
 const KV = "wasi:keyvalue/store@0.2.0";
 const WORKFLOW = "hobo:runtime/workflow@0.1.0";
 

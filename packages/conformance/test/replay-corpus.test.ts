@@ -45,9 +45,6 @@ describe("replay==live production corpus (S1-16)", () => {
 
 		const result = assertCorpusReplayEqualsLive(corpus);
 
-		// The committed v1 `greeting.Served` body carried `{ text }`; the upcaster
-		// lifts it to v2 `{ message }`, so the folded read model reflects the
-		// evolved field byte-for-byte.
 		expect(result.digestMatches).toBe(true);
 		expect(result.liveState.served).toEqual([
 			{ name: "legacy", message: "hello, legacy" },

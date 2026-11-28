@@ -1,4 +1,3 @@
-/** One job as GitHub's `runs/{id}/jobs` lists it. */
 export type JobObservation = Readonly<{
 	repository: string;
 	id: number;
@@ -9,9 +8,7 @@ export type JobObservation = Readonly<{
 }>;
 
 export interface JobDurations {
-	/** Learns a job's name, and its duration once it succeeded. Idempotent per job id. */
 	observe(job: JobObservation): void;
-	/** Median of the last successful runs of the job's name in its repository; 0 when unknown. */
 	expectedMs(repository: string, jobId: number): number;
 }
 
@@ -36,11 +33,6 @@ function median(values: readonly number[]): number {
 		: ((sorted[middle - 1] ?? upper) + upper) / 2;
 }
 
-/**
- * In-memory duration history keyed by repository and job name. Only
- * successful runs count: a skipped job takes no time and a failed one may stop
- * early, and neither says how long the job holds a slot when it passes.
- */
 export function createJobDurations(): JobDurations {
 	const names = new Map<number, string>();
 	const samples = new Map<string, number[]>();

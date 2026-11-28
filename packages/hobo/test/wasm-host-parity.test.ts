@@ -38,7 +38,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		expect(probe.componentHosts.wasm).toContain("wasmtime OS-process");
 		expect(probe.componentHosts.oci).toContain("Kubernetes");
 		expect(probe.componentHosts["cloud-native"]).toContain("multi-cloud");
-		// Legacy alias key still present on probe.
 		expect(probe.componentHosts["isolated-wasm"]).toContain(
 			"wasmtime OS-process",
 		);
@@ -91,7 +90,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 			};
 		};
 		expect(envelope.ok).toBe(true);
-		// Alias isolated-wasm normalizes to wasm.
 		expect(envelope.data.config.componentHost).toBe("wasm");
 		expect(envelope.data.config.host).toBe("wasm");
 		expect(envelope.message).toContain("componentHost=wasm");
@@ -123,7 +121,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		expect(api?.url).toBe(`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`);
 
 		const html = await (await fetch(`${serve.primaryUrl}/?name=Local`)).text();
-		// Bindle injects GREETING_PREFIX/APP_TITLE via env() — proves apps are live.
 		expect(html).toContain("howdy, Local");
 		expect(html).toContain("howdy");
 		expect(serve.bindleEnv).toEqual({
@@ -136,7 +133,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-iso-"));
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
 
-		// Toolchain + yard via hobo APIs (same path as CLI ensure/init).
 		await ensureIsolatedWasmToolchain({ hoboHome });
 		initBareMetalYard({ hoboHome, componentHost: "wasm" });
 
@@ -162,7 +158,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 			),
 		).toBe(true);
 		expect(serve.exposedEndpoints).toHaveLength(1);
-		// Camp injects bindle env onto mesh hops into the wasm sandbox.
 		expect(serve.bindleEnv).toEqual({
 			GREETING_PREFIX: "howdy",
 			APP_TITLE: "howdy",
@@ -193,7 +188,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 	});
 
 	it("resolves private wasm from src/<resourceName>.ts by resource name", () => {
-		// hello-bindle's private resource is named "api" → src/api.ts (generic rule).
 		const resolved = resolvePrivateWasmGuest({
 			projectDir: helloBindleDir,
 			resourceName: "api",

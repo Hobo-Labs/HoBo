@@ -12,33 +12,15 @@ import {
 } from "@hobo/core";
 import { isJsonNumber, isJsonObject, type JsonValue } from "./json.js";
 
-// Local hobo:scheduler port served over the deterministic clock's cron
-// (src/clock.ts) — the D14 delegation seam. A scheduled bindle resource
-// (manifest kind `schedule`, catalog portRef `hobo:scheduler`) registers its
-// interval job through this port; fires ride the clock's `advance` loop so
-// scheduling stays deterministic and replayable.
-//
-// v1 LIMITATION (recorded decision, D14): interval-only (`IntervalCronSpec`).
-// The WIT `cron(expr)` cron-expression form fails closed
-// (`CronExpressionUnsupportedError`) — there is NO cron-expression parser in
-// the repo; adding one is a separate, flagged cost.
-
 export type ScheduledJobHandler = (fire: FiredTimer) => void;
 
 export interface LocalScheduler extends SchedulerPort {
-	/** Register an interval job: cron schedule plus a handler run per fire. */
 	registerJob(
 		scheduleId: ScheduleId,
 		spec: IntervalCronSpec,
 		onFire: ScheduledJobHandler,
 	): CronSchedule;
-	/** Advance virtual time, dispatching registered job handlers on cron fires. */
 	advance(deltaMs: number): readonly FiredTimer[];
-	/**
-	 * Provider export table for serving this port to components — the same
-	 * shape `CapabilityLinkTable.registerProvider` / the component host accept
-	 * (see capability/link-table.ts), keyed by the `hobo:scheduler` port token.
-	 */
 	providerExports(): SchedulerProviderExports;
 }
 

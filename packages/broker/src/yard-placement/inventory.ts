@@ -27,9 +27,6 @@ export type YardInventoryEvent =
 			readonly capacity: YardInstanceRegistration["capacity"];
 	  };
 
-/**
- * Event-sourced Yard inventory read model. Selection pins a snapshot hash.
- */
 export interface YardInventory {
 	readonly apply: (event: YardInventoryEvent) => void;
 	readonly snapshot: () => YardInventorySnapshot;

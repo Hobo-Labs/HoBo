@@ -19,22 +19,11 @@ import {
 } from "../wiring/index.js";
 import { type CollectionEvent, createCollectionEvents } from "./events.js";
 
-// Run-to-collect (S1-12b). The static path (compileBindleManifest) enumerates an
-// explicit handle array; run-to-collect instead RUNS the Bindle's components in
-// resource-collection mode — the `define` closure declares resources by calling
-// the collector — then folds the observed handles through the very same
-// compileBindleManifest so the produced manifest IR is byte-identical to the
-// static compile (canonicalManifestHash equal). Two runs of one target are
-// deterministic. No manifest compilation is reinvented here.
-
 export interface ComponentHostDescriptor {
 	readonly kind: string;
 	readonly version: string;
 }
 
-// The collector a Bindle's components receive while running in collection mode.
-// Each factory mirrors a wiring factory, records the handle in declaration
-// order, and returns it so bind maps can reference earlier resources.
 export interface CollectionContext {
 	data(
 		name: string,
@@ -65,7 +54,6 @@ export interface CollectionContext {
 export interface CollectionTarget {
 	readonly bindleId: string;
 	readonly componentHost: ComponentHostDescriptor;
-	/** Resource ordering edges; connector references are resolved separately. */
 	readonly dependencies?: readonly BindleEdge[];
 	define(collect: CollectionContext): void;
 }
@@ -89,10 +77,6 @@ export class CollectionEngineError extends Error {
 	}
 }
 
-// Wrap a compiled WiringManifest (schema + resources, no host) into the full
-// manifest IR the rest of HoBo parses — the single seam both the run-to-collect
-// engine and any static-compile comparison flow through, guaranteeing hash
-// parity by construction.
 export function manifestFromWiring(
 	wiring: WiringManifest,
 	componentHost: ComponentHostDescriptor,

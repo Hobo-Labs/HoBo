@@ -1,9 +1,3 @@
-/**
- * ZeroDeploy Drop API — anon static/site hosting (no auth).
- * POST https://api.zerodeploy.dev/drop — tar.gz → live URL (72h).
- * NOT a Docker/OCI runner — reject for Convex/Wasp server kinds.
- * Sources: zerodeploy.dev/agents (checked 2026-08).
- */
 import { type JsonObject } from "../../src/lib/json-inspect.js";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -92,7 +86,6 @@ export async function provisionZerodeployDrop(
 		// SAFETY: assertion required at this I/O boundary.
 		parsed = JSON.parse(text) as JsonObject;
 	} catch {
-		/* raw */
 	}
 	if (!response.ok) {
 		throw new AnonContainerHostError(
@@ -101,7 +94,6 @@ export async function provisionZerodeployDrop(
 			response.status,
 		);
 	}
-	// Live shape (2026-08): { data: { url, claim_token, expires_at }, next_steps? }
 	// SAFETY: nested `data` object is a JSON bag from the Drop response.
 	const data =
 		parsed.data && Object.prototype.toString.call(parsed.data) === "[object Object]"

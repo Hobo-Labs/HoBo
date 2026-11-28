@@ -11,12 +11,6 @@ const DEFAULT_SCAN_PATHS = [
 	"CLAUDE.md",
 ];
 
-// Link/anchor integrity holds repo-wide, not just for the design suite — the
-// 2026-07 audit found 63 breaks concentrated in these unscanned dirs.
-// Only checkRelativeLinks runs here: the
-// ADR/SDK/event-family checks assume design-suite vocabulary and would
-// false-positive on prose about external tools (e.g. dspy.* in
-// docs/technologies is DSPy's namespace, not a HoBo event family).
 const LINK_ONLY_SCAN_PATHS = [
 	"docs/technologies",
 	"docs/competitors",
@@ -365,7 +359,6 @@ function extractAnchors(markdown: string) {
 		const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
 		if (!heading) return;
 		const text = heading[2]!;
-		// Explicit anchor syntax: `## Heading {#custom-id}` registers custom-id.
 		const explicit = text.match(/\{#([^}]+)\}\s*$/);
 		if (explicit) {
 			anchors.add(explicit[1]!.toLowerCase());
@@ -377,16 +370,13 @@ function extractAnchors(markdown: string) {
 }
 
 function slugifyHeading(heading: string) {
-	return (
-		heading
-			.replace(/`([^`]+)`/g, "$1")
-			.toLowerCase()
-			.replace(/&/g, "")
-			// Keep underscores: GitHub's anchor algorithm preserves them.
-			.replace(/[^a-z0-9\s_-]/g, "")
-			.trim()
-			.replace(/\s/g, "-")
-	);
+	return heading
+		.replace(/`([^`]+)`/g, "$1")
+		.toLowerCase()
+		.replace(/&/g, "")
+		.replace(/[^a-z0-9\s_-]/g, "")
+		.trim()
+		.replace(/\s/g, "-");
 }
 
 function lineNumberAt(content: string, offset: number) {

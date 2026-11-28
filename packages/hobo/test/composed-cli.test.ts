@@ -10,14 +10,6 @@ import {
 } from "../src/index.js";
 import type { JsonObject } from "../src/json.js";
 
-// End-to-end proof that the composition root replaces @hobo/cli's shell stubs.
-// The bare @hobo/cli binary calls createHoboCli() un-injected, so the deploy
-// verbs fall back to HOBO_CLI_STUB / status "not_implemented". The composed CLI
-// injects the DEFAULT runtimes, so collect/plan/up/down/dev run the real
-// in-process flow. LOCAL/MOCKED lane: runtime-local event store, in-process
-// executor over a mock IaC backend, provider registry from
-// @hobo/provider-cloudflare — no real cloud calls.
-
 const HELLO_BINDLE = {
 	schema: "hobo.manifest/v1",
 	componentHost: { kind: "wasmtime", version: "1.0.0" },
@@ -82,14 +74,12 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 			openStores.push(runtime.store as RuntimeLocalEventStore);
 			const cli = createComposedHoboCli({ yardRuntime: runtime });
 
-			// login works un-injected (kept as @hobo/cli's default).
 			const login = envelope(
 				(await cli.run(["login", "--json"], { cwd })).stdout,
 			);
 			expect(login.ok).toBe(true);
 			expect(login.status).toBe("ok");
 
-			// collect emits the manifest IR (not a stub).
 			const collect = envelope(
 				(await cli.run(["collect", "--json"], { cwd })).stdout,
 			);
@@ -98,7 +88,6 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 			expect(collect.data.manifestHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 			expect(collect.data.resources.length).toBeGreaterThan(0);
 
-			// plan renders the content-addressed DeploymentPlan (not a stub).
 			const plan = envelope(
 				(await cli.run(["plan", "--json"], { cwd })).stdout,
 			);
@@ -108,7 +97,6 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 			expect(plan.data.planHash).toMatch(/^sha256:/);
 			expect(plan.data.resources.length).toBe(3);
 
-			// up drives the in-process Yard to deployment.Deployed (not a stub).
 			const up = envelope((await cli.run(["up", "--json"], { cwd })).stdout);
 			assertNotStub(up);
 			expect(up.ok).toBe(true);
@@ -119,7 +107,6 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 				"sessions",
 			]);
 
-			// down tears everything back down to destroyed on the SAME store.
 			const down = envelope(
 				(await cli.run(["down", "--json"], { cwd })).stdout,
 			);
@@ -139,8 +126,6 @@ describe("composed hobo CLI runs the default local/mocked runtime end to end", (
 			const runtime = createDefaultYardRuntime();
 			// SAFETY: assertion required at this I/O or test boundary.
 			openStores.push(runtime.store as RuntimeLocalEventStore);
-			// Pin DevRuntime so this regression stays on the one-shot probe path
-			// (no project bindle source → bare-metal serve falls back).
 			const cli = createComposedHoboCli({
 				yardRuntime: runtime,
 				devRuntime: (

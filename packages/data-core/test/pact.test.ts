@@ -1,6 +1,3 @@
-// The two PACT contracts in contracts/pacts, replayed against the real code.
-// A contract nobody executes is a comment; every interaction here is run and
-// its response compared with the recorded one.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -84,9 +81,6 @@ function mutations(raw: JsonValue | undefined): RecordMutation[] {
 describe("pact: migration selector", () => {
 	const verdict = evaluateCustodyPath({
 		path: parseCustodyPath({
-			// One point per role: the selector refuses a pattern that creates a
-			// copy the path does not name, and these interactions are about the
-			// other gates.
 			points: CUSTODY_ROLES.map((role) => ({
 				id: role,
 				role,
@@ -250,7 +244,6 @@ describe("pact: engine SPI", () => {
 			caughtUp: batch.caughtUp,
 		};
 		assert.deepEqual(view, captured.response.body);
-		// Reading does not consume: the same read repeats.
 		assert.equal((await read()).changes.length, 3);
 	});
 
@@ -283,7 +276,6 @@ describe("pact: engine SPI", () => {
 		const engine = createReferenceEngine();
 		await engine.datasets.ensureDataset(ORDERS);
 		const apply = requirePort(engine, "apply");
-		// The provider state: the earlier interaction, applied.
 		await apply.apply({
 			dataset: "orders",
 			changes: mutations(applied.request.body.changes),
@@ -381,8 +373,6 @@ describe("pact: engine SPI", () => {
 			scope: scopeOf("orders", String(published.request.body.tenant)),
 		});
 		assert.ok(ticket);
-		// The origin is an opaque name minted per engine; its presence is the
-		// contract, its value is not.
 		const { origin: _origin, ...stable } = ticket;
 		assert.deepEqual(
 			{ ticket: stable, keys: Object.keys(ticket).sort() },
@@ -477,7 +467,6 @@ describe("pact: engine SPI", () => {
 			dataset: "orders",
 			mutations: mutations(row("o-10")),
 		});
-		// Asking how far it has got is what moves a reference transfer.
 		const reached = await from.reached({ ...ref, mark: await from.mark(ref) });
 		const whilePaused = (await held()) - before;
 		await into.resume(ref);
@@ -497,9 +486,7 @@ describe("pact: engine SPI", () => {
 		assert.ok(staleMove);
 		const body = staleMove.request.body;
 		const router = new Map<string, number>();
-		// The provider state: a move decided at head 14 was applied.
 		admitAuthorityMove(router, { migrationId: "m1", head: 14 });
-		// The same decision again is the same head, and is applied again.
 		admitAuthorityMove(router, { migrationId: "m1", head: 14 });
 		let refusal: JsonObject = {};
 		try {
@@ -520,7 +507,6 @@ describe("pact: engine SPI", () => {
 		}
 		assert.deepEqual(refusal, staleMove.response.body);
 		assert.equal(staleMove.response.status, 409);
-		// Nothing moved: the router still holds the higher head.
 		assert.equal(router.get("m1"), 14);
 	});
 });

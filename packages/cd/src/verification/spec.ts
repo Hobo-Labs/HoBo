@@ -1,7 +1,3 @@
-// Parse boundary for VerificationSpecRecord (D9). A ParsedVerificationSpec has
-// every default from CD_DEFAULTS applied and every constraint from
-// data-models/verification.cue checked, so the engine never re-validates and
-// never sees a spec that could pass on absent evidence.
 import { clone, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
 	Aggregation,
@@ -22,10 +18,8 @@ export type ParsedVerificationSpec = VerificationSpecRecord & {
 	readonly __brand: "cd.ParsedVerificationSpec";
 };
 
-/** Unit that marks a query as an error-budget burn-rate series. */
 // public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const BURN_RATE_UNIT = "burn_rate";
-/** Unit that marks a query as a ratio; samples outside [0, 1] are invalid. */
 // public-contract: HealthQuery.unit value authors write in VerificationSpec.
 export const RATIO_UNIT = "ratio";
 
@@ -33,7 +27,6 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const MAX_QUERY_CHARS = 4096;
 const MAX_REQUIRED_OBSERVATIONS = 10_000;
 const MAX_WINDOW_MS = 7n * 24n * 3_600_000n;
-/** CD_DEFAULTS.verificationSensitivity as the generated enum. */
 function defaultSensitivity(): Sensitivity {
 	switch (CD_DEFAULTS.verificationSensitivity) {
 		case "MEDIUM":
@@ -48,7 +41,6 @@ export const comparisonCheckId = (query: HealthQueryRecord) =>
 export const probeCheckId = (name: string) => `probe:${name}`;
 export const suiteCheckId = (suite: string) => `suite:${suite}`;
 // public-contract: CheckOutcomeRecord.check id of the aggregate
-// error-budget check in verification results.
 export const ERROR_BUDGET_CHECK = "error-budget";
 
 function isHttpsUrl(value: string): boolean {
@@ -114,7 +106,6 @@ function checkQuery(
 	}
 }
 
-/** Apply defaults and constraints; refuse with every problem found, not just the first. */
 export function parseVerificationSpec(
 	input: VerificationSpecRecord,
 ): Outcome<ParsedVerificationSpec> {
@@ -288,8 +279,6 @@ export function parseVerificationSpec(
 				subject: path,
 			});
 		}
-		// Proto3 cannot tell "unset" from 0, and a ratio of 0 would pass every
-		// probe; the conservative default is that every probe must succeed.
 		if (probe.minSuccessRatio === 0) probe.minSuccessRatio = 1;
 		if (!(probe.minSuccessRatio > 0 && probe.minSuccessRatio <= 1)) {
 			problems.push({
@@ -337,11 +326,6 @@ export function parseVerificationSpec(
 	return { ok: true, value: spec as ParsedVerificationSpec };
 }
 
-/**
- * Parse an authored spec document (protobuf JSON). Here an absent
- * `failOnNoData` is distinguishable from `false`, so it takes the D9 default
- * (true); unknown fields are refused rather than dropped.
- */
 export function parseVerificationSpecJson(
 	json: JsonValue,
 ): Outcome<ParsedVerificationSpec> {

@@ -1,4 +1,3 @@
-// The placed-node reader resolves governed Camps from a recorded decision (D21).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

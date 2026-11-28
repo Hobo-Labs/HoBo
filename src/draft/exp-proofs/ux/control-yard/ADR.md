@@ -1,6 +1,7 @@
 # ADR — Control-Plane Yard experience proof
 
-**Status:** Accepted  
+**Status:** Accepted
+
 **Related:** [ADR-0135](../../../../docs/design/adr/07-portability-extensibility.md#adr-0135), ADR-0131, ADR-0111
 
 ## Decision

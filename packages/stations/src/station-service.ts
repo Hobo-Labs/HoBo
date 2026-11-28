@@ -1,8 +1,3 @@
-/**
- * Event-sourced Station occupancy aggregate: Station + Rails.
- * Connections are Station-scoped via stationId on the identity plane.
- */
-
 import { STATION_EVENTS, type StationEvent, stationEvent } from "./events.js";
 import { asJsonObject, isJsonNumber, type JsonObject } from "./json.js";
 import { createBootstrapRail, createRail, parseRail } from "./rail.js";

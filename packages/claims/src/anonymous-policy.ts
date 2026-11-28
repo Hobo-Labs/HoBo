@@ -1,14 +1,3 @@
-/**
- * Admission controls for anonymous deployment.
- *
- * Anonymous provisioning spends someone's money and someone's free tier, so it
- * is gated before an offer is ever compiled. This module is the pure decision
- * function: counters, budgets, and the clock are inputs, and the verdict is a
- * typed allow or a typed refusal with a stable code. Nothing here calls a
- * provider or reads a clock — the caller passes `nowMs` from the same canonical
- * instant the rest of resolution uses.
- */
-
 import type { BootstrapClass, Instant } from "./types.js";
 import { ClaimError } from "./types.js";
 
@@ -22,11 +11,6 @@ export type AnonymousAdmissionCode =
 	| "TTL_OUT_OF_BOUNDS"
 	| "PAYLOAD_TOO_LARGE";
 
-/**
- * Operator-owned limits. Every field is a hard ceiling: there is no "soft"
- * variant, because a soft anonymous limit is just an unbounded one with extra
- * logging.
- */
 export type AnonymousPolicy = {
 	readonly maxDeploymentsPerSession: number;
 	readonly maxDeploymentsPerRiskBucketPerWindow: number;
@@ -41,17 +25,11 @@ export type AnonymousPolicy = {
 	readonly maxSingleFileBytes: number;
 	readonly sponsorBudgetMinorUnits: number;
 	readonly minPollIntervalMs: number;
-	/** Bootstrap classes an operator is willing to run at all. */
 	readonly allowedBootstrapClasses: readonly BootstrapClass[];
-	/**
-	 * Emergency stops. These are data, not code, precisely so disabling a
-	 * misbehaving provider or recipe does not require a deploy.
-	 */
 	readonly disabledProviders: readonly string[];
 	readonly disabledRecipes: readonly string[];
 };
 
-/** Observed counters for the requesting session, bucket, and sponsor account. */
 export type AnonymousUsage = {
 	readonly sessionDeployments: number;
 	readonly riskBucketDeployments: number;
@@ -79,7 +57,6 @@ export type AnonymousRequest = {
 export type AnonymousRefusal = {
 	readonly code: AnonymousAdmissionCode;
 	readonly detail: string;
-	/** Present when waiting would actually help. */
 	readonly retryAfterMs?: number;
 };
 
@@ -115,13 +92,6 @@ export const DEFAULT_ANONYMOUS_POLICY: AnonymousPolicy = Object.freeze({
 	disabledRecipes: Object.freeze([] as string[]),
 });
 
-/**
- * Evaluate one anonymous deployment request.
- *
- * Every violated limit is reported, not just the first: a caller fixing one
- * ceiling only to hit the next is a worse experience than being told both, and
- * the operator dashboards want the full set.
- */
 export function admitAnonymousDeployment(input: {
 	readonly policy: AnonymousPolicy;
 	readonly usage: AnonymousUsage;
@@ -160,8 +130,6 @@ export function admitAnonymousDeployment(input: {
 		});
 	}
 
-	// A risk bucket only counts inside its window; an expired window is a fresh
-	// budget, which is why the start time travels with the counter.
 	const windowActive =
 		nowMs - usage.riskBucketWindowStartMs < policy.riskBucketWindowMs;
 	if (
@@ -262,11 +230,6 @@ export function admitAnonymousDeployment(input: {
 	return { ok: true };
 }
 
-/**
- * Throwing variant for call sites that treat refusal as an error path. The
- * first refusal supplies the error code so the caller sees a stable code rather
- * than a summary string.
- */
 export function assertAnonymousAdmission(admission: AnonymousAdmission): void {
 	if (admission.ok) return;
 	const first = admission.refusals[0];
@@ -282,11 +245,6 @@ export function assertAnonymousAdmission(admission: AnonymousAdmission): void {
 	);
 }
 
-/**
- * Backoff for provider status polling. Exponential with a cap, so a stuck
- * provider costs a bounded number of requests per lease rather than a busy
- * loop.
- */
 export function nextPollDelayMs(
 	attempt: number,
 	policy: Pick<AnonymousPolicy, "minPollIntervalMs">,

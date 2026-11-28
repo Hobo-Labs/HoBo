@@ -11,6 +11,7 @@ import {
 	type StreamName,
 } from "@hobo/core";
 
+// public-contract: stable exported contract literal
 export const STREAMER_CONFORMANCE_CONTRACT = "hobo.streamer-runtime-port/v1";
 
 export type StreamerAssertionName =

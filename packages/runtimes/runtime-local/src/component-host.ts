@@ -16,6 +16,7 @@ import type { JsonValue } from "./json.js";
 import type { ParsedLinkRequest, ParsedProviderDescriptor } from "./parse.js";
 import { parseLinkRequest, parseProviderDescriptor } from "./parse.js";
 
+// public-contract: stable exported contract literal
 export const HTTP_INCOMING_HANDLER =
 	// SAFETY: assertion to `"wasi:http/incoming-handler@0.2.0" as InterfaceId` is required at this boundary.
 	"wasi:http/incoming-handler@0.2.0" as InterfaceId;

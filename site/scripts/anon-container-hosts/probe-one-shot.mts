@@ -1,11 +1,3 @@
-/**
- * One-shot live probes for anon host competitors.
- * NEVER loops. NEVER hits Instanode.
- *
- * Usage:
- *   HOBO_DEBUG_RUN_ID=probe-1 node --import tsx site/scripts/anon-container-hosts/probe-one-shot.mts
- *   HOBO_ANON_PROBE=openpouch|clawdship|zerodeploy|all (default: all)
- */
 import { type JsonObject } from "../../src/lib/json-inspect.js";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,7 +15,6 @@ function debugLog(
 	message: string,
 	data: JsonObject,
 ): void {
-	// #region agent log
 	fetch(LOG_URL, {
 		method: "POST",
 		headers: {
@@ -40,7 +31,6 @@ function debugLog(
 			timestamp: Date.now(),
 		}),
 	}).catch(() => {});
-	// #endregion
 	console.log(JSON.stringify({ hypothesisId, message, data }));
 }
 

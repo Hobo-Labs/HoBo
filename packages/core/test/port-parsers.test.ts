@@ -1,14 +1,3 @@
-/**
- * The small parse-don't-validate constructors on the clock, queue and streamer
- * ports, plus the tenant, metering and policy-engine helpers.
- *
- * These are the boundary between snake_case wire records and the branded
- * domain types the rest of the platform passes around. Each one is short
- * enough to look obviously correct, which is exactly why they go untested and
- * why a regression in one is expensive: a `createFiredTimer` that dropped
- * `occurrence`, or a `parseSeq` that accepted `0`, would not throw anywhere —
- * it would produce a replay that silently disagrees with the recording.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -89,18 +78,11 @@ describe("clock id and number parsers", () => {
 	});
 
 	it("allows a zero delay but not a zero cron interval", () => {
-		// The asymmetry is deliberate and is the thing worth pinning. `sleep(0)`
-		// means "next tick", which is meaningful. `cron({ everyMs: 0 })` would
-		// mean a schedule that fires infinitely often at the same instant, so it
-		// is refused at the boundary rather than hanging the virtual clock.
 		expect(parseDelayMs(0)).toBe(0);
 		expect(() => parseCronEveryMs(0)).toThrow(ClockParseError);
 	});
 
 	it("refuse negative, fractional and unsafe numbers", () => {
-		// `Number.isSafeInteger` rather than `typeof === "number"`: a fractional
-		// delay would be rounded somewhere downstream, and the rounding site is
-		// not the place to discover the input was wrong.
 		for (const bad of [
 			-1,
 			1.5,
@@ -150,9 +132,6 @@ describe("createScheduledTimer", () => {
 	});
 
 	it("carries the deduped flag through in both states", () => {
-		// `deduped` is how a caller learns its retry did not schedule a second
-		// timer. Defaulting or dropping it would make an at-least-once caller
-		// believe every retry created new work.
 		expect(createScheduledTimer(RECORD).deduped).toBe(false);
 		expect(createScheduledTimer({ ...RECORD, deduped: true }).deduped).toBe(
 			true,
@@ -175,9 +154,6 @@ describe("createScheduledTimer", () => {
 	});
 
 	it("refuses a run id that is only whitespace", () => {
-		// `parseRunId` trims before checking, unlike the plain `nonEmptyString`
-		// used for the other ids. A run id of "  " would otherwise become a
-		// two-space key that no lookup ever matches.
 		expect(() => createScheduledTimer({ ...RECORD, run_id: "   " })).toThrow(
 			StreamerParseError,
 		);
@@ -222,9 +198,6 @@ describe("createFiredTimer", () => {
 	});
 
 	it("omits every optional field that was absent", () => {
-		// The conditional-spread shape is the point: an absent `scheduleId` must
-		// not become a present `undefined`, because the fire trace is compared
-		// key-by-key across a replay and a phantom key is a false divergence.
 		const fired = createFiredTimer(RECORD);
 		expect(Object.hasOwn(fired, "timerId")).toBe(false);
 		expect(Object.hasOwn(fired, "runId")).toBe(false);
@@ -251,22 +224,15 @@ describe("createFiredTimer", () => {
 	});
 
 	it("accepts occurrence zero", () => {
-		// Zero is the first occurrence, not an absent one. A `?? undefined` style
-		// guard here would drop it and renumber every cron firing.
 		const fired = createFiredTimer({ ...RECORD, occurrence: 0 });
 		expect(fired.occurrence).toBe(0);
 	});
 
 	it("accepts an empty label without refusing it", () => {
-		// `label` is passed through unparsed — it is a human annotation, not an
-		// identifier, so an empty one is meaningless rather than dangerous.
-		// Pinned so a later "tighten every field" pass is a deliberate change.
 		expect(createFiredTimer({ ...RECORD, label: "" }).label).toBe("");
 	});
 
 	it("refuses a negative order and a negative occurrence", () => {
-		// `order` is the total ordering of firings within an advance; a negative
-		// one would sort ahead of everything and reorder a replay.
 		expect(() => createFiredTimer({ ...RECORD, order: -1 })).toThrow();
 		expect(() => createFiredTimer({ ...RECORD, occurrence: -1 })).toThrow();
 	});
@@ -289,7 +255,6 @@ describe("createClockReplayResult", () => {
 	});
 
 	it("accepts an empty fire order", () => {
-		// A run in which nothing fired is a legitimate replay result.
 		expect(
 			createClockReplayResult({
 				seed: "s",
@@ -300,8 +265,6 @@ describe("createClockReplayResult", () => {
 	});
 
 	it("refuses an empty seed and an empty fire id", () => {
-		// The seed is what makes the replay reproducible; an empty one would
-		// produce a result nobody can re-derive.
 		expect(() =>
 			createClockReplayResult({
 				seed: "",
@@ -357,19 +320,12 @@ describe("queue id parsers", () => {
 	});
 
 	it("do not trim, so whitespace-only ids are accepted", () => {
-		// Pinned rather than changed. Unlike `parseRunId`, the queue ids use the
-		// plain `nonEmptyString`, so " " passes. It is a wart, not a hazard —
-		// the value round-trips consistently — but a later tightening should be
-		// a deliberate change with this test as the record of what it alters.
 		expect(parseMessageId(" ")).toBe(" ");
 	});
 });
 
 describe("parseDequeueOptions", () => {
 	it("applies both defaults when called with nothing", () => {
-		// The default argument `{}` plus the two `??` fallbacks. A caller that
-		// omits options is asking for one message with the standard visibility
-		// window, not for zero messages.
 		expect(parseDequeueOptions()).toEqual({
 			maxMessages: 1,
 			visibilityTimeoutMs: 30_000,
@@ -390,9 +346,6 @@ describe("parseDequeueOptions", () => {
 	});
 
 	it("refuses zero and negative values for both fields", () => {
-		// Both are `positiveInteger`. `maxMessages: 0` would be a dequeue that
-		// can never return anything, and `visibilityTimeoutMs: 0` would expire
-		// every lease the instant it was granted — a redelivery storm.
 		expect(() => parseDequeueOptions({ maxMessages: 0 })).toThrow(
 			QueueParseError,
 		);
@@ -416,8 +369,6 @@ describe("createEnqueueResult", () => {
 		});
 		expect(result.messageId).toBe("m-1");
 		expect(result.idempotencyKey).toBe("k-1");
-		// `deduped: true` is the whole answer to "did my retry create a second
-		// message?" — a caller that ignores it double-processes.
 		expect(result.deduped).toBe(true);
 		expect(Object.isFrozen(result)).toBe(true);
 	});
@@ -462,9 +413,6 @@ describe("createLeasedMessage", () => {
 	});
 
 	it("deep-freezes the body along with the envelope", () => {
-		// `deepFreeze`, not `Object.freeze`. A handler that mutated the body in
-		// place would corrupt the message the queue redelivers on lease loss,
-		// so the second attempt would see different input from the first.
 		const message = createLeasedMessage(RECORD);
 		expect(Object.isFrozen(message)).toBe(true);
 		expect(Object.isFrozen(message.body)).toBe(true);
@@ -476,8 +424,6 @@ describe("createLeasedMessage", () => {
 	});
 
 	it("accepts a first delivery and a redelivery", () => {
-		// `nonNegativeInteger`: attempt 0 is the first delivery, so a
-		// positive-only check would refuse every fresh message.
 		expect(
 			createLeasedMessage({ ...RECORD, delivery_attempt: 3 }).deliveryAttempt,
 		).toBe(3);
@@ -487,9 +433,6 @@ describe("createLeasedMessage", () => {
 	});
 
 	it("refuses a malformed lease expiry", () => {
-		// The expiry is what a handler checks before committing work. A
-		// non-timestamp would compare false against every date and make the
-		// handler believe its lease had never expired.
 		expect(() =>
 			createLeasedMessage({ ...RECORD, lease_expires_at: "soon" }),
 		).toThrow(QueueParseError);
@@ -517,9 +460,6 @@ describe("QueueLeaseLostError", () => {
 
 describe("streamer parsers", () => {
 	it("trims a run id", () => {
-		// The only parser here that trims. Run ids arrive from CLI arguments and
-		// HTTP paths, where a trailing newline is routine; treating "run-1\n" as
-		// a distinct run would strand the stream.
 		expect(parseRunId("  run-1  ")).toBe("run-1");
 	});
 
@@ -529,9 +469,6 @@ describe("streamer parsers", () => {
 	});
 
 	it("refuses a non-string run id", () => {
-		// The `typeof` guard is redundant against the declared signature and
-		// live anyway, because run ids reach this from JSON. Both branches are
-		// checked so neither can be deleted as dead.
 		// SAFETY: this test deliberately bypasses the typed API to exercise its runtime boundary.
 		expect(() => parseRunId(7 as never)).toThrow(StreamerParseError);
 		// SAFETY: this test deliberately bypasses the typed API to exercise its runtime boundary.
@@ -544,14 +481,10 @@ describe("streamer parsers", () => {
 	});
 
 	it("refuses an empty stream name", () => {
-		// An explicit "" is not the same as omitting the argument: the default
-		// only applies to `undefined`, so the empty string reaches the check.
 		expect(() => parseStreamName("")).toThrow(StreamerParseError);
 	});
 
 	it("requires a positive seq", () => {
-		// Sequence numbers start at 1 so that a missing frame is distinguishable
-		// from frame zero; accepting 0 would make the first gap invisible.
 		expect(parseSeq(1)).toBe(1);
 		expect(() => parseSeq(0)).toThrow(StreamerParseError);
 		expect(() => parseSeq(-1)).toThrow(StreamerParseError);
@@ -561,9 +494,6 @@ describe("streamer parsers", () => {
 
 describe("createStreamerFrame", () => {
 	it("keeps both the wire and the parsed run id", () => {
-		// `run_id` and `runId` are both present on purpose: the snake_case field
-		// is what goes back on the wire verbatim, and re-serializing the trimmed
-		// value would change the bytes a consumer signed over.
 		const frame = createStreamerFrame(
 			{ run_id: " run-1 ", seq: 1, stream: "stdout" },
 			"chunk",
@@ -613,9 +543,6 @@ describe("createStreamerRunResult", () => {
 	});
 
 	it("refuses an undeclared status and names the alternatives", () => {
-		// The status decides whether a consumer treats the run as successful.
-		// A typo'd "complete" that parsed would be reported as neither success
-		// nor failure by anything switching on the union.
 		try {
 			createStreamerRunResult({
 				run_id: "run-1",
@@ -635,8 +562,6 @@ describe("createStreamerRunResult", () => {
 	});
 
 	it("requires a reason", () => {
-		// Every terminal status carries a reason, including `completed`. A run
-		// result with no reason is unactionable in an incident review.
 		expect(() =>
 			createStreamerRunResult({
 				run_id: "run-1",
@@ -660,8 +585,6 @@ describe("createStreamerRunResult", () => {
 
 describe("streamer errors", () => {
 	it("backpressure names the run and the limit", () => {
-		// The limit belongs in the message because the fix is almost always to
-		// raise it or to consume faster, and neither is choosable without it.
 		// SAFETY: the constructor boundary is deliberately exercised with its wire value.
 		const error = new StreamerBackpressureError("run-1" as never, 1024);
 		expect(error.code).toBe("STREAMER_BACKPRESSURE");
@@ -687,9 +610,6 @@ describe("tenant parsers", () => {
 	});
 
 	it("refuse empty and whitespace-only ids", () => {
-		// A tenant id is the soft-isolation boundary. An empty one would scope a
-		// query to nothing — or, worse, be treated as a wildcard by a store that
-		// interpolates it into a key prefix.
 		for (const bad of ["", "   ", "\t\n"]) {
 			expect(() => parseTenantId(bad)).toThrow(TypeError);
 			expect(() => parseProjectId(bad)).toThrow(TypeError);
@@ -710,17 +630,12 @@ describe("tenantContextFromEnv", () => {
 	it("falls back to the local tenant when nothing is set", () => {
 		const context = tenantContextFromEnv({});
 		expect(context.tenantId).toBe("local");
-		// Absent optional fields are absent, not present-and-undefined: this
-		// context is compared and serialized into naming decisions.
 		expect(Object.hasOwn(context, "projectId")).toBe(false);
 		expect(Object.hasOwn(context, "branch")).toBe(false);
 		expect(Object.hasOwn(context, "env")).toBe(false);
 	});
 
 	it("prefers HOBO_TENANT over HOBO_MCP_TENANT", () => {
-		// Both exist because the MCP server sets its own variable. The explicit
-		// one has to win, or an MCP session would silently override an operator's
-		// deliberate `HOBO_TENANT`.
 		expect(
 			tenantContextFromEnv({ HOBO_TENANT: "a", HOBO_MCP_TENANT: "b" }).tenantId,
 		).toBe("a");
@@ -748,9 +663,6 @@ describe("tenantContextFromEnv", () => {
 	});
 
 	it("treats a whitespace-only optional value as unset", () => {
-		// `!== undefined && trim() !== ""` on each. A CI runner that exports
-		// `GIT_BRANCH=` would otherwise put an empty branch into every resource
-		// name derived from this context.
 		const context = tenantContextFromEnv({
 			HOBO_PROJECT: "   ",
 			HOBO_BRANCH: "",
@@ -768,18 +680,12 @@ describe("tenantContextFromEnv", () => {
 	});
 
 	it("keeps a whitespace-padded branch verbatim", () => {
-		// Only the emptiness check trims; the stored value is not trimmed. Pinned
-		// because it is the kind of asymmetry a reader would assume away.
 		expect(tenantContextFromEnv({ HOBO_BRANCH: " main " }).branch).toBe(
 			" main ",
 		);
 	});
 
 	it("refuses a whitespace-only explicit tenant", () => {
-		// The tenant has no emptiness pre-check — it goes straight to
-		// `parseTenantId`, which throws. That is the right end of the asymmetry:
-		// silently substituting "local" for a misconfigured tenant would run the
-		// workload in the wrong isolation scope.
 		expect(() => tenantContextFromEnv({ HOBO_TENANT: "  " })).toThrow(
 			TypeError,
 		);
@@ -798,8 +704,6 @@ describe("createUsageEvent", () => {
 			eventType: "tunnel.up",
 			resource: "tunnel-1",
 		});
-		// One count, now. A metering event that defaulted to quantity 0 would
-		// bill nothing while still looking like it recorded usage.
 		expect(event.quantity).toBe(1);
 		expect(event.unit).toBe("count");
 		expect(event.timestamp).toBe(INSTANT);
@@ -820,8 +724,6 @@ describe("createUsageEvent", () => {
 	});
 
 	it("keeps an explicit zero quantity", () => {
-		// `??`, not `||`. A zero-quantity event is how a sink records "the meter
-		// ran and there was nothing to bill", which is different from "no event".
 		expect(
 			createUsageEvent({
 				tenantId: TENANT,
@@ -901,9 +803,6 @@ describe("createMeteringBus", () => {
 		const b = recordingSink("b");
 		const bus = createMeteringBus([a.sink, b.sink]);
 		return bus.emit(EVENT).then(() => {
-			// Every sink, not the first that succeeds: sinks are independent
-			// consumers (billing, audit, dashboards) and dropping one silently
-			// under-reports usage for whoever owns it.
 			expect(a.seen).toEqual(["node-1"]);
 			expect(b.seen).toEqual(["node-1"]);
 		});
@@ -921,9 +820,6 @@ describe("createMeteringBus", () => {
 			},
 		]);
 		await bus.emit(EVENT);
-		// `Promise.all` over the sinks, so `emit` does not resolve before the
-		// slowest sink has finished. A caller that flushes before shutdown
-		// depends on this.
 		expect(resolved).toBe(true);
 	});
 
@@ -936,8 +832,6 @@ describe("createMeteringBus", () => {
 				},
 			},
 		]);
-		// Not swallowed. A metering pipeline that hides sink failures loses
-		// billable usage with no signal at all.
 		await expect(bus.emit(EVENT)).rejects.toThrow("sink down");
 	});
 
@@ -951,8 +845,6 @@ describe("createMeteringBus", () => {
 	});
 
 	it("replaces a sink registered under an existing id", () => {
-		// Keyed by `sinkId`, so re-registering replaces rather than duplicates.
-		// Duplication would double-count every event that sink records.
 		const first = recordingSink("a");
 		const second = recordingSink("a");
 		const bus = createMeteringBus([first.sink]);
@@ -966,8 +858,6 @@ describe("createMeteringBus", () => {
 	});
 
 	it("returns a fresh array from listSinks", () => {
-		// A copy, so a caller cannot splice the live registry and silently stop
-		// metering.
 		const bus = createMeteringBus([recordingSink("a").sink]);
 		// SAFETY: listSinks returns the package's typed sink collection.
 		const listed = bus.listSinks() as MeteringSink[];
@@ -1001,9 +891,6 @@ describe("policy decisions", () => {
 	});
 
 	it("copies the request into the audit record", () => {
-		// The audit block is what an operator reads months later. Deriving it
-		// from the request here — rather than asking every engine to assemble it
-		// — is what keeps the fields consistent across engines.
 		const decision = denyDecision("acl-v1", REQUEST, []);
 		expect(decision.audit.tenantId).toBe("acme");
 		expect(decision.audit.action).toBe("connect");
@@ -1013,9 +900,6 @@ describe("policy decisions", () => {
 	});
 
 	it("audits the subject's tenant, not the resource's", () => {
-		// Deliberate: the audit answers "who asked", and a cross-tenant attempt
-		// is precisely the case where the two differ and the subject is the one
-		// worth recording.
 		const decision = denyDecision(
 			"acl-v1",
 			{
@@ -1038,14 +922,10 @@ describe("policy decisions", () => {
 	});
 
 	it("defaults an allow decision's reasons", () => {
-		// An allow with no stated reason still records one, so an audit trail
-		// never contains an empty justification.
 		expect(allowDecision("acl-v1", REQUEST).reasons).toEqual(["allowed"]);
 	});
 
 	it("omits obligations when none are given", () => {
-		// Present-but-undefined obligations would read to a consumer as "there
-		// are obligations and I could not parse them".
 		const decision = allowDecision("acl-v1", REQUEST, ["ok"]);
 		expect(Object.hasOwn(decision, "obligations")).toBe(false);
 	});
@@ -1054,8 +934,6 @@ describe("policy decisions", () => {
 		expect(
 			allowDecision("acl-v1", REQUEST, ["ok"], ["mfa"]).obligations,
 		).toEqual(["mfa"]);
-		// An explicit empty list is distinct from omission: it says the engine
-		// evaluated obligations and found none.
 		const empty = allowDecision("acl-v1", REQUEST, ["ok"], []);
 		expect(Object.hasOwn(empty, "obligations")).toBe(true);
 		expect(empty.obligations).toEqual([]);

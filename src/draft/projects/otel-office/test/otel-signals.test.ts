@@ -63,7 +63,7 @@ describe("mapLogsPayload", () => {
 			type: "log-record",
 			severity: "WARN",
 			characterId: "s1/orders-api",
-			at: 2000, // timeUnixNano 2_000_000_000 ns → 2000 ms
+			at: 2000,
 		});
 		// SAFETY: `const next = applyEvent(state, events[0] ?? ({} as never));` is required at this I/O or test boundary.
 		const next = applyEvent(state, events[0] ?? ({} as never));

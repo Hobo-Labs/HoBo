@@ -1,4 +1,3 @@
-/** Canonical terminal receipt for a receiver-enforced native fence operation. */
 import {
 	canonicalEncode,
 	isJsonObject,

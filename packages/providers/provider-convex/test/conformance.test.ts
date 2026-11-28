@@ -89,7 +89,6 @@ describe("Convex conformance profile completeness", () => {
 		).map((c) => c.id);
 		expect(local).toContain("no-admin-key-material-in-artifacts");
 		expect(local).toContain("code-config-not-assumed-in-data-backup");
-		// A dev deployment is never asked to prove production TLS.
 		expect(local).not.toContain("tls-valid");
 	});
 });

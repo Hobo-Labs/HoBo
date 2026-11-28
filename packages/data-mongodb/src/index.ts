@@ -1,9 +1,3 @@
-/**
- * @hobo/data-mongodb — the MongoDB engine for the engine-neutral data
- * contract (ADR-0177): the `data.mongodb/v1` profile and the
- * `@hobo/data-core` SPI over an injected executor, with no driver dependency
- * at runtime.
- */
 export {
 	type DecodedDocument,
 	type DocumentIdentity,

@@ -8,9 +8,6 @@ import {
 	createGenerateCommand,
 } from "../src/index.js";
 
-// `hobo generate <name> [ports...]` synthesizes a real provider from a port spec
-// and registers it, so `hobo registry` immediately shows it.
-
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
 	for (const store of openStores) store.close();
@@ -38,7 +35,6 @@ describe("createGenerateCommand", () => {
 		expect(gen.status).toBe("generated");
 		expect(gen.data.provider).toBe("acme-kv");
 		expect(gen.data.ports.sort()).toEqual(["kv", "objectStore"]);
-		// A real capability manifest was produced.
 		expect(gen.data.manifest.providerId).toBe("acme-kv");
 
 		const registry = envelope((await cli.run(["registry", "--json"])).stdout);

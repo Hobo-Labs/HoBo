@@ -60,10 +60,6 @@ export function createFrameJournal<TChunk>(options: {
 	let closed = false;
 	let closeResult: StreamerRunResult | undefined;
 	const done = createDeferred<StreamerRunResult>();
-	// The journal owns completion even when consumers read only frames. Observe
-	// rejection immediately without replacing the original promise: explicit
-	// completion waiters must still receive the failed run's error, including
-	// callers that attach after close.
 	void done.promise.catch(() => undefined);
 	const lifecycleEvents: LifecycleEvent[] = [
 		{ kind: "opened", runId: options.runId, openedAt: options.openedAt },

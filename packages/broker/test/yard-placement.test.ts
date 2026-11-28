@@ -53,7 +53,6 @@ describe("yard-first placement", () => {
 		expect(
 			result.placements.every((p) => p.providerId === LOCAL_HOST_PROVIDER_ID),
 		).toBe(true);
-		// Bindle destroy must not destroy yard/camp/shared units.
 		const units = result.receipt?.executionUnits ?? [];
 		expect(units.find((u) => u.kind === "yard")?.destroyWithBindle).toBe(false);
 		expect(units.find((u) => u.kind === "shared")?.destroyWithBindle).toBe(

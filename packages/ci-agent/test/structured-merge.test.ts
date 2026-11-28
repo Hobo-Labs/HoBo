@@ -9,11 +9,6 @@ import {
 } from "../src/structured-merge.js";
 import { testConfig } from "./fixtures/config.js";
 
-/**
- * A stand-in for mergiraf with its v0.20 command line: `merge BASE LEFT RIGHT
- * --path-name P --output OUT --timeout MS`. What it does is chosen by the
- * left side's first line, so each test drives it through its input.
- */
 const SCRIPT = `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "mergiraf 0.20.0"; exit 0; fi
 [ "$1" = "merge" ] || exit 255

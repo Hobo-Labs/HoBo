@@ -1,5 +1,3 @@
-// data-models/placement.cue and the placement parse boundary must agree: what
-// the engine records vets clean, and what the parsers refuse, CUE refuses.
 import { create, toJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

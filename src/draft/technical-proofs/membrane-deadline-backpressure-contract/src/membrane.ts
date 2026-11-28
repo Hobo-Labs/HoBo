@@ -8,7 +8,6 @@ import {
 import { createManualClock, type ManualClock } from "./manual-clock.js";
 import { isJsonString, type JsonValue } from "./json.js";
 
-
 export const MEMBRANE_CONTRACT_VERSION = "hobo.membrane-deadline-backpressure/v1";
 
 export interface WitCodec {

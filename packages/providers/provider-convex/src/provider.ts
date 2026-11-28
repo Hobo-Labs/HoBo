@@ -81,12 +81,6 @@ export interface ConvexProviderOptions {
 	regions?: string[];
 }
 
-// The @hobo/provider-convex factory (ADR-0144 thin-adapter rule): capability
-// declarations honestly scoped to the reactive TypeScript BaaS as default
-// Resource Definitions, realize() -> a convex-deploy DRIVER program (not
-// IaC), a runtime client per port, and the published Capability Manifest
-// with declared cost facts and the brokered-deploy-key posture (no static
-// vendor keys in Bindles, Camps, or this package).
 export function createConvexProvider(
 	options: ConvexProviderOptions = {},
 ): CloudProvider {

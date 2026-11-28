@@ -22,7 +22,6 @@ import { plan as planSkeleton } from "../../planner-dag-skeleton-contract/src/pl
 import { createResourceCatalog } from "../../resource-definition-driver-contract/src/resource-definition-driver-contract.js";
 import { isJsonString, type JsonObject, type JsonValue } from "./json.js";
 
-
 export const PLANNER_VERSION = "hobo.planner/v1";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

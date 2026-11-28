@@ -1,12 +1,3 @@
-/**
- * Shared Temporary / agent Environment Station contract (provider-neutral).
- * Cloudflare Temporary Accounts, Lakebed anonymous deploy, and broker
- * AnonymousSessionResult all project onto this fixture.
- *
- * Providers keep vendor transports private; only this result + helpers are shared.
- */
-
-// public-contract: temporary Environment Station schema id consumers pin.
 import {
 	isJsonNumber,
 	isJsonObject,
@@ -15,10 +6,10 @@ import {
 	type JsonValue,
 } from "../json.js";
 
+// public-contract: temporary Environment Station schema id consumers pin.
 export const TEMPORARY_ENVIRONMENT_STATION_SCHEMA =
 	"hobo.temporary-environment-station/v1" as const;
 
-/** Default TTL for temporary/agent stations (1h), matching CF Temporary Accounts. */
 export const TEMPORARY_STATION_TTL_MS = 60 * 60 * 1000;
 
 export type TemporaryEnvironmentStationResult = {
@@ -28,9 +19,7 @@ export type TemporaryEnvironmentStationResult = {
 	readonly expiresAt: string;
 	readonly anonymous: true;
 	readonly temporary: true;
-	/** Provider target id (e.g. cloudflare, lakebed). */
 	readonly providerId: string;
-	/** Alias of stationUrl for broker AnonymousSessionResult.primaryUrl. */
 	readonly primaryUrl?: string;
 	readonly ttlSeconds?: number;
 	readonly accountId?: string;
@@ -41,15 +30,9 @@ export type TemporaryEnvironmentStationInput = {
 	readonly stationId: string;
 	readonly providerId: string;
 	readonly fetchImpl?: typeof fetch;
-	/** Opaque provider-specific payload (capsule dir, worker module, …). */
 	readonly artifact?: unknown;
 };
 
-/**
- * Broker-aligned projection of a temporary station result.
- * Maps onto AnonymousSessionResult claim/primary/ttl fields without inventing
- * a second session type.
- */
 export type TemporaryStationAnonymousSessionView = {
 	readonly stationId: string;
 	readonly providerId: string;

@@ -16,7 +16,6 @@ import {
 } from "../src/sdk-object-graph-manifest-ir-shapes.js";
 import { type JsonValue } from "../src/json.js";
 
-
 test("HOBO-568 proof parses and covers the accepted SDK object graph shape", () => {
   const parsed = parseSdkObjectGraphProof(SDK_OBJECT_GRAPH_MANIFEST_IR_PROOF);
 

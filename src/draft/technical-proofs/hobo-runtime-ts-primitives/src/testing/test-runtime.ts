@@ -9,7 +9,6 @@ import type { Hook, StepOpts } from "../types.js";
 import type { RunContextBinding } from "../step.js";
 import { isJsonString, isJsonNumber, type JsonValue, type JsonObject } from "../json.js";
 
-
 const DEFAULT_RETRIES = 3;
 
 export interface TestRuntimeOptions {

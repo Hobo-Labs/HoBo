@@ -14,8 +14,6 @@ import {
 
 import { SWE_GEMINI_CONNECTOR } from "./connector.js";
 
-// Thin vendor facade: shared SWE-task engine + this package's connector id.
-
 export {
 	buildSandboxAccessReport,
 	extractSweTaskReport,

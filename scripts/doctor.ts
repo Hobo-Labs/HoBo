@@ -7,7 +7,6 @@ function ok(message: string) {
 	console.log(`ok  ${message}`);
 }
 function warn(message: string) {
-	// stdout so agents/transcripts that only capture stdout still see remediation
 	console.log(`warn ${message}`);
 }
 function fail(message: string) {
@@ -78,8 +77,6 @@ if (existsSync("node_modules")) {
 	);
 }
 
-// Agent experience (AX): zero-key setup surface + fail-closed MCP wiring.
-// Missing optional binaries are warnings (common on cold clones before setup).
 if (existsSync("AUTH.md"))
 	ok("AUTH.md present (WorkOS auth.md protocol + residual local tooling keys)");
 else
@@ -112,7 +109,6 @@ for (const launcher of [
 	if (existsSync(launcher)) ok(`${launcher} present`);
 	else fail(`${launcher} missing (fail-closed MCP launcher)`);
 }
-// Optional PATH tools: warn only — install via setup --common-only --no-gbrain
 for (const bin of ["serena", "headroom", "rtk", "tgrep"] as const) {
 	if (have(bin)) ok(`${bin} on PATH`);
 	else

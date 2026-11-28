@@ -1,12 +1,3 @@
-/**
- * `hobo replay` — Session Replay observe surface (ADR-0137).
- *
- * Subcommands: list | get | open | summarize | retention | doctor
- * Distinct from control-plane event-log replay and from auth session.* events.
- * Mutations for retention/erase are local dual-fixture ops; production view
- * remains policy/PAM gated inside @hobo/replay.
- */
-
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CommandModule } from "@hobo/cli";
@@ -22,7 +13,6 @@ import { isJsonString, type JsonObject } from "./json.js";
 export interface ReplayCommandDeps {
 	readonly env?: NodeJS.ProcessEnv;
 	readonly hoboHome?: string;
-	/** Injectable service for tests. */
 	readonly service?: ReplayService;
 }
 
@@ -36,7 +26,6 @@ const SUBCOMMANDS = [
 ] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
-/** Local HOBO_HOME resolution without pulling Yard/compose graph. */
 function defaultHoboHome(env: NodeJS.ProcessEnv = process.env): string {
 	if (isJsonString(env.HOBO_HOME) && env.HOBO_HOME.length > 0) {
 		return env.HOBO_HOME;
@@ -72,7 +61,6 @@ function resolveService(
 ): ReplayService {
 	if (deps.service) return deps.service;
 	const env = deps.env ?? process.env;
-	// Prefer memory fixtures when HOBO_REPLAY_FIXTURES=1 or no station data dir.
 	if (env.HOBO_REPLAY_FIXTURES === "1" || env.HOBO_REPLAY_MEMORY === "1") {
 		return createContractAssertedReplayFixtures({ stationId }).service;
 	}
@@ -267,13 +255,11 @@ export function createReplayCommand(
 						deepLink: opened.payload.deepLink,
 						openUi: opened.payload.openUi,
 						eventCount: opened.payload.events.length,
-						// Heavy events omitted from CLI envelope by default.
 						eventsOmitted: true,
 					},
 				};
 			}
 
-			// retention
 			const result = await service.retention();
 			emitProgress(
 				`replay retention: scanned=${result.scanned} erased=${result.erased}`,

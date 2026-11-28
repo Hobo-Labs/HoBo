@@ -47,7 +47,6 @@ describe("bare-metal yard e2e", () => {
 		expect(envelope.data.config.kind).toBe("bare-metal");
 		expect(envelope.data.config.name).toBe("local");
 		expect(envelope.data.config.defaultPort).toBe(4100);
-		// Broker-runtime prefers wasm when tooling can be equipped.
 		expect(
 			// SAFETY: assertion required at this I/O or test boundary.
 			(envelope.data.config as { componentHost?: string }).componentHost,
@@ -72,7 +71,6 @@ describe("bare-metal yard e2e", () => {
 		expect(topology.kind).toBe("yard");
 		expect(topology.providerId).toBe("local");
 		expect(topology.camps).toHaveLength(1);
-		// Camp no longer owns the Bindle; it inherits provider from the Yard.
 		expect(topology.camps[0]?.derivedProviderId).toBe("local");
 		expect(topology.camps[0]?.labels.bindle).toBe("hello-bindle");
 		// SAFETY: assertion required at this I/O or test boundary.
@@ -95,14 +93,12 @@ describe("bare-metal yard e2e", () => {
 		expect(serve.bindleName).toBe("hello-bindle");
 		expect(serve.yard.providerId).toBe("local");
 
-		// Exactly one public surface.
 		expect(serve.exposedEndpoints).toHaveLength(1);
 		expect(serve.exposedEndpoints[0]?.resourceName).toBe("web");
 		expect(serve.exposedEndpoints[0]?.external).toBe(true);
 		expect(serve.exposedEndpoints[0]?.port).toBe(basePort);
 		expect(serve.primaryUrl).toBe(`http://127.0.0.1:${basePort}`);
 
-		// API is private mesh — no TCP port.
 		const api = serve.endpoints.find((e) => e.resourceName === "api");
 		expect(api?.external).toBe(false);
 		expect(api?.port).toBeNull();
@@ -111,27 +107,23 @@ describe("bare-metal yard e2e", () => {
 			`http://hello-bindle.${INTERNAL_ROUTER_HOST}/api`,
 		);
 
-		// Public TCP must not answer on basePort+1 (legacy dual-port posture).
 		await expect(
 			fetch(`http://127.0.0.1:${basePort + 1}/hello?name=Yard`, {
 				signal: AbortSignal.timeout(500),
 			}),
 		).rejects.toThrow();
 
-		// Bindle injects camp env — proves api + web are actually running under HoBo.
 		expect(serve.bindleEnv).toEqual({
 			GREETING_PREFIX: "howdy",
 			APP_TITLE: "howdy",
 		});
 
-		// Web (public) calls private api via mesh; both surfaces use injected "howdy".
 		const web = await fetch(`${serve.primaryUrl}/?name=Yard`);
 		expect(web.status).toBe(200);
 		const html = await web.text();
 		expect(html).toContain('data-testid="app-title">howdy</h1>');
 		expect(html).toContain('data-testid="greeting">howdy, Yard</p>');
 
-		// Private mesh URL works through camp-routed fetch; no public TCP for api.
 		const mesh = await fetch(
 			`${serve.serviceDiscovery.services__api__http__0}/hello?name=Mesh`,
 		);

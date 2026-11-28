@@ -22,7 +22,6 @@ function registry(): ConnectorRegistry {
 	return root[CONNECTOR_REGISTRY];
 }
 
-/** Connector-package authoring helper. Connector packages export this symbol. */
 export function defineConnector<const D extends ConnectorDefinition>(
 	definition: D,
 ): ConnectorSymbol<D> {
@@ -38,9 +37,6 @@ export function defineConnector<const D extends ConnectorDefinition>(
 	const symbol = Symbol.for(
 		`hobo.connector/${definition.id}`,
 	) as ConnectorSymbol<D>;
-	// The freeze widens D back to the base definition layout; the cast is safe
-	// because D extends ConnectorDefinition (exactOptionalPropertyTypes rejects
-	// the generic Readonly<D> otherwise).
 	registry().set(
 		symbol,
 		// SAFETY: assertion required at this I/O or test boundary.
@@ -91,7 +87,6 @@ function createBinding<D extends ConnectorDefinition>(
 
 const builderBindings = new WeakMap<object, BuilderConnectorRegistry>();
 
-/** Internal Bindle-builder hook; public app authors only call b.connector(...). */
 export function withConnectorDeclarations<T extends object>(
 	base: T,
 ): T & BindleBuilder {

@@ -13,7 +13,6 @@ const azure: StationYardCatalogInput = {
 	yardName: "yard:azure-east",
 	providerId: "azure",
 	bindings: [
-		// A Yard is a catalog: Azure legitimately lists four ways to do web.
 		{ profile: "web.hosted/v1", productId: "azure:app-service" },
 		{ profile: "web.hosted/v1", productId: "azure:static-web-apps" },
 		{ profile: "web.hosted/v1", productId: "azure:container-apps" },
@@ -85,7 +84,6 @@ describe("aggregateStationCapabilities() — breadth, not choice", () => {
 			(entry) => entry.profile === "web.hosted/v1",
 		);
 		const keys = Object.keys(web?.offerings[0] ?? {});
-		// No preferred/selected/rank/score/weight field exists to smuggle a choice.
 		for (const forbidden of [
 			"preferred",
 			"selected",
@@ -101,8 +99,6 @@ describe("aggregateStationCapabilities() — breadth, not choice", () => {
 	it("orders offerings lexicographically by yard then productId, not by input order", () => {
 		const coverage = aggregateStationCapabilities({
 			stationId: "station:acme",
-			// "zulu" is authored first; a preference-carrying aggregation would
-			// keep it first. ADR-0151 forbids authoring order influencing anything.
 			yards: [
 				{
 					yardName: "yard:a",

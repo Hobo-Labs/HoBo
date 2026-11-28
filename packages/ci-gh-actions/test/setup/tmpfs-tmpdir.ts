@@ -1,19 +1,3 @@
-/**
- * Vitest globalSetup: point this package's tests at a temporary directory on
- * tmpfs, and remove it when the run ends.
- *
- * The tests open a fresh on-disk SqliteCiStore per case (WAL, default
- * synchronous mode), so every commit waits on an fsync; on a disk that is most
- * of github-job-poller's and isolated-worker-deps-image's time. tmpfs answers
- * an fsync at once. Production durability is untouched: only TMPDIR, read by
- * the tests' own `tmpdir()`, moves.
- *
- * It applies only where /dev/shm is a directory with room to spare and allows
- * running a file: tests write fake `docker` and runner scripts under TMPDIR
- * and run them, which a `noexec` mount refuses. Otherwise the disk is kept, as
- * before (a container whose /dev/shm is Docker's 64 MiB default, or mounted
- * noexec). HOBO_CI_TEST_TMPFS=0 keeps it too.
- */
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -25,7 +9,6 @@ import {
 import { join } from "node:path";
 
 const SHM = "/dev/shm";
-/** Room enough that a tmpfs shared with other jobs does not fill under the tests. */
 const MIN_FREE_BYTES = 512 * 1024 * 1024;
 
 function roomOnTmpfs(): boolean {
@@ -37,7 +20,6 @@ function roomOnTmpfs(): boolean {
 	}
 }
 
-/** Whether a script written into `directory` can be run from there. */
 function runsFrom(directory: string): boolean {
 	try {
 		const probe = join(directory, "exec-probe");

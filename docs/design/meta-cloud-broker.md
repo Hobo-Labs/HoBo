@@ -38,7 +38,6 @@ This M0 record defines the accepted productization scope for the Meta-cloud Brok
 build broker runtime code, Yard planner behavior, provider adapters, admin UI, Gatekeeper policy
 changes, token broker changes, Contract IR changes, or provider Capability Manifest changes.
 
-Brainstorming spec: [`2026-06-29-meta-cloud-broker-design.md`](../superpowers/specs/2026-06-29-meta-cloud-broker-design.md).
 The HOBO-521 issue body, that spec, and this M0 record are the reviewable source of truth.
 
 ## M0 Acceptance Record

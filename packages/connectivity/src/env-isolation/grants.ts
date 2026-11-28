@@ -1,7 +1,3 @@
-/**
- * Cross-env grants, elevated access capabilities, and break-glass model.
- * Network membership is never sufficient alone for elevated/production access.
- */
 import {
 	ACCESS_EVENTS,
 	type AccessEvent,
@@ -45,7 +41,6 @@ export type ElevatedAccessCapability = Readonly<{
 	expiresAt: string;
 	priorAuthnClass?: IsolationClass;
 	obligations: readonly string[];
-	/** Opaque token ref (JWT-SVID jti or tokenref). */
 	tokenRef: string;
 }>;
 
@@ -156,7 +151,6 @@ export class CrossEnvGrantStore {
 		return g;
 	}
 
-	/** Whether a principal may cross from→to under any active grant. */
 	allows(input: {
 		readonly principalId: string;
 		readonly fromClass: IsolationClass;
@@ -241,9 +235,6 @@ export class BreakGlassService {
 		return grant;
 	}
 
-	/**
-	 * Dual-approve break-glass. Approver must differ from requester.
-	 */
 	approve(input: {
 		readonly grantId: string;
 		readonly approver: string;
@@ -321,7 +312,6 @@ export class BreakGlassService {
 		return g;
 	}
 
-	/** Active break-glass for subject → isolationClass. */
 	allows(input: {
 		readonly subject: string;
 		readonly isolationClass: IsolationClass;

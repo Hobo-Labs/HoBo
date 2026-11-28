@@ -1,10 +1,3 @@
-// A rollout end to end on a real SQLite journal (@hobo/storage-sqlite): the
-// real Harness engine, the real desired state (@hobo/cd/sets) and the real
-// in-process reconcile transport all share one durable store, so every event
-// type the rollout appends must pass the journal's `family.PastTenseFact`
-// check, and DesiredStateReader.status() must fold the `{ schema,
-// observation }` body the reconcile transport writes. HoBo delivering its own
-// CI relay found both broken; this is the regression.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,7 +57,6 @@ const PREVIOUS =
 	"sha256:1111111111111111111111111111111111111111111111111111111111111111";
 const FREIGHT =
 	"sha256:2222222222222222222222222222222222222222222222222222222222222222";
-// The journal's own event-type rule (@hobo/core EVENT_TYPE_PATTERN).
 const STORABLE = /^[a-z][a-z0-9]*\.[A-Z][A-Za-z0-9]*$/;
 
 const dirs: string[] = [];
@@ -144,12 +136,10 @@ async function promote(
 	return applied.value;
 }
 
-/** Report the Camp CONVERGED on `set` through the real reconcile transport. */
 async function reportConverged(w: World, set: SetRecord, atMs: number) {
 	await report(w, set, atMs, ReconcileStatus.CONVERGED);
 }
 
-/** Report `status` for `set` through the real reconcile transport. */
 async function report(
 	w: World,
 	set: SetRecord,
@@ -218,7 +208,6 @@ describe("rollout on a durable SQLite journal", () => {
 		await promote(w, "d-previous", PREVIOUS, SHOP_V1, ctx);
 		const promoted = await promote(w, "d-promote", FREIGHT, SHOP_V2, ctx);
 		await reportConverged(w, promoted, time.now());
-		// The first stage's verification fails: the rollout must roll back.
 		w.verification.script = () => VerificationVerdict.FAIL;
 
 		const planned = await w.orchestrator.plan(
@@ -250,11 +239,8 @@ describe("rollout on a durable SQLite journal", () => {
 
 		const finished = await w.orchestrator.get(rolloutId);
 		expect(finished?.status).toBe("rolled-back");
-		// The Camp took canary traffic (the reconciler's CONVERGED report was
-		// folded), then went back to zero.
 		expect(w.traffic.percents(CAMP).at(0)).toBeGreaterThan(0);
 		expect(w.traffic.percents(CAMP).at(-1)).toBe(0);
-		// The rollback Delta to the predecessor Set is in the durable Delta ledger.
 		const opened = finished?.reasons.find(
 			(r) => r.code === "rollback-delta-opened",
 		);
@@ -271,7 +257,6 @@ describe("rollout on a durable SQLite journal", () => {
 		for (const type of ledger) expect(type).toMatch(STORABLE);
 		journal.close();
 
-		// A fresh process over the reopened journal replays to the same outcome.
 		const reopened = openJournal(path, time.now);
 		const again = world(reopened, time.now);
 		expect((await again.orchestrator.get(rolloutId))?.status).toBe(
@@ -283,7 +268,6 @@ describe("rollout on a durable SQLite journal", () => {
 		reopened.close();
 	});
 
-	// Runner-fleet rollout regressions (found end to end at a higher layer).
 	async function pilot(time: ReturnType<typeof clock>, journal: SqliteJournal) {
 		const w = world(journal, time.now);
 		const ctx = context(time.now);
@@ -341,8 +325,6 @@ describe("rollout on a durable SQLite journal", () => {
 			"rolled-back",
 		);
 
-		// The promotion saga's compensation (D12): a concrete rollback Delta to
-		// the predecessor Set, opened while the rollout's rollback Delta is open.
 		const before = await p.w.desired.resolved(p.promoted);
 		const after = await p.w.desired.resolved(p.previous);
 		const restoreId = "delta_promo1compensate0001";
@@ -372,7 +354,6 @@ describe("rollout on a durable SQLite journal", () => {
 		expect(restored.ok).toBe(true);
 		const current = await p.w.desired.current(campId(CAMP));
 		expect(current?.freightId).toBe(PREVIOUS);
-		// The rollout's rollback Delta was closed as superseded, not left open.
 		const spec = await types(journal, CD_STREAMS.campSpec(CAMP));
 		expect(spec.filter((t) => t === CD_EVENTS.DeltaRejected)).toHaveLength(1);
 		journal.close();
@@ -405,7 +386,6 @@ describe("rollout on a durable SQLite journal", () => {
 		expect(finished?.reasons[0]?.message).toContain(
 			"the runner image could not be pulled",
 		);
-		// Exposure never moved off zero.
 		expect(p.w.traffic.percents(CAMP).every((pct) => pct === 0)).toBe(true);
 		journal.close();
 	});

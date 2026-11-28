@@ -1,8 +1,5 @@
 package hobo
 
-// CUE constraints for Kafka capability provider wire records (ADR-0138).
-// One constraint per protobuf message/enum in provider_kafka.proto.
-// Parse, don't validate: derived domain types are produced by parseKafka* parsers.
 
 #KafkaClusterKind:
 	"self-hosted" | "redpanda" | "msk" | "confluent" | "azure-event-hubs" | "local-emulator"

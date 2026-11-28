@@ -1,17 +1,3 @@
-/**
- * The Kubernetes provider's local IaC-program check, `assertLocalIacProgram`:
- * the last gate between realize() and a program the engine would apply.
- *
- * **Unresolved output references are caught at emit time.** A program whose
- * `${resources.x.outputs.y}` names a resource that does not exist is one the
- * engine fails to apply halfway through — after it has created whatever came
- * first. Rejecting it here makes that a refused program rather than a partial
- * deploy somebody has to reconcile by hand.
- *
- * Fixtures are typed programs. Only the cases that hand the guard a field the
- * type forbids build one through `documentProgram`, which is where the one
- * assertion lives.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -24,7 +10,6 @@ import {
 } from "../src/iac-program.js";
 import type { JsonValue } from "../src/json.js";
 
-/** A program's fields as a document may carry them: the declared type, any other JSON, or absent. */
 type ProgramFields = {
 	readonly [field in keyof IacProgram]?:
 		| IacProgram[field]
@@ -32,7 +17,6 @@ type ProgramFields = {
 		| undefined;
 };
 
-/** A well-formed program: every fixture field keeps its declared type. */
 function program(overrides: Partial<IacProgram> = {}): IacProgram {
 	return {
 		apiVersion: IAC_PROGRAM_API_VERSION,
@@ -54,7 +38,6 @@ function program(overrides: Partial<IacProgram> = {}): IacProgram {
 	};
 }
 
-/** A program as it arrives across a document boundary, carrying a field the type forbids. */
 function documentProgram(overrides: ProgramFields): IacProgram {
 	const document = { ...program(), ...overrides };
 	// SAFETY: the guard is the parse boundary for programs that crossed a
@@ -71,8 +54,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses a wrong schema version, kind, or IaC lane", () => {
-		// The engine dispatches on all three. A program claiming a combination it
-		// does not know is rejected there with a far less legible error.
 		expect(() =>
 			assertLocalIacProgram(documentProgram({ apiVersion: "v2" })),
 		).toThrow(/apiVersion must be/u);
@@ -85,8 +66,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses a program with no resources at all", () => {
-		// An empty program applies cleanly and creates nothing — a deploy that
-		// reports success and deploys nothing.
 		expect(() => assertLocalIacProgram(program({ resources: [] }))).toThrow(
 			/at least one resource/u,
 		);
@@ -96,8 +75,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses an unnamed resource", () => {
-		// Names are how references resolve and how the engine addresses state
-		// across applies. An unnamed resource cannot be updated on a second run.
 		expect(() =>
 			assertLocalIacProgram(
 				program({
@@ -116,8 +93,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses two resources sharing a name", () => {
-		// A duplicate makes every reference to that name ambiguous, and which one
-		// the engine binds to is not something a plan author should reason about.
 		const resource = {
 			name: "api",
 			type: "kubernetes:deployment",
@@ -141,7 +116,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses a reference to a resource or output that does not exist", () => {
-		// Both fail at apply time, after earlier resources have been created.
 		for (const value of [
 			"${resources.ghost.outputs.clusterIP}",
 			"${resources.api.outputs.nope}",
@@ -153,8 +127,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("refuses a malformed reference rather than deploying it as a literal", () => {
-		// Anything starting `${resources.` was meant to be a reference. Passing a
-		// typo through would set an environment variable to the literal text.
 		for (const value of [
 			"${resources.api.outputs}",
 			"${resources..outputs.x}",
@@ -175,8 +147,6 @@ describe("assertLocalIacProgram", () => {
 	});
 
 	it("checks references nested anywhere inside a resource's inputs", () => {
-		// Bind references live inside nested `bindings` arrays, so a top-level-only
-		// walk would miss the common case entirely.
 		expect(() =>
 			assertLocalIacProgram(
 				program({

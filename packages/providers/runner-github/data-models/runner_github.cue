@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the GitHub Actions execution-host wire records. One
-// constraint per protobuf message in runner_github.proto.
 
 #ExecutionHostCapability: {
 	port:      "hobo:runner" | "hobo:build-machine"

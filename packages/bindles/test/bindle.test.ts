@@ -110,7 +110,6 @@ describe("bindle()", () => {
 			option: "env",
 			config: { GREETING_PREFIX: "howdy", APP_TITLE: "howdy" },
 		});
-		// Every App Kit (api + web) carries default Session Replay (ADR-0137).
 		expect(definition.resources.api.annotations).toEqual([
 			{
 				provider: "hobo",
@@ -198,8 +197,6 @@ describe("bindle()", () => {
 	});
 
 	it("exposes a builder method for every catalog factory", () => {
-		// Catalog factory names are kebab-case; builder keys are camelCase
-		// (only "wasm-component" -> wasmComponent differs today).
 		const builderKeyFor = (factory: string): string =>
 			factory.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 		bindle("catalog-coverage", (b) => {
@@ -222,7 +219,6 @@ describe("bindle()", () => {
 		expect(definition.resources.nightly.kind).toBe("schedule");
 		expect(definition.resources.nightly.stableId).toBe("schedule:nightly");
 		expect(definition.resources.nightly.declaredAllow).toEqual([]);
-		// schedule is an infra kind — no default App Kit session-replay.
 		expect(definition.resources.nightly.annotations).toEqual([]);
 	});
 
@@ -283,11 +279,9 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 
 		const entry = definition.entrypoint("api");
 		expect(entry instanceof Function).toBe(true);
-		// The stored handler instantiates the component (DI registration).
 		// SAFETY: assertion required at this I/O or test boundary.
 		const instance = entry?.() as { instance: number };
 		expect(instance.instance).toBe(1);
-		// The manifest stays pure data — no component leakage.
 		expect(Object.keys(definition.resources.api).includes("handler")).toBe(
 			false,
 		);
@@ -310,7 +304,6 @@ describe("declared components (Plan 2 Syntax 0)", () => {
 			// SAFETY: assertion required at this I/O or test boundary.
 			api: b.api(NotAComponent as BindleEntrypoint),
 		}));
-		// Stored verbatim: calling it without `new` is the caller's concern.
 		expect(definition.entrypoint("api")).toBe(NotAComponent);
 	});
 

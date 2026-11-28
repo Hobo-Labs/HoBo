@@ -1,8 +1,3 @@
-/**
- * Pure event-store folds for Yard inventory, generation saga, and placement.
- * Rebuildable from zero — no in-memory mutation outside applying facts.
- */
-
 import { must } from "@hobo/core/total-access";
 import {
 	isJsonObject,
@@ -57,9 +52,6 @@ export interface YardPlacementDecisionRow {
 	readonly receiptHash?: ContentHash;
 }
 
-/**
- * Full yard event-store projection state (inventory + generation + placements).
- */
 export interface YardEventStoreState {
 	readonly brokerId: string;
 	readonly seq: number;
@@ -67,7 +59,6 @@ export interface YardEventStoreState {
 	readonly generationAttempts: Readonly<
 		Record<string, YardGenerationAttemptRow>
 	>;
-	/** Index idempotencyKey → attemptId for lease/dedup. */
 	readonly generationByIdempotency: Readonly<Record<string, string>>;
 	readonly placements: Readonly<Record<string, YardPlacementDecisionRow>>;
 	readonly lastMatchByRequest: Readonly<Record<string, YardMatchDecision>>;
@@ -87,10 +78,6 @@ export function emptyYardEventStoreState(
 	});
 }
 
-/**
- * Pure fold: apply one yard.* fact. Provider fold resolvers may pre-normalize
- * provider-native signals into yard.* events before calling this.
- */
 export function foldYardEventStore(
 	state: YardEventStoreState,
 	event: YardEvent,
@@ -220,7 +207,6 @@ export function foldYardEventStore(
 	if (type === YARD_EVENTS.Ready) {
 		const yardId = str(data.yardId);
 		const next = patchYardStatus(state, seq, yardId, "ready");
-		// Link generation attempt → ready yard
 		const attemptId = str(data.attemptId);
 		if (attemptId && next.generationAttempts[attemptId]) {
 			const attempt = must(
@@ -351,7 +337,6 @@ export function foldYardEventStore(
 		});
 	}
 
-	// ProviderSignalNormalized is informational; provider resolvers expand it first.
 	return withSeq(state, seq);
 }
 
@@ -366,7 +351,6 @@ export function foldYardEventStoreAll(
 	return state;
 }
 
-/** Project fold state → inventory snapshot (pinned hash). */
 export function inventorySnapshotFromFold(
 	state: YardEventStoreState,
 ): YardInventorySnapshot {
@@ -408,8 +392,6 @@ export function restoreYardEventStore(snapshot: string): YardEventStoreState {
 	return freezeState(parsed.state);
 }
 
-// ---- internals ----
-
 function foldGenerationLifecycle(
 	state: YardEventStoreState,
 	seq: number,
@@ -431,7 +413,6 @@ function upsertAttempt(
 	const idempotencyKey = str(data.idempotencyKey);
 	if (!attemptId) return withSeq(state, seq);
 
-	// Lease: if another attempt owns this idempotency key, keep the winner.
 	if (
 		idempotencyKey &&
 		state.generationByIdempotency[idempotencyKey] &&

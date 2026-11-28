@@ -82,7 +82,7 @@ backs ADR-0087 and gives docs, generators, and boundary lint one table to check.
 | Overlay, DNS managers, secretless connectors, isolation tiers, metering sinks, TrafficRouting adapters (cloudflare · vercel · lakebed · funnel · simple) | `@hobo/connectivity` | runtimes + operators | Multi-tenant connectivity foundations (ADR-0130/0143); hierarchical naming pure functions stay in `@hobo/core`. |
 | Jurisdiction catalog, region→jurisdiction map, `DataClassification`, `ResidencyConstraint`, `evaluateResidency` | `@hobo/core` | policy + gates + trails | ADR-0146 typed legal geography; fail-closed, feeds can-trail/can-migrate + the Gatekeeper `residency` gate. |
 | Generic offering resolution (`matchResourceOfferings`) + per-class vocabularies (traffic-routing, data-store) | `@hobo/core` | stations + providers | ADR-0143/0144 prefer/require negotiation + portable-fallback ladder shared across resource classes. |
-| Data-store catalog records (`parseDataStoreCatalogEntry`, `dataStoreProfileOf`) + self-host matcher (`assessSelfHostedDataStore`) | `@hobo/core` | stations + providers | Evidence-carrying provider profiles and a declaration-derived self-host verdict; see [`postgres-backend-catalog.md`](./postgres-backend-catalog.md). |
+| Data-store catalog records (`parseDataStoreCatalogEntry`, `dataStoreProfileOf`) + self-host matcher (`assessSelfHostedDataStore`) | `@hobo/core` | stations + providers | Evidence-carrying provider profiles and a declaration-derived self-host verdict; see [`postgres-backend-catalog.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/postgres-backend-catalog.md). |
 | PostgreSQL backend catalog (`POSTGRES_BACKEND_CATALOG`) + self-host read model (`selfHostedPostgresHosts`) | `@hobo/cloud-providers` | operators + policy | Cited vendor claims, dated; a leaf package so a refresh does not rebuild `@hobo/core` dependents. |
 | Residency policy pack (`eu-data-stays-in-eu`) + control→evidence packs (`hobo.control-evidence-pack/v1`) | `@hobo/policy` | operators + governance | ADR-0146; dependency-free rules over core-computed verdicts; coverage evaluator + honest NIST 800-53 seed. |
 | Convex deploy-target CloudProvider (typed impedance, cred-gated Management API) | `@hobo/provider-convex` | control plane | ADR-0144 thin SaaS adapter; see [live-provider-matrix](./live-provider-matrix.md). |
@@ -157,12 +157,9 @@ Current design examples align to this map:
 - `walkthrough.md` keeps operator SDK examples separate from app authoring
   imports.
 
-## Control-plane game UI (ADR-0150)
-
 | Package | Role |
 |---|---|
 | `@hobo/management` | Pure Station/Connection/broker projection ops shared by CLI, MCP, control API |
 | `@hobo/control-api` | Local-first HTTP + SSE adapter over management |
-| `@hobo/control-yard` | Phaser Yard game UI + asset index + OpenUI generative sheets (HoBo Rubberhose) |
 
 

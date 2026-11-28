@@ -9,21 +9,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(here, "..", "..");
 const workerPath = join(here, "store-worker.ts");
 
-/** A reply as the worker wrote it: `{ id, ok, value }` or `{ id, ok: false, code, failure, message }`. */
 export type WorkerReply = JsonObject;
 
 export type WorkerLease = Readonly<{ fence: string; expiresAt: string }>;
 
-/** Handle on a store running in a separate OS process. */
 export interface StoreProcess {
 	readonly pid: number | undefined;
 	send(op: string, args?: JsonObject): Promise<WorkerReply>;
-	/** Like `send`, but throws unless the reply is ok, and returns its value. */
 	call(op: string, args?: JsonObject): Promise<JsonValue>;
 	lease(op: "claim" | "renew", args: JsonObject): Promise<WorkerLease>;
 	strings(op: string, args?: JsonObject): Promise<readonly string[]>;
 	text(op: string, args?: JsonObject): Promise<string>;
-	/** SIGKILL: the process dies holding whatever it held. */
 	kill(): Promise<void>;
 	stop(): Promise<void>;
 }

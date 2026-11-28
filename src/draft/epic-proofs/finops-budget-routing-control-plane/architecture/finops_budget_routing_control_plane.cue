@@ -1,6 +1,5 @@
 package architecture_evidence
 
-// This schema uses protobuf JSON names, exactly as the parser receives them.
 #Money: number & >=0 & <=9007199254.740991
 #Nonempty: string & !=""
 #Version: =~"^v[0-9]+\\.[0-9]+\\.[0-9]+$"
@@ -124,8 +123,6 @@ package architecture_evidence
 }
 #FinopsBudgetRoutingControlPlane: #RoutingScenario
 
-// Named records retain the public contract family. The scenario parser is the
-// executable input boundary; output views additionally carry derived evidence.
 #CapabilityRequirements: {
 	availability: string
 	latencyP95Ms: number & >=0

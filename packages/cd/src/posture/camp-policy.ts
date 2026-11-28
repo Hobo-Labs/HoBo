@@ -1,19 +1,3 @@
-// CampPolicy (ADR-0182 D24, I23): which Rail governs a Camp. Bindings are
-// `policy.BindingChanged` facts on the Camp's spec stream `cd-camp-<id>`,
-// written by promotion only (subject RAIL), so one writer per Camp still
-// holds. The body is exactly the protobuf JSON of PolicyBindingRecord (the
-// spec fold in ./sets decodes it); the command that wrote it (`bind` or
-// `restore`) and its mode travel in event meta.
-//
-//   INFORM   candidate := Rail digest; the enforced Rail still decides.
-//   ENFORCE  enforced  := Rail digest; candidate cleared. Requires a
-//            qualification on an INFORM pipeline node, or an unexpired
-//            approval for the Camp (I23), read from the journal.
-//   restore  enforced  := the digest enforced before that promotion's bind;
-//            candidate cleared. Refused when a later bind superseded it.
-//
-// A Camp with no binding resolves to its Station's active Rail
-// (`governingRailDigest`), so existing behaviour is unchanged.
 import { create } from "@bufbuild/protobuf";
 import type { EventEnvelope, JsonObject } from "@hobo/core";
 import {
@@ -54,7 +38,6 @@ import { POSTURE_METRIC, POSTURE_REASON } from "./reasons.js";
 
 export type CampPolicyDeps = CdBase & {
 	readonly authorizer: CdAuthorizer;
-	/** Optional: binding metrics. The frozen factory signature does not carry it. */
 	readonly telemetry?: TelemetrySink;
 };
 
@@ -72,7 +55,6 @@ function modeName(mode: PolicyMode): "INFORM" | "ENFORCE" | undefined {
 	return undefined;
 }
 
-/** The Rail digest that decides for a Camp: its enforced binding, else the Station's active Rail. */
 export function governingRailDigest(
 	binding: PolicyBindingRecord | undefined,
 	stationRailDigest: Digest | undefined,
@@ -110,7 +92,6 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 		return { entries };
 	}
 
-	/** Pipeline nodes by `pipeline/node`, from the latest `pipeline.Applied` of each pipeline read. */
 	async function nodeMode(
 		pipeline: string,
 		node: string,
@@ -125,7 +106,6 @@ export function createCampPolicy(d: CampPolicyDeps): CampPolicy {
 		return mode;
 	}
 
-	/** I23: a qualification on an INFORM node, or an unexpired approval for this Camp. */
 	async function shadowSatisfied(
 		freightId: FreightId,
 		campId: CampId,

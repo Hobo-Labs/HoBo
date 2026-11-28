@@ -22,8 +22,6 @@ describe("hobo connection command", () => {
 				alias: "work",
 				scopes: "tasks:read,tasks:write",
 				home: hoboHome,
-				// Station context is mandatory since Station occupancy (ADR-0131);
-				// production gets it from `hobo station init` → profile.defaultStation.
 				station: "test-station",
 			},
 			args: ["create", "asana"],

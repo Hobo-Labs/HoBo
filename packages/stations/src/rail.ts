@@ -1,7 +1,3 @@
-/**
- * Rails: Station-owned, content-addressed policy profiles (ADR Station occupancy).
- */
-
 import { createHash } from "node:crypto";
 import {
 	cloneAsJson,
@@ -20,7 +16,6 @@ import {
 	type RailDeliveryPolicy,
 } from "./types.js";
 
-/** Pre-WP16 wire shape of the delivery policy. Deprecated; mapped on parse. */
 export type LegacyRailDeliveryPolicy = Readonly<{
 	engine: "argo" | "in-proc";
 	syncMode: "auto" | "manual";
@@ -32,15 +27,6 @@ export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
 
 const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 
-/**
- * Parse a delivery policy into its neutral form (ADR-0182 D14).
- *
- * - A neutral policy (`reconcilerMode`) is kept; `publisher` is required in
- *   `publisher` mode and refused elsewhere.
- * - A legacy policy (`engine`) is mapped: `argo` becomes the `argo-cd`
- *   GitOps publisher, `in-proc` the in-process conductor. Any legacy
- *   destination fields are never read.
- */
 export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 	const json = cloneAsJson(value);
 	if (!isJsonObject(json)) {
@@ -89,7 +75,6 @@ export function neutralRailDeliveryPolicy<T>(value: T): RailDeliveryPolicy {
 	});
 }
 
-/** Parse the opaque Rail `delivery` object: any JSON object, kept verbatim. */
 function parseRailDelivery(
 	value: JsonValue | undefined,
 ): RailDeliveryObject | undefined {
@@ -215,7 +200,6 @@ export function createRail(input: {
 	readonly placementDefaults?: Rail["placementDefaults"];
 	readonly billingPolicy?: Rail["billingPolicy"];
 	readonly deliveryPolicy?: RailDeliveryPolicy | LegacyRailDeliveryPolicy;
-	/** Opaque delivery object (D20); hashed into the content digest. */
 	readonly delivery?: RailDeliveryObject;
 	readonly requiredConnectorKinds?: readonly string[];
 	readonly catalogSnapshotPin?: string;
@@ -279,7 +263,6 @@ export function createRail(input: {
 		...(input.catalogSnapshotPin !== undefined
 			? { catalogSnapshotPin: input.catalogSnapshotPin }
 			: undefined),
-		// Present only when set, so a Rail without it keeps its canonical body.
 		...(delivery !== undefined ? { delivery } : undefined),
 	};
 	const contentHash = railContentHash(body);
@@ -291,10 +274,6 @@ export function createRail(input: {
 	});
 }
 
-/**
- * Sealed bootstrap Rail: local catalog only, hard least-privilege.
- * Production posture should detect if left active (doctor + policy).
- */
 export function createBootstrapRail(stationId: string, now?: string): Rail {
 	return createRail({
 		id: "rail-bootstrap",
@@ -305,7 +284,6 @@ export function createBootstrapRail(stationId: string, now?: string): Rail {
 		activationStatus: "active",
 		policyPacks: Object.freeze([
 			"hobo.bootstrap.least-privilege/v1",
-			// Soft floor always available; Station may also pin env isolation pack.
 			"hobo.env-network-isolation/v1",
 		]),
 		policyEngine: { kind: "ts" },
@@ -328,7 +306,6 @@ export function createBootstrapRail(stationId: string, now?: string): Rail {
 	});
 }
 
-/** Import former hobo.broker.json policy document as a Rail body under a Station. */
 export function railFromBrokerConfig(
 	stationId: string,
 	brokerConfig: JsonObject,
@@ -368,8 +345,6 @@ export function railFromBrokerConfig(
 			budgetUsd: isJsonNumber(billing.budgetUsd) ? billing.budgetUsd : 0,
 			spendCapUsd: isJsonNumber(billing.spendCapUsd) ? billing.spendCapUsd : 0,
 		},
-		// Legacy `argo` maps to the argo-cd publisher; the destination
-		// namespace is deprecated and never read (D14).
 		deliveryPolicy: neutralRailDeliveryPolicy({
 			engine: delivery.engine === "argo" ? "argo" : "in-proc",
 			syncMode: delivery.syncMode === "manual" ? "manual" : "auto",

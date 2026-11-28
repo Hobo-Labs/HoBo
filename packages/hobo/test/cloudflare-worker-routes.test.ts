@@ -2,11 +2,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-// Exercises the committed hello-bindle Cloudflare Worker module's OWN route logic
-// (no network, no Cloudflare) by importing its ESM default export and driving its
-// `fetch` handler with WHATWG Request/Response (available in Node 22). This proves
-// the worker reproduces the bindle contract locally, independent of any deploy.
-
 const WORKER_URL = new URL(
 	join(
 		dirname(fileURLToPath(import.meta.url)),

@@ -1,6 +1,5 @@
 package stations
 
-// Protobuf JSON uses lowerCamelCase. Default-valued fields may be absent.
 #RoutingControlStateRecord: {
  service: string & !=""
  tenantId: string & !=""

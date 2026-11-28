@@ -1,8 +1,3 @@
-/**
- * `@hobo/provider-oci-registry`: a generic OCI distribution registry realizer
- * (GHCR, Docker Hub, ECR, Artifact Registry, Harbor, Zot) on the core
- * `ResourceResolver` port. See `resolver.ts` for the convergence contract.
- */
 
 export {
 	createLatin1FetchTransport,

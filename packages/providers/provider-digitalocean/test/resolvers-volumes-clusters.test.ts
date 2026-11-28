@@ -115,8 +115,6 @@ function request(input: {
 }): ResolveRequest {
 	return parseResolveRequest({
 		ref: {
-			// `data` is the closest slot in the core vocabulary for a volume and a
-			// cluster substrate; the slot names the capability, not the product.
 			slot: "data",
 			productId: input.productId,
 			logicalId: input.logicalId,
@@ -138,11 +136,6 @@ async function failureOf(
 	throw new Error("expected a refusal, but the call succeeded");
 }
 
-// ---------------------------------------------------------------------------
-// Block Storage
-// ---------------------------------------------------------------------------
-
-/** A DigitalOcean team's volume collection, keyed by server-assigned id. */
 function volumeApi(initial: Rec[] = []) {
 	let volumes = [...initial];
 	let nextId = 900 + initial.length;
@@ -213,9 +206,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("creates once and adopts thereafter", async () => {
-		// The convergence property the whole package exists to have: a crashed
-		// half-apply is safe to re-run, not something an operator reconciles by
-		// hand.
 		const fake = fakeTransport(volumeApi());
 		const resolver = resolverFor(DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID);
 		const first = await resolver.reconcile(
@@ -240,7 +230,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("refuses to invent a size, because a volume is billed by the gigabyte", async () => {
-		// A default size is a recurring charge nobody asked for.
 		const fake = fakeTransport(volumeApi());
 		const failure = await failureOf(() =>
 			resolverFor(DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID).reconcile(
@@ -254,7 +243,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("says what to set when it refuses a missing size", async () => {
-		// A refusal an operator cannot act on is only half a refusal.
 		const failure = await failureOf(() =>
 			resolverFor(DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID).reconcile(
 				request({ ...volumeRequest, desired: { region: "nyc3" } }),
@@ -287,7 +275,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("omits the filesystem type when none was asked for", async () => {
-		// Formatting a volume nobody asked to have formatted is not a default.
 		const fake = fakeTransport(volumeApi());
 		await resolverFor(DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID).reconcile(
 			request(volumeRequest),
@@ -328,7 +315,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("says a resize is accepted, not applied", async () => {
-		// DigitalOcean applies it asynchronously and this resolver does not poll.
 		const fake = fakeTransport(volumeApi([volume()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID,
@@ -343,8 +329,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("warns that the guest filesystem still needs extending", async () => {
-		// A grown block device with an unchanged filesystem is a disk that is
-		// still full — the single most common way a resize looks like it failed.
 		const fake = fakeTransport(volumeApi([volume()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID,
@@ -373,7 +357,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("reports a shrink rather than replacing the volume", async () => {
-		// The only way to "converge" a shrink is to destroy the data on it.
 		const fake = fakeTransport(volumeApi([volume({ size_gigabytes: 100 })]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID,
@@ -415,8 +398,6 @@ describe("block storage volumes", () => {
 	});
 
 	it("adopts a volume when the request names no size at all", async () => {
-		// An existing volume with no stated size is adopted as-is, not resized to
-		// a number nobody wrote down.
 		const fake = fakeTransport(volumeApi([volume()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID,
@@ -459,7 +440,6 @@ describe("block storage volumes", () => {
 
 	// SAFETY: fixture/test or I/O boundary value is the named domain type after this assertion.
 	it("treats an already-absent volume as deleted", async () => {
-		// Re-running a teardown must not fail on the resource it already removed.
 		const fake = fakeTransport(volumeApi());
 		await expect(
 			resolverFor(DIGITALOCEAN_BLOCK_STORAGE_PRODUCT_ID).delete?.(
@@ -470,10 +450,6 @@ describe("block storage volumes", () => {
 		expect(fake.calls.some((c) => c.method === "DELETE")).toBe(false);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// DOKS clusters
-// ---------------------------------------------------------------------------
 
 function clusterApi(initial: Rec[] = []) {
 	let clusters = [...initial];
@@ -517,9 +493,6 @@ const cluster = (overrides: Rec = {}) => ({
 	...overrides,
 });
 
-// A cluster names its own version and node size: this resolver invents
-// neither, because a cluster billed at a plan nobody asked for is a cost
-// incident and a version nobody chose is an upgrade nobody scheduled.
 const clusterRequest = {
 	productId: DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
 	logicalId: "apps-1",
@@ -551,8 +524,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("creates exactly one node pool, named after the cluster", async () => {
-		// An unnamed pool is one nobody can find in the console, and two pools
-		// from one reconcile is double the bill.
 		const fake = fakeTransport(clusterApi());
 		await resolverFor(DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID).reconcile(
 			request(clusterRequest),
@@ -565,8 +536,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("defaults the node count to one rather than to a fleet", async () => {
-		// Every node is billed. If a default has to exist, it is the smallest
-		// one that produces a working cluster.
 		const fake = fakeTransport(clusterApi());
 		await resolverFor(DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID).reconcile(
 			request(clusterRequest),
@@ -590,8 +559,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("enables autoscaling only when asked", async () => {
-		// Autoscaling changes what the cluster can cost without further input,
-		// so an absent flag must not turn it on.
 		const fake = fakeTransport(clusterApi());
 		await resolverFor(DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID).reconcile(
 			request(clusterRequest),
@@ -645,8 +612,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("refuses to invent a Kubernetes version", async () => {
-		// A version nobody chose is an upgrade nobody scheduled — and the version
-		// a cluster is created at decides what it can be upgraded to later.
 		const failure = await failureOf(() =>
 			resolverFor(DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID).reconcile(
 				request({ ...clusterRequest, desired: { region: "nyc3" } }),
@@ -658,7 +623,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("refuses to invent a node size", async () => {
-		// Every node in the pool is billed at this plan.
 		const failure = await failureOf(() =>
 			resolverFor(DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID).reconcile(
 				request({
@@ -682,8 +646,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("says a fresh cluster is accepted, not confirmed", async () => {
-		// DigitalOcean provisions asynchronously; reporting "ready" here would be
-		// a lie the next step trips over.
 		const fake = fakeTransport(clusterApi());
 		const outcome = await resolverFor(
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
@@ -700,8 +662,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("reports the apiserver endpoint, which is the handoff to the workload resolver", async () => {
-		// This resolver allocates the substrate only; the endpoint is how
-		// @hobo/provider-kubernetes reaches it.
 		const fake = fakeTransport(clusterApi([cluster()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
@@ -725,8 +685,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("reports a version drift rather than upgrading every node", async () => {
-		// An upgrade restarts the whole cluster. That is a human's decision, made
-		// at a time they chose.
 		const fake = fakeTransport(clusterApi([cluster()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
@@ -757,7 +715,6 @@ describe("DOKS clusters", () => {
 
 	it("reports a region drift rather than replacing the cluster", async () => {
 		// A cluster's region is immutable; "converging" it means destroying one
-		// cluster and everything running on it.
 		const fake = fakeTransport(clusterApi([cluster({ region: "sfo3" })]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,
@@ -780,8 +737,6 @@ describe("DOKS clusters", () => {
 	});
 
 	it("stays quiet when the request names no version or region to compare", async () => {
-		// Absent is not drift; reporting it would make every minimal manifest
-		// noisy.
 		const fake = fakeTransport(clusterApi([cluster()]));
 		const outcome = await resolverFor(
 			DIGITALOCEAN_KUBERNETES_CLUSTER_PRODUCT_ID,

@@ -1,6 +1,3 @@
-// CampInventory conformance (ADR-0182 D19, I19). Status is merged from named
-// sources; agents report facts but can never make a Camp a failover
-// candidate; contradictions and silence taint NO_PLACE automatically.
 import {
 	type CdConformanceReport,
 	type CdSuiteOptions,
@@ -53,7 +50,6 @@ export type InventorySnapshotLike = Readonly<{
 	}>[];
 }>;
 
-/** Structural view of CampInventory over harness-built records. */
 export interface CampInventoryLike<TCondition, TClaim, TTaint, TCtx> {
 	status(campId: string): Promise<CampStatusLike | undefined>;
 	observe(
@@ -79,17 +75,13 @@ export interface CampInventoryLike<TCondition, TClaim, TTaint, TCtx> {
 
 export interface CampInventoryWorld<TCondition, TClaim, TTaint, TCtx> {
 	inventory: CampInventoryLike<TCondition, TClaim, TTaint, TCtx>;
-	/** Advance the injected clock. */
 	advance(ms: number): void;
-	/** Record Station-observed lease activity (contact) for a Camp. */
 	contact(campId: string): Promise<void>;
-	/** The Camp set holding every scenario Camp. */
 	readonly campSet: string;
 }
 
 export interface CampInventoryHarness<TCondition, TClaim, TTaint, TCtx> {
 	readonly subject: string;
-	/** Fresh world with `camps` registered in the given order. */
 	create(
 		camps: readonly ScenarioCamp[],
 	): Promise<CampInventoryWorld<TCondition, TClaim, TTaint, TCtx>>;
@@ -101,9 +93,7 @@ export interface CampInventoryHarness<TCondition, TClaim, TTaint, TCtx> {
 	): TCondition;
 	claim(name: string, value: string, reportedBy: string): TClaim;
 	taint(key: string, effect: number, source: number, reason: string): TTaint;
-	/** Context for an operator principal and for an agent principal. */
 	ctx(principal: "operator" | "agent"): TCtx;
-	/** Silence after which a Camp is not REACHABLE (CD_DEFAULTS: 90 s). */
 	readonly unreachableAfterMs: number;
 }
 

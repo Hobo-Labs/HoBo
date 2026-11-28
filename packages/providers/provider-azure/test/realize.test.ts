@@ -76,8 +76,6 @@ describe("realize: ResourcePlan -> pulumi IacProgram", () => {
 			}),
 			[
 				// biome-ignore-start lint/suspicious/noTemplateCurlyInString: these are
-				// the IaC program's own output-reference tokens, asserted verbatim. A
-				// template literal would interpolate them and assert the wrong thing.
 				"${resources.sessions.outputs.binding}",
 				"${resources.assets.outputs.binding}",
 				// biome-ignore-end lint/suspicious/noTemplateCurlyInString: see above

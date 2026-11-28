@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { CORE_SCHEMA_VERSION, ManifestParseError, parseCapabilityManifestBundle } from "../src/index.js";
 import { type JsonObject } from "../src/json.js";
 
-
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
 function validManifestBundle() {
