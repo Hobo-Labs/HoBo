@@ -18,12 +18,6 @@ export interface OwnerChannel {
 	}): Promise<string | undefined>;
 	/** Whether a value the owner handed over is waiting, without taking it. */
 	holds(name: string): boolean;
-	/**
-	 * Ask the owner to pick one of a few named options, in one form. The
-	 * option they chose; `null` when they declined or closed the form;
-	 * `undefined` when this host shows no form (the caller refuses instead).
-	 * Options are names the owner recognizes, never ids or settings.
-	 */
 	choose?(request: {
 		readonly message: string;
 		readonly title: string;

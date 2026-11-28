@@ -614,15 +614,17 @@ describe("SPEC R9: HoBo resolves its own project and environment", () => {
 		expect(api.calls.some((c) => c.method === "POST")).toBe(false);
 	});
 
+	const billingProjectId = "00000000-0000-4000-8000-000000000001";
+	const paymentsProjectId = "00000000-0000-4000-8000-000000000002";
 	const ambiguous = () =>
 		fakeInfisical([
 			{
 				...secretsProject("proj-a", "billing"),
-				id: "1f0c2a4e-1111-4a6b-9c3d-0e8f7a6b5c4d",
+				id: billingProjectId,
 			},
 			{
 				...secretsProject("proj-b", "payments"),
-				id: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+				id: paymentsProjectId,
 			},
 		]);
 	const choosing = (answer: string | null | undefined) => {
@@ -658,7 +660,7 @@ describe("SPEC R9: HoBo resolves its own project and environment", () => {
 		});
 		expect(result).toMatchObject({
 			kind: "ready",
-			projectId: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+			projectId: paymentsProjectId,
 		});
 		expect(owner.asked).toEqual([
 			expect.objectContaining({
@@ -666,7 +668,10 @@ describe("SPEC R9: HoBo resolves its own project and environment", () => {
 				options: ["billing", "payments"],
 			}),
 		]);
-		expect(JSON.stringify(owner.asked)).not.toMatch(/1f0c2a4e|2f0c2a4e|proj-/u);
+		const asked = JSON.stringify(owner.asked);
+		expect(asked).not.toContain(billingProjectId);
+		expect(asked).not.toContain(paymentsProjectId);
+		expect(asked).not.toMatch(/proj-/u);
 	});
 
 	it("refuses as before when the owner declines the choice or the host shows no form", async () => {
@@ -691,11 +696,11 @@ describe("SPEC R9: HoBo resolves its own project and environment", () => {
 				fakeInfisical([
 					{
 						...secretsProject("proj-a", "billing"),
-						id: "1f0c2a4e-1111-4a6b-9c3d-0e8f7a6b5c4d",
+						id: billingProjectId,
 					},
 					{
 						...secretsProject("proj-b", "billing"),
-						id: "2f0c2a4e-2222-4a6b-9c3d-0e8f7a6b5c4d",
+						id: paymentsProjectId,
 					},
 				]),
 			),

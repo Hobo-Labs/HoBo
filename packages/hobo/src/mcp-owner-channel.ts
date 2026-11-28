@@ -31,7 +31,6 @@ const Accepted = z.object({
 	content: z.object({ done: z.literal(true) }).loose(),
 });
 
-/** A choice the owner submitted: the option they picked. */
 const Chosen = z.object({
 	action: z.literal("accept"),
 	content: z.object({ choice: z.string() }).loose(),
