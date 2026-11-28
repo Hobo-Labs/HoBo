@@ -235,3 +235,7 @@ The bounded `QueueRedrive` model checks one-effect replay, live-lease and
 receipt fencing, and stale compare-and-swap. Mutations independently test the
 lease, receipt and revision guards. It abstracts provider storage and
 does not prove the queue implementation or external host authorization.
+
+The bounded `QueueInspection` model checks disclosure against revocation and a
+changed revision between reads. It assumes a truthful linearizable store and
+does not prove the implementation, payload content or later authorization.

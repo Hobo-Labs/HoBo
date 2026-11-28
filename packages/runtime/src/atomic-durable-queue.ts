@@ -92,9 +92,28 @@ export type AtomicQueueReclamationOutcome =
 	  }
 	| { readonly status: "empty" }
 	| { readonly status: "unknown" };
+export type AtomicQueueExhaustedSnapshot =
+	| {
+			readonly status: "available";
+			readonly revision: number;
+			readonly observedAtMs: number;
+			readonly messages: readonly {
+				readonly messageId: string;
+				readonly idempotencyKey: string;
+				readonly body: Uint8Array;
+				readonly attributes: readonly {
+					readonly key: string;
+					readonly value: string;
+				}[];
+				readonly deliveryAttempts: number;
+			}[];
+			readonly more: boolean;
+	  }
+	| { readonly status: "unknown" };
 export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
 	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
+	inspectExhausted(): Promise<AtomicQueueExhaustedSnapshot>;
 	redriveExhausted(input: {
 		readonly operation: DurableQueueOperation;
 		readonly messageId: string;
@@ -135,6 +154,7 @@ export function inspectAtomicDurableQueue(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */
 const NativePromise = Promise;
+const InspectionBytes = Uint8Array;
 const setPrototype = Object.setPrototypeOf;
 const freeze = Object.freeze;
 const isSafe = Number.isSafeInteger;
@@ -403,6 +423,75 @@ export function createAtomicDurableQueue(
 				: result;
 		},
 		reclaimCompleted: () => checkpoint(true),
+		async inspectExhausted() {
+			try {
+				const loaded = await readState();
+				if (!loaded) return outcome({ status: "unknown" as const });
+				const observedAtMs = now();
+				if (!isSafe(observedAtMs) || observedAtMs < loaded.last)
+					return outcome({ status: "unknown" as const });
+				const messages: {
+					messageId: string;
+					idempotencyKey: string;
+					body: Uint8Array;
+					attributes: { key: string; value: string }[];
+					deliveryAttempts: number;
+				}[] = [];
+				let more = false;
+				for (let index = 0; index < loaded.state.messages.length; index++) {
+					const message = loaded.state.messages[index];
+					if (!message) return outcome({ status: "unknown" as const });
+					if (
+						message.completed ||
+						message.deliveryAttempt < limits.deliveryAttempts ||
+						(message.leaseId !== null &&
+							message.leaseExpiresAtMs > observedAtMs)
+					)
+						continue;
+					if (messages.length >= limits.batchSize) {
+						more = true;
+						break;
+					}
+					const attributes: { key: string; value: string }[] = [];
+					for (
+						let attributeIndex = 0;
+						attributeIndex < message.attributes.length;
+						attributeIndex++
+					) {
+						const attribute = message.attributes[attributeIndex];
+						if (!attribute) return outcome({ status: "unknown" as const });
+						attributes[attributes.length] = {
+							key: attribute.key,
+							value: attribute.value,
+						};
+					}
+					messages[messages.length] = {
+						messageId: message.messageId,
+						idempotencyKey: message.idempotencyKey,
+						body: new InspectionBytes(message.body),
+						attributes,
+						deliveryAttempts: message.deliveryAttempt,
+					};
+				}
+				const verified = await load();
+				if (
+					loaded.revision === 0
+						? verified.status !== "missing"
+						: verified.status !== "available" ||
+							verified.revision !== loaded.revision
+				)
+					return outcome({ status: "unknown" as const });
+				return outcome({
+					status: "available" as const,
+					revision: loaded.revision,
+					observedAtMs,
+					messages,
+					more,
+				});
+			} catch {
+				return outcome({ status: "unknown" as const });
+			}
+		},
 		redriveExhausted(input) {
 			return begin(() => {
 				const request = parseQueueRedrive(input, limits);
