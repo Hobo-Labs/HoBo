@@ -466,7 +466,7 @@ describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 	});
