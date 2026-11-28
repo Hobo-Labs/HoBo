@@ -1,5 +1,5 @@
 import { AuthExpiredError, type Item, ItemCategory } from "@1password/sdk";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
 	onePasswordVaultScope,
@@ -26,6 +26,17 @@ const TOKEN = ONE_PASSWORD_TEST_TOKEN;
 const TOOLS = "/home/owner/.local/share/hobo/tools";
 const VAULT = "abcdefghijklmnopqrstuvwxyz";
 const OP = `${TOOLS}/bin/op`;
+const PROXY = "http://127.0.0.1:1";
+const CA_BUNDLE = "/fixture/egress-ca.pem";
+const EGRESS_VARIABLES = [
+	"HTTPS_PROXY",
+	"https_proxy",
+	"ALL_PROXY",
+	"all_proxy",
+	"NODE_EXTRA_CA_CERTS",
+	"SSL_CERT_FILE",
+	"REQUESTS_CA_BUNDLE",
+] as const;
 
 function fakeMachine(options: { opOnPath?: boolean; signedIn?: boolean }) {
 	const ran: string[] = [];
@@ -104,13 +115,15 @@ function validationSdk() {
 			},
 		},
 	};
+	const createClient = vi.fn(async () => client);
 	return {
 		calls,
 		client,
+		createClient,
 		sdk: {
 			AuthExpiredError,
 			ItemCategory,
-			createClient: async () => client,
+			createClient,
 		},
 	};
 }
@@ -165,6 +178,11 @@ describe("SPEC R3 + R5: an existing session is used; otherwise one sign-in", () 
 });
 
 describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
+	beforeEach(() => {
+		for (const variable of EGRESS_VARIABLES) vi.stubEnv(variable, "");
+	});
+	afterEach(() => vi.unstubAllEnvs());
+
 	it("creates a short-lived service account for the one vault, read and write", async () => {
 		const machine = fakeMachine({ opOnPath: true, signedIn: true });
 		const result = await provisionOnePasswordAccess(base(machine));
@@ -217,32 +235,61 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 	});
 
 	it.each([
-		["HTTPS_PROXY", "http://127.0.0.1:1"],
-		["SSL_CERT_FILE", "/fixture/egress-ca.pem"],
-	])("attempts SDK attestation with required egress through %s", async (name, value) => {
-		for (const variable of [
-			"HTTPS_PROXY",
-			"https_proxy",
-			"ALL_PROXY",
-			"all_proxy",
-			"NODE_EXTRA_CA_CERTS",
-			"SSL_CERT_FILE",
-			"REQUESTS_CA_BUNDLE",
-		])
-			vi.stubEnv(variable, "");
+		["HTTPS_PROXY", PROXY],
+		["https_proxy", PROXY],
+		["ALL_PROXY", PROXY],
+		["all_proxy", PROXY],
+		["NODE_EXTRA_CA_CERTS", CA_BUNDLE],
+		["SSL_CERT_FILE", CA_BUNDLE],
+		["REQUESTS_CA_BUNDLE", CA_BUNDLE],
+	])("does not authenticate with required egress through %s", async (name, value) => {
 		vi.stubEnv(name, value);
 		const token = parseOnePasswordServiceAccountToken(TOKEN);
 		if (token === undefined) throw new Error("Invalid fixture token.");
 		const fixture = validationSdk();
-		try {
-			await expect(
-				validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
-			).resolves.toBe(true);
-			expect(process.env[name]).toBe(value);
-			expect(fixture.calls).toEqual(["read", "create", "update", "delete"]);
-		} finally {
-			vi.unstubAllEnvs();
-		}
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
+		).resolves.toBe("unverifiable");
+		expect(fixture.createClient).not.toHaveBeenCalled();
+		expect(fixture.calls).toEqual([]);
+	});
+
+	it.each([
+		["HTTPS_PROXY", PROXY],
+		["SSL_CERT_FILE", CA_BUNDLE],
+	])("imports the SDK to attest only without required egress through %s", async (name, value) => {
+		const token = parseOnePasswordServiceAccountToken(TOKEN);
+		if (token === undefined) throw new Error("Invalid fixture token.");
+		const fixture = validationSdk();
+		const loadSdk = vi.fn(async () => fixture.sdk);
+		vi.stubEnv(name, value);
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, undefined, loadSdk),
+		).resolves.toBe("unverifiable");
+		expect(loadSdk).not.toHaveBeenCalled();
+		expect(fixture.createClient).not.toHaveBeenCalled();
+
+		vi.stubEnv(name, "");
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, undefined, loadSdk),
+		).resolves.toBe(true);
+		expect(loadSdk).toHaveBeenCalledOnce();
+		expect(fixture.createClient).toHaveBeenCalledOnce();
+		expect(fixture.calls).toEqual(["read", "create", "update", "delete"]);
+	});
+
+	it("refuses validation and removes the probe note when the attestation write fails", async () => {
+		const token = parseOnePasswordServiceAccountToken(TOKEN);
+		if (token === undefined) throw new Error("Invalid fixture token.");
+		const fixture = validationSdk();
+		fixture.client.items.put = async () => {
+			fixture.calls.push("update");
+			throw new Error("write refused");
+		};
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
+		).resolves.toBe("unverifiable");
+		expect(fixture.calls).toEqual(["read", "create", "update", "delete"]);
 	});
 
 	it("refuses validation when attestation cleanup fails", async () => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Client } from "@1password/sdk";
 import { z } from "zod";
 
+import { egressFrom } from "./egress.js";
 import {
 	captureAll,
 	type OwnerChannel,
@@ -182,10 +183,15 @@ export const validateOnePasswordServiceAccount = async (
 	token: OnePasswordServiceAccountToken,
 	vaultId: string,
 	sdk?: OnePasswordValidationSdk,
+	loadSdk: () => Promise<OnePasswordValidationSdk> = () =>
+		import("@1password/sdk"),
 ): Promise<OnePasswordServiceAccountVerdict> => {
 	let activeSdk = sdk;
 	try {
-		activeSdk ??= await import("@1password/sdk");
+		const egress = egressFrom(process.env);
+		if (egress.proxy !== undefined || egress.caFile !== undefined)
+			return "unverifiable";
+		activeSdk ??= await loadSdk();
 		const client = await activeSdk.createClient({
 			auth: token,
 			integrationName: "HoBo",
@@ -199,16 +205,15 @@ export const validateOnePasswordServiceAccount = async (
 			title: `HoBo access attestation ${randomUUID()}`,
 			category: activeSdk.ItemCategory.SecureNote,
 		});
-		try {
-			await client.items.put(probe);
-		} catch {
-			return "unverifiable";
-		}
-		try {
-			await client.items.delete(vaultId, probe.id);
-		} catch {
-			return "unverifiable";
-		}
+		const writable = await client.items.put(probe).then(
+			() => true,
+			() => false,
+		);
+		const removed = await client.items.delete(vaultId, probe.id).then(
+			() => true,
+			() => false,
+		);
+		if (!writable || !removed) return "unverifiable";
 		return true;
 	} catch (error) {
 		if (activeSdk === undefined) return "unverifiable";
