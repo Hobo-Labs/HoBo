@@ -11,6 +11,7 @@ on:
     paths:
       - "version.json"
       - "deploy/release-images/**"
+      - "packages/providers/provider-oci-registry/**"
       - "release/**"
       - "release/mise.toml"
       - "release/mise.lock"
@@ -81,6 +82,7 @@ on:
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
+      - "scripts/test/load-release-oci-layout.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
@@ -102,6 +104,7 @@ on:
     types: [checks_requested]
     paths:
       - "deploy/release-images/**"
+      - "packages/providers/provider-oci-registry/**"
       - "release/**"
       - "release/mise.toml"
       - "release/mise.lock"
@@ -172,6 +175,7 @@ on:
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
+      - "scripts/test/load-release-oci-layout.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
@@ -248,6 +252,7 @@ env:
     release
     external
     examples
+    src
     media
     tools/pins
     .mise/locks
@@ -611,6 +616,7 @@ jobs:
       HOBO_TURBO_CONCURRENCY: "1"
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -629,6 +635,11 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/ci-deps-recovery
+        continue-on-error: true
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          verify-sibling-links: "true"
       - name: Link Pages deps layer
         id: pages-deps-layer
         run: |
@@ -1060,7 +1071,7 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
+        image_id: [hobo-sdk, hobo-codegen, hobo-ci-serve, hobo-site]
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1078,18 +1089,11 @@ jobs:
           submodules: "false"
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: $/.github/actions/pnpm-store
-      - name: Link deps layer or install
-        run: |
-          set -euo pipefail
-          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
-            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
-            echo "reusing the runner's deps layer; skip pnpm install"
-          else
-            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-          fi
+      - uses: $/.github/actions/ci-deps-recovery
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1097,18 +1101,6 @@ jobs:
           HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}
           HOBO_CI_WORKER_PULL_BUDGET_SEC: "540"
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
-      - name: Build hobo-sdk before CLI/MCP
-        if: matrix.image_id == 'hobo-cli' || matrix.image_id == 'hobo-mcp'
-        env:
-          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
-          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts hobo-sdk --keep-candidate
-      - name: Build hobo-cli before MCP
-        if: matrix.image_id == 'hobo-mcp'
-        env:
-          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
-          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
-        run: node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
       - name: Build and verify release image
         env:
           HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
@@ -1124,6 +1116,189 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-release-oci-layout-${{ matrix.image_id }}
+          path: ${{ runner.temp }}/hobo-release-oci-layout
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  release-oci-build-cli:
+    name: Build all OCI images on tag (gate publish) (hobo-cli)
+    if: >-
+      !cancelled() &&
+      needs.route.result == 'success' &&
+      needs.release-main-train-gate.result == 'success' &&
+      needs.release-toolchain-image.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        startsWith(github.ref, 'refs/tags/sdk-v') ||
+        startsWith(github.ref, 'refs/tags/cli-v') ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      ) &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        needs.release-contract.result == 'success'
+      )
+    needs: [route, release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-hobo-cli
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-hobo-cli-${{ github.run_attempt }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 30
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 0
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/ci-deps-recovery
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 13
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}
+          HOBO_CI_WORKER_PULL_BUDGET_SEC: "540"
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Download verified hobo-sdk OCI layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-oci-layout-hobo-sdk
+          path: ${{ runner.temp }}/hobo-release-oci-layout-hobo-sdk
+      - name: Load hobo-sdk candidate from the verified layout
+        env:
+          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: node --no-warnings scripts/ci/load-release-oci-layout.mts hobo-sdk "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-sdk"
+      - name: Build and verify release image
+        env:
+          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: |
+          set -euo pipefail
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --keep-candidate
+          HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-cli \
+            pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+          node --no-warnings scripts/ci/release-oci-handoff.mts hobo-cli "${RUNNER_TEMP}/hobo-release-oci-layout"
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-cli --cleanup-only
+      - name: Upload verified OCI layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hobo-release-oci-layout-hobo-cli
+          path: ${{ runner.temp }}/hobo-release-oci-layout
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  release-oci-build-mcp:
+    name: Build all OCI images on tag (gate publish) (hobo-mcp)
+    if: >-
+      !cancelled() &&
+      needs.route.result == 'success' &&
+      needs.release-main-train-gate.result == 'success' &&
+      needs.release-toolchain-image.result == 'success' &&
+      needs.release-oci-build-tag.result == 'success' &&
+      needs.release-oci-build-cli.result == 'success' &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        startsWith(github.ref, 'refs/tags/sdk-v') ||
+        startsWith(github.ref, 'refs/tags/cli-v') ||
+        (github.event_name == 'workflow_dispatch' && inputs.push_images)
+      ) &&
+      (
+        needs.release-main-train-gate.outputs.run == 'true' ||
+        needs.release-contract.result == 'success'
+      )
+    needs: [route, release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag, release-oci-build-cli]
+    permissions:
+      contents: read
+      packages: read
+    env:
+      HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
+      HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-hobo-mcp
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-hobo-mcp-${{ github.run_attempt }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 0
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/ci-deps-recovery
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Ensure digest-pinned content-keyed toolchain image
+        timeout-minutes: 13
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}
+          HOBO_CI_WORKER_PULL_BUDGET_SEC: "540"
+        run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
+      - name: Download verified hobo-sdk OCI layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-oci-layout-hobo-sdk
+          path: ${{ runner.temp }}/hobo-release-oci-layout-hobo-sdk
+      - name: Load hobo-sdk candidate from the verified layout
+        env:
+          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: node --no-warnings scripts/ci/load-release-oci-layout.mts hobo-sdk "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-sdk"
+      - name: Download verified hobo-cli OCI layout
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-oci-layout-hobo-cli
+          path: ${{ runner.temp }}/hobo-release-oci-layout-hobo-cli
+      - name: Load hobo-cli candidate from the verified layout
+        env:
+          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: node --no-warnings scripts/ci/load-release-oci-layout.mts hobo-cli "${RUNNER_TEMP}/hobo-release-oci-layout-hobo-cli"
+      - name: Build and verify release image
+        env:
+          HOBO_RELEASE_VERSION: ${{ env.HOBO_RELEASE_VERSION }}
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+        run: |
+          set -euo pipefail
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-mcp --keep-candidate
+          HOBO_RELEASE_OCI_CONTRACT=live HOBO_RELEASE_OCI_IMAGE_ID=hobo-mcp \
+            pnpm exec vitest run scripts/test/release-oci-image-contract.test.ts
+          node --no-warnings scripts/ci/release-oci-handoff.mts hobo-mcp "${RUNNER_TEMP}/hobo-release-oci-layout"
+          node --no-warnings scripts/ci/build-release-oci-image.mts hobo-mcp --cleanup-only
+      - name: Upload verified OCI layout
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hobo-release-oci-layout-hobo-mcp
           path: ${{ runner.temp }}/hobo-release-oci-layout
           if-no-files-found: error
           retention-days: 1
@@ -1176,6 +1351,8 @@ jobs:
       needs.release-toolchain-image.result == 'success' &&
       needs.release-images.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
+      needs.release-oci-build-cli.result == 'success' &&
+      needs.release-oci-build-mcp.result == 'success' &&
       needs.release-hobo-integration.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -1188,7 +1365,7 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [route, release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag, release-images, release-hobo-cli, release-hobo-integration]
+    needs: [route, release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag, release-oci-build-cli, release-oci-build-mcp, release-images, release-hobo-cli, release-hobo-integration]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
@@ -1240,7 +1417,7 @@ jobs:
           HOBO_RELEASE_VERSION_MODE: ${{ needs.release-main-train-gate.outputs.run == 'true' && 'nbgv' || 'tag-ref' }}
         run: node --no-warnings scripts/ci/materialize-release-version.mts
       - name: Ensure digest-pinned content-keyed toolchain image
-        timeout-minutes: 10
+        timeout-minutes: 13
         # Without a token the GHCR pull is never tried, and a runner that does not
         # already hold the image refuses the release (run 43059319805).
         env:
@@ -1360,6 +1537,8 @@ jobs:
       !cancelled() &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
+      needs.release-oci-build-cli.result == 'success' &&
+      needs.release-oci-build-mcp.result == 'success' &&
       needs.release-hobo-cli.result == 'success' &&
       !startsWith(github.ref, 'refs/tags/sdk-v') &&
       !startsWith(github.ref, 'refs/tags/cli-v') &&
@@ -1367,7 +1546,7 @@ jobs:
         needs.release-main-train-gate.outputs.run == 'true' ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate, release-oci-build-tag, release-hobo-cli]
+    needs: [release-main-train-gate, release-oci-build-tag, release-oci-build-cli, release-oci-build-mcp, release-hobo-cli]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
@@ -1469,6 +1648,8 @@ jobs:
       vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
+      needs.release-oci-build-cli.result == 'success' &&
+      needs.release-oci-build-mcp.result == 'success' &&
       needs.release-hobo-integration.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -1480,7 +1661,7 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [route, release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli, release-hobo-integration]
+    needs: [route, release-main-train-gate, release-contract, release-oci-build-tag, release-oci-build-cli, release-oci-build-mcp, release-hobo-cli, release-hobo-integration]
     # Keyless provenance signing names a GitHub-hosted builder (npm verifies
     # it) — not self-hosted hobo. The tarballs it signs are built here
     # (stage-sdk-artifacts.mts); only the hobo CLI comes from release-hobo-cli,
@@ -1640,7 +1821,7 @@ jobs:
       needs.release-hobo-cli.result == 'success'
     needs: [route, release-pages-gate, release-hobo-cli]
     runs-on: ${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     # One publish at a time. Two runs for different commits used to be free to
     # push gh-pages in either order.
     concurrency:
@@ -1654,6 +1835,8 @@ jobs:
       contents: write
       pages: write
       id-token: write
+    outputs:
+      promoted: ${{ steps.promote.outputs.promoted }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1730,15 +1913,104 @@ jobs:
       # compare-and-swap. Its message is `deploy: <HOBO_RELEASE_REVISION>`, the
       # commit built here (not github.sha, which on a workflow_run event is the
       # tip of main), because the freshness gate reads it back.
-      - name: Record, promote and publish the Pages site (hobo deploy)
+      - name: Record and promote the Pages candidate (hobo deploy)
+        id: promote
         if: steps.fresh.outputs.deploy == 'true'
-        timeout-minutes: 21
+        timeout-minutes: 19
         env:
           GITHUB_TOKEN: ${{ github.token }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
-          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"
-        run: node --no-warnings scripts/deploy-site.mts --release-freight site/dist
+          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1080000"
+        run: |
+          set -euo pipefail
+          node --no-warnings scripts/deploy-site.mts --release-freight site/dist --candidate-only
+          echo "promoted=true" >> "$GITHUB_OUTPUT"
+      - name: Upload the Pages Freight journal
+        if: steps.promote.outputs.promoted == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hobo-release-freight-pages
+          path: ${{ runner.temp }}/hobo-release-cd/pages
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  release-pages-stable:
+    name: Publish GitHub Pages (site/) (stable)
+    if: >-
+      !cancelled() &&
+      needs.route.result == 'success' &&
+      needs.release-pages.result == 'success' &&
+      needs.release-pages.outputs.promoted == 'true' &&
+      needs.release-hobo-cli.result == 'success'
+    needs: [route, release-pages, release-hobo-cli]
+    runs-on: ${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
+    timeout-minutes: 20
+    concurrency:
+      group: hobo-release-pages
+      cancel-in-progress: false
+    env:
+      HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 1
+          ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Verify the Pages candidate is still deployed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node --no-warnings scripts/ci/check-release-pages-stale.mts
+          --head "$HOBO_RELEASE_CHECKOUT_REF" --require-deployed-head
+      - run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer or install
+        run: |
+          set -euo pipefail
+          if node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing the runner's deps layer; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Download the built hobo CLI
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-cli
+          path: ${{ runner.temp }}/hobo-release-cli
+      - name: Restore the hobo CLI (release Freight through hobo deploy)
+        env:
+          HOBO_RELEASE_CLI_DIGEST: ${{ needs.release-hobo-cli.outputs.digest }}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
+      - name: Download the Pages Freight journal
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hobo-release-freight-pages
+          path: ${{ runner.temp }}/hobo-release-cd/pages
+      - name: Promote the Pages stable channel (hobo deploy)
+        timeout-minutes: 19
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
+          HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1080000"
+        run: node --no-warnings scripts/deploy-site.mts --stable-only
 
   release-tag:
     name: Signed git tag + GitHub Release (main train)
@@ -1756,8 +2028,9 @@ jobs:
       needs.release-attest.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
       contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result) &&
+      contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages-stable.result) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-hobo-cli]
+    needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-pages-stable, release-hobo-cli]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 15

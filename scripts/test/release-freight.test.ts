@@ -942,6 +942,7 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		"release-publish": "push-release-ghcr-images.mts",
 		"release-npm": "publish-npm-sdk.mts",
 		"release-pages": "deploy-site.mts --release-freight",
+		"release-pages-stable": "deploy-site.mts --stable-only",
 		"release-tag": "promote-stable",
 		"release-github": "promote-stable",
 	} as const;
@@ -1057,7 +1058,13 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 	});
 
 	it("routes OCI image build and Pages publish through the route job", () => {
-		for (const name of ["release-oci-build-tag", "release-pages"] as const) {
+		for (const name of [
+			"release-oci-build-tag",
+			"release-oci-build-cli",
+			"release-oci-build-mcp",
+			"release-pages",
+			"release-pages-stable",
+		] as const) {
 			const block = job(name);
 			expect(block).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
 		}
@@ -1077,15 +1084,39 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {
 		const block = job("release-pages");
-		expect(block).toContain("deploy-site.mts --release-freight site/dist");
+		expect(block).toContain(
+			"deploy-site.mts --release-freight site/dist --candidate-only",
+		);
+		expect(block).not.toContain("--stable-only");
 		expect(block).not.toContain("peaceiris/actions-gh-pages");
 		expect(block).not.toMatch(/git push/u);
+		const stable = job("release-pages-stable");
+		expect(stable).toContain("deploy-site.mts --stable-only");
+		expect(stable).not.toContain("--release-freight");
+		expect(stable).not.toContain("peaceiris/actions-gh-pages");
+		expect(stable).not.toMatch(/git push/u);
 	});
 
-	it("bounds the Pages promote step with a wall budget under its step timeout", () => {
-		const block = job("release-pages");
-		expect(block).toMatch(/\n {8}timeout-minutes: 21\n/u);
-		expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"');
+	it("bounds each Pages promote step with a wall under the step and the step under the job", () => {
+		const wallMs = 1_080_000;
+		const stepMs = 19 * 60_000;
+		expect(wallMs).toBeLessThan(stepMs);
+		expect(
+			releasePagesWallBudgetMs({
+				HOBO_RELEASE_PAGES_WALL_BUDGET_MS: String(wallMs),
+			}),
+		).toBe(wallMs);
+		for (const [name, jobMinutes] of [
+			["release-pages", 30],
+			["release-pages-stable", 20],
+		] as const) {
+			const block = job(name);
+			expect(stepMs).toBeLessThan(jobMinutes * 60_000);
+			expect(block).toContain(`\n    timeout-minutes: ${jobMinutes}\n`);
+			expect(block).toMatch(/\n {8}timeout-minutes: 19\n/u);
+			expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1080000"');
+			expect(block).not.toMatch(/\n {8}timeout-minutes: 21\n/u);
+		}
 	});
 
 	it("promotes to stable before the signed tag and the GitHub Release", () => {
@@ -1115,10 +1146,17 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 	it("binds Pages deploy to the job GITHUB_TOKEN with contents:write", () => {
 		const block = job("release-pages");
 		expect(block).toMatch(
-			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
+			/Record and promote the Pages candidate[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
 		);
 		expect(block).not.toMatch(
-			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
+			/Record and promote the Pages candidate[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
+		);
+		const stable = job("release-pages-stable");
+		expect(stable).toMatch(
+			/Promote the Pages stable channel[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
+		);
+		expect(stable).not.toMatch(
+			/Promote the Pages stable channel[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
 		);
 	});
 });
