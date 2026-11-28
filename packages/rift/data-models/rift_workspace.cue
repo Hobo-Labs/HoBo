@@ -18,9 +18,9 @@ import (
 	reason: string & !=""
 	// hardlink shares inodes, so in-place writes escape to the source. The
 	// constraint keeps that hazard from being reported as safe.
-	isolates_in_place_writes: bool
+	isolatesInPlaceWrites: bool
 	if tier == "hardlink" {
-		isolates_in_place_writes: false
+		isolatesInPlaceWrites: false
 	}
 }
 
@@ -29,7 +29,7 @@ import (
 	path:       string & !=""
 	tier:       #CowTier
 	source:     string & !=""
-	created_at: string & !=""
+	createdAt: string & !=""
 	// Overlay layers exist for exactly one tier.
 	if tier == "overlayfs" {
 		upper: string & !=""
@@ -60,4 +60,5 @@ import (
 #Registry: {
 	root: string & !=""
 	workspaces: [...#WorkspaceRecord]
+	eventCount: uint & <=4294967295
 }

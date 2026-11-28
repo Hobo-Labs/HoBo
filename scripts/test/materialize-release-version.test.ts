@@ -56,6 +56,19 @@ describe("releaseMaterializedEnvLines", () => {
 	});
 });
 
+describe("release metadata materialization", () => {
+	it("preserves npm and Git versions while exporting an OCI-compatible tag", () => {
+		const parsed = parseReleaseRef("v1.2.3-rc.1+build.9");
+		expect(releaseMaterializedEnvLines(parsed)).toEqual([
+			"HOBO_RELEASE_VERSION=v1.2.3-rc.1+build.9",
+			"HOBO_RELEASE_SEMVER=1.2.3-rc.1+build.9",
+			"HOBO_RELEASE_NPM_DIST_TAG=rc",
+			"HOBO_RELEASE_GHCR_TAG=v1.2.3-rc.1_build.9",
+			"HOBO_RELEASE_TRAIN=full",
+		]);
+	});
+});
+
 describe("materialize-release-version (gate trust integration)", () => {
 	it("writes HOBO_RELEASE_* from gate ref without spawning compute-release-version", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-materialize-"));

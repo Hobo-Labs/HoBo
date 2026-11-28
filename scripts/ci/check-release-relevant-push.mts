@@ -13,10 +13,6 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	anyPathMatchesReleaseHoboFilters,
-	loadReleaseHoboPullRequestPathFilters,
-} from "../lib/release-hobo-path-filters.mts";
 
 const root = join(import.meta.dirname, "..", "..");
 
@@ -39,17 +35,40 @@ function git(cwd: string, args: readonly string[]) {
 	});
 }
 
+function commitOid(cwd: string, ref: string): string {
+	const result = git(cwd, [
+		"rev-parse",
+		"--verify",
+		"--quiet",
+		"--end-of-options",
+		`${ref}^{commit}`,
+	]);
+	const oid = result.stdout.trim();
+	if (result.status !== 0 || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid))
+		throw new Error(`release scope: not a commit: ${ref}`);
+	return oid;
+}
+
 function gitDiffNameOnly(cwd: string, from: string, to: string): string[] {
-	const result = git(cwd, ["diff", "--name-only", from, to]);
+	const result = git(cwd, [
+		"diff",
+		"--no-renames",
+		"--name-only",
+		"-z",
+		commitOid(cwd, from),
+		commitOid(cwd, to),
+		"--",
+	]);
 	if (result.status !== 0) {
 		throw new Error(
 			`git diff --name-only ${from} ${to}: ${result.stderr || result.stdout}`,
 		);
 	}
-	return result.stdout
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
+	return result.stdout.split("\0").filter((line) => line.length > 0);
+}
+
+export function isMainTrainReleasePath(path: string): boolean {
+	return !path.startsWith(".github/ISSUE_TEMPLATE/");
 }
 
 /** The nearest release tag in `to`'s history, or undefined when there is none. */
@@ -64,22 +83,14 @@ export function lastReleaseTag(cwd: string, to: string): string | undefined {
 	}
 	// describe says "no names found" before it reads the revision, so a bad
 	// one would read as "never released" without this.
-	const commit = git(cwd, [
-		"rev-parse",
-		"--verify",
-		"--quiet",
-		`${to}^{commit}`,
-	]);
-	if (commit.status !== 0) {
-		throw new Error(`release scope: not a commit: ${to}`);
-	}
+	const commit = commitOid(cwd, to);
 	const result = git(cwd, [
 		"describe",
 		"--tags",
 		"--abbrev=0",
 		"--match",
 		RELEASE_TAG_MATCH,
-		to,
+		commit,
 	]);
 	if (result.status === 0) return result.stdout.trim() || undefined;
 	// describe exits 128 with "No names found" / "No tags can describe" when
@@ -95,12 +106,8 @@ export function releaseScopeBetween(
 	cwd: string,
 	from: string,
 	to: string,
-	filters: readonly string[],
 ): ReleaseScope {
-	const relevant = anyPathMatchesReleaseHoboFilters(
-		gitDiffNameOnly(cwd, from, to),
-		[...filters],
-	);
+	const relevant = gitDiffNameOnly(cwd, from, to).some(isMainTrainReleasePath);
 	return {
 		run: relevant,
 		from,
@@ -114,7 +121,6 @@ export function releaseScopeBetween(
 export function releaseScopeSinceLastRelease(
 	cwd: string,
 	to: string,
-	filters: readonly string[],
 ): ReleaseScope {
 	const tag = lastReleaseTag(cwd, to);
 	if (tag === undefined) {
@@ -123,7 +129,7 @@ export function releaseScopeSinceLastRelease(
 			reason: `no release tag (${RELEASE_TAG_MATCH}) in the history of ${to}`,
 		};
 	}
-	const scope = releaseScopeBetween(cwd, `${tag}^{commit}`, to, filters);
+	const scope = releaseScopeBetween(cwd, `${tag}^{commit}`, to);
 	return {
 		...scope,
 		from: tag,
@@ -156,10 +162,9 @@ function parseArgs(argv: readonly string[]) {
 
 function main(): void {
 	const { from, to, sinceLastRelease, githubOutput } = parseArgs(process.argv);
-	const filters = loadReleaseHoboPullRequestPathFilters(root);
 	const scope = sinceLastRelease
-		? releaseScopeSinceLastRelease(root, to, filters)
-		: releaseScopeBetween(root, from, to, filters);
+		? releaseScopeSinceLastRelease(root, to)
+		: releaseScopeBetween(root, from, to);
 	if (githubOutput) {
 		console.log(scope.reason);
 		appendFileSync(

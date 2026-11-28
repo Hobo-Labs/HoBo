@@ -549,3 +549,37 @@ describe("a policy without allowedHostSuffixes behaves exactly as before", () =>
 		});
 	}
 });
+
+describe("exact encoded path exceptions", () => {
+	it("allows only the configured path and still rejects traversal", async () => {
+		const exact = "/-/npm/v1/oidc/token/exchange/package/@scope%2fname";
+		const extended = {
+			...policy,
+			allowedPathPrefixes: ["/"],
+			allowedEncodedPaths: [exact],
+		};
+		expect(
+			assertAllowedEndpoint(`https://api.example.com${exact}`, {
+				...extended,
+				allowedHosts: ["api.example.com"],
+			}).pathname,
+		).toBe(exact);
+		for (const path of [
+			"/-/npm/v1/oidc/token/exchange/package/@other%2fname",
+			"/x/%2f%2e%2e%2fadmin",
+			"/x/%2f..%2fadmin",
+			"/x/%2f%252e%252e%2fadmin",
+			"/x/%2f..%5cadmin",
+		]) {
+			expect(() =>
+				assertAllowedEndpoint(`https://api.example.com${path}`, {
+					...extended,
+					allowedHosts: ["api.example.com"],
+					allowedEncodedPaths: path.includes("@other")
+						? [exact]
+						: [exact, path],
+				}),
+			).toThrow();
+		}
+	});
+});

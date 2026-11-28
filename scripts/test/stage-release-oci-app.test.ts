@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import {
-	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -12,10 +11,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-	fetchReleaseTurboBase,
 	moveExtractedPackageDir,
 	RELEASE_OCI_STAGE_SPECS,
 	releaseOciAffectedImageIds,
@@ -25,7 +23,6 @@ import {
 	releaseOciStagingLocation,
 	releaseOciTurboBuildArgs,
 	releasePnpmStore,
-	resolveReleaseTurboBase,
 	sdkOverlayExtractRoot,
 	stageReleaseOciApp,
 } from "../ci/stage-release-oci-app.mts";
@@ -48,256 +45,45 @@ const WorkspaceManifest = z.object({
 	files: z.array(z.string()).default([]),
 });
 
-// The three cases that take this do nothing but spawn git, some ten processes
-// each against a fresh repository, and on a loaded runner those spawns alone
-// have passed the 10 s default. No network is involved: the repositories have
-// no remote.
-const GIT_FIXTURE_TIMEOUT_MS = 30_000;
-
 describe("release OCI app staging", () => {
-	it("resolves only ancestor Turbo bases on a sparse PR checkout", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
-		const git = (...args: string[]): void => {
-			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-			expect(result.status).toBe(0);
-		};
+	it("honors the runner's memory-aware Turbo limit when building release images", () => {
+		const previous = process.env.HOBO_TURBO_CONCURRENCY;
 		try {
-			git("init", "--quiet");
-			for (const message of ["base", "merge"]) {
-				git(
-					"-c",
-					"user.name=Release Test",
-					"-c",
-					"user.email=release@example.com",
-					"-c",
-					"commit.gpgsign=false",
-					"commit",
-					"--allow-empty",
-					"-m",
-					message,
-				);
-			}
-			expect(resolveReleaseTurboBase(repo, "origin/main")).toBe("HEAD^1");
-			expect(resolveReleaseTurboBase(repo, "HEAD")).toBe("HEAD");
-			expect(() => resolveReleaseTurboBase(repo, "refs/heads/missing")).toThrow(
-				/HOBO_RELEASE_TURBO_BASE=refs\/heads\/missing does not resolve/,
-			);
-			git("branch", "release-head");
-			git("switch", "--quiet", "-c", "advanced", "HEAD^1");
-			git(
-				"-c",
-				"user.name=Release Test",
-				"-c",
-				"user.email=release@example.com",
-				"-c",
-				"commit.gpgsign=false",
-				"commit",
-				"--allow-empty",
-				"-m",
-				"advanced",
-			);
-			git("switch", "--quiet", "release-head");
-			expect(() =>
-				resolveReleaseTurboBase(repo, "refs/heads/advanced"),
-			).toThrow(
-				/HOBO_RELEASE_TURBO_BASE=refs\/heads\/advanced does not resolve/,
-			);
-		} finally {
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("builds the full importer closure on tag release when origin/main is absent", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-tag-"));
-		const previousRef = process.env.GITHUB_REF;
-		const previousEvent = process.env.GITHUB_EVENT_NAME;
-		const git = (...args: string[]): void => {
-			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-			expect(result.status).toBe(0);
-		};
-		try {
-			git("init", "--quiet");
-			git(
-				"-c",
-				"user.name=Release Test",
-				"-c",
-				"user.email=release@example.com",
-				"-c",
-				"commit.gpgsign=false",
-				"commit",
-				"--allow-empty",
-				"-m",
-				"tag",
-			);
-			process.env.GITHUB_REF = "refs/tags/v0.0.0-alpha.0";
-			delete process.env.GITHUB_EVENT_NAME;
-			expect(resolveReleaseTurboBase(repo, "origin/main")).toBeUndefined();
-			process.env.GITHUB_EVENT_NAME = "workflow_dispatch";
-			expect(resolveReleaseTurboBase(repo, "origin/main")).toBeUndefined();
-		} finally {
-			if (previousRef === undefined) delete process.env.GITHUB_REF;
-			else process.env.GITHUB_REF = previousRef;
-			if (previousEvent === undefined) delete process.env.GITHUB_EVENT_NAME;
-			else process.env.GITHUB_EVENT_NAME = previousEvent;
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("falls back to a full turbo build when the release tag base is not reachable", () => {
-		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-missing-tag-"));
-		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
-		const warnings: string[] = [];
-		const log = vi
-			.spyOn(console, "log")
-			.mockImplementation((...parts: unknown[]) => {
-				warnings.push(parts.map(String).join(" "));
-			});
-		try {
-			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
-			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.2")).toBeUndefined();
-			expect(warnings.join("\n")).toMatch(
-				/::warning title=release-turbo-base::v0\.0\.0-alpha\.2 unreachable after fetch; release OCI build uses full turbo graph/u,
-			);
-			expect(releaseOciTurboBuildArgs(repo, ["@hobo/hobo..."])).toEqual([
-				"exec",
-				"turbo",
-				"run",
-				"build",
-				"--filter=@hobo/hobo...",
-			]);
-		} finally {
-			log.mockRestore();
-			if (previousBase === undefined)
-				delete process.env.HOBO_RELEASE_TURBO_BASE;
-			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("peels an annotated release tag to a commit before passing the turbo filter", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const repo = mkdtempSync(
-			join(tmpdir(), "hobo-release-turbo-annotated-tag-"),
-		);
-		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
-		const git = (...args: string[]): void => {
-			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-			expect(result.status).toBe(0);
-		};
-		try {
-			git("init", "--quiet");
-			for (const message of ["previous release", "head"]) {
-				git(
-					"-c",
-					"user.name=Release Test",
-					"-c",
-					"user.email=release@example.com",
-					"-c",
-					"commit.gpgsign=false",
-					"commit",
-					"--allow-empty",
-					"-m",
-					message,
-				);
-				if (message === "previous release") {
-					git(
-						"-c",
-						"user.name=Release Test",
-						"-c",
-						"user.email=release@example.com",
-						"tag",
-						"-a",
-						"-m",
-						"previous release",
-						"v0.0.0-alpha.2",
-					);
-				}
-			}
-			const peeled = spawnSync(
-				"git",
-				["rev-parse", "v0.0.0-alpha.2^{commit}"],
-				{ cwd: repo, encoding: "utf8" },
-			);
-			expect(peeled.status).toBe(0);
-			const commit = peeled.stdout.trim();
-			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
-			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.2")).toBe(commit);
-			expect(releaseOciTurboBuildArgs(repo, ["@hobo/hobo..."])).toEqual([
-				"exec",
-				"turbo",
-				"run",
-				"build",
-				`--filter=...[${commit}...HEAD]`,
-				"--filter=@hobo/hobo...",
-			]);
-		} finally {
-			if (previousBase === undefined)
-				delete process.env.HOBO_RELEASE_TURBO_BASE;
-			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("combines SCM-affected and requested image filters", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-filters-"));
-		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
-		const git = (...args: string[]): void => {
-			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-			expect(result.status).toBe(0);
-		};
-		try {
-			git("init", "--quiet");
-			for (const message of ["base", "head"]) {
-				git(
-					"-c",
-					"user.name=Release Test",
-					"-c",
-					"user.email=release@example.com",
-					"-c",
-					"commit.gpgsign=false",
-					"commit",
-					"--allow-empty",
-					"-m",
-					message,
-				);
-			}
-			process.env.HOBO_RELEASE_TURBO_BASE = "HEAD^1";
+			process.env.HOBO_TURBO_CONCURRENCY = "1";
 			expect(
-				releaseOciTurboBuildArgs(repo, [
-					"@hobo/hobo...",
-					"@hobo/ci-gh-actions...",
-				]),
+				releaseOciTurboBuildArgs("/no-checkout-needed", ["@hobo/core"]),
+			).toContain("--concurrency=1");
+		} finally {
+			if (previous === undefined) delete process.env.HOBO_TURBO_CONCURRENCY;
+			else process.env.HOBO_TURBO_CONCURRENCY = previous;
+		}
+	});
+
+	it("always builds only the requested deployable closure", () => {
+		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
+		try {
+			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
+			expect(
+				releaseOciTurboBuildArgs(
+					"/no-checkout-needed",
+					["@hobo/hobo...", "@hobo/ci-gh-actions..."],
+					{},
+				),
 			).toEqual([
 				"exec",
 				"turbo",
 				"run",
 				"build",
-				"--filter=...[HEAD^1...HEAD]",
 				"--filter=@hobo/hobo...",
 				"--filter=@hobo/ci-gh-actions...",
 			]);
-			delete process.env.HOBO_RELEASE_TURBO_BASE;
-			expect(releaseOciTurboBuildArgs(repo, ["hobo-site..."])).toEqual([
-				"exec",
-				"turbo",
-				"run",
-				"build",
-				"--filter=hobo-site...",
-			]);
+			expect(() => releaseOciTurboBuildArgs("/no-checkout-needed", [])).toThrow(
+				/requires at least one image filter/,
+			);
 		} finally {
-			if (previousBase === undefined) {
+			if (previousBase === undefined)
 				delete process.env.HOBO_RELEASE_TURBO_BASE;
-			} else {
-				process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
-			}
-			rmSync(repo, { recursive: true, force: true });
+			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
 		}
 	});
 
@@ -378,14 +164,19 @@ describe("release OCI app staging", () => {
 		).toContain("--config.package-import-method=hardlink");
 	});
 
-	it("prefers npm_config_store_dir without shelling out to pnpm", () => {
+	it("uses the configured store when pnpm is unavailable", () => {
 		const storeDir = resolve("/pnpm-store");
-		expect(
-			releasePnpmStore(root, {
-				npm_config_store_dir: storeDir,
-				PATH: "/usr/bin",
-			}),
-		).toBe(storeDir);
+		const emptyPath = mkdtempSync(join(tmpdir(), "hobo-no-pnpm-"));
+		try {
+			expect(
+				releasePnpmStore(root, {
+					npm_config_store_dir: storeDir,
+					PATH: emptyPath,
+				}),
+			).toBe(storeDir);
+		} finally {
+			rmSync(emptyPath, { recursive: true, force: true });
+		}
 	});
 
 	it("pins the workspace store for a deployment on another filesystem", () => {
@@ -791,259 +582,5 @@ describe("release OCI app staging", () => {
 			`rm:${pkgDir}:{"recursive":true,"force":true}`,
 		]);
 		rmSync(rootDir, { recursive: true, force: true });
-	});
-});
-
-describe("fetch-release-turbo-base", () => {
-	const realGit = spawnSync("sh", ["-c", "command -v git"], {
-		encoding: "utf8",
-	}).stdout.trim();
-
-	const recordingGit = (logPath: string): string => {
-		const dir = mkdtempSync(join(tmpdir(), "hobo-git-record-"));
-		writeFileSync(
-			join(dir, "git"),
-			`#!/bin/sh\nprintf '===\\n' >> ${JSON.stringify(logPath)}\nprintf '%s\\n' "$@" >> ${JSON.stringify(logPath)}\nexec ${JSON.stringify(realGit)} "$@"\n`,
-			{ mode: 0o755 },
-		);
-		chmodSync(join(dir, "git"), 0o755);
-		return dir;
-	};
-	const invocations = (logPath: string): string[][] =>
-		readFileSync(logPath, "utf8")
-			.split("===\n")
-			.filter(Boolean)
-			.map((group) => group.split("\n").filter(Boolean));
-
-	it("fetches origin/main and the release tag with the same arguments as before", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const seed = mkdtempSync(join(tmpdir(), "hobo-fetch-seed-"));
-		const origin = mkdtempSync(join(tmpdir(), "hobo-fetch-origin-"));
-		const work = mkdtempSync(join(tmpdir(), "hobo-fetch-work-"));
-		const logPath = join(tmpdir(), `hobo-fetch-args-${process.pid}.log`);
-		const shim = recordingGit(logPath);
-		const previousPath = process.env.PATH;
-		const git = (...args: string[]) => {
-			const result = spawnSync("git", args, { cwd: seed, stdio: "ignore" });
-			expect(result.status).toBe(0);
-		};
-		try {
-			git("init", "--quiet", "--initial-branch=main");
-			for (const message of ["base", "head"]) {
-				git(
-					"-c",
-					"user.name=Release Test",
-					"-c",
-					"user.email=release@example.com",
-					"-c",
-					"commit.gpgsign=false",
-					"commit",
-					"--allow-empty",
-					"-m",
-					message,
-				);
-			}
-			git("tag", "v0.0.0-alpha.9");
-			expect(
-				spawnSync("git", ["clone", "--quiet", "--bare", seed, origin], {
-					stdio: "ignore",
-				}).status,
-			).toBe(0);
-			expect(
-				spawnSync("git", ["clone", "--quiet", origin, work], {
-					stdio: "ignore",
-				}).status,
-			).toBe(0);
-			const inWork = (...args: string[]) => {
-				const result = spawnSync("git", args, { cwd: work, stdio: "ignore" });
-				expect(result.status).toBe(0);
-			};
-			inWork("remote", "set-url", "origin", `file://${origin}`);
-			inWork("update-ref", "-d", "refs/remotes/origin/main");
-			inWork("tag", "-d", "v0.0.0-alpha.9");
-			writeFileSync(logPath, "");
-			process.env.PATH = `${shim}:${previousPath}`;
-			fetchReleaseTurboBase(work, "origin/main");
-			fetchReleaseTurboBase(work, "v0.0.0-alpha.9");
-			expect(
-				invocations(logPath)
-					.map((args) => args.slice(2))
-					.filter((args) => args[0] === "fetch"),
-			).toEqual([
-				[
-					"fetch",
-					"--depth=1",
-					"--filter=blob:none",
-					"origin",
-					"main:refs/remotes/origin/main",
-				],
-				[
-					"fetch",
-					"--depth=256",
-					"--filter=blob:none",
-					"origin",
-					"--",
-					"main:refs/remotes/origin/main",
-				],
-				[
-					"fetch",
-					"--tags",
-					"--depth=256",
-					"--filter=blob:none",
-					"origin",
-					"--",
-					"refs/tags/v0.0.0-alpha.9:refs/tags/v0.0.0-alpha.9",
-				],
-			]);
-			expect(
-				spawnSync(
-					"git",
-					["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"],
-					{ cwd: work, stdio: "ignore" },
-				).status,
-			).toBe(0);
-			expect(
-				spawnSync(
-					"git",
-					["rev-parse", "--verify", "--quiet", "refs/tags/v0.0.0-alpha.9"],
-					{ cwd: work, stdio: "ignore" },
-				).status,
-			).toBe(0);
-		} finally {
-			process.env.PATH = previousPath;
-			for (const dir of [seed, origin, work, shim])
-				rmSync(dir, { recursive: true, force: true });
-			rmSync(logPath, { force: true });
-		}
-	});
-
-	it("warns and keeps the requested image filters when the wrapper's fetch fails", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const shim = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-"));
-		writeFileSync(
-			join(shim, "git"),
-			[
-				"#!/bin/sh",
-				'if [ "$1" = "remote" ] && [ "$2" = "get-url" ]; then',
-				'  echo "https://example.invalid/hobo.git"',
-				"  exit 0",
-				"fi",
-				'if [ "$1" = "fetch" ]; then exit 128; fi',
-				`exec ${JSON.stringify(realGit)} "$@"`,
-			].join("\n"),
-			{ mode: 0o755 },
-		);
-		chmodSync(join(shim, "git"), 0o755);
-		const repo = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-repo-"));
-		const previousPath = process.env.PATH;
-		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
-		try {
-			const run = spawnSync(
-				process.execPath,
-				[
-					"--no-warnings",
-					join(root, "scripts/ci/fetch-release-turbo-base.mts"),
-				],
-				{
-					cwd: root,
-					encoding: "utf8",
-					env: {
-						...process.env,
-						PATH: `${shim}:${previousPath}`,
-						HOBO_RELEASE_TURBO_BASE: "v0.0.0-alpha.9",
-					},
-				},
-			);
-			expect(run.status, run.stderr).toBe(0);
-			expect(run.stderr).toBe("");
-			expect(run.stdout).toMatch(
-				/::warning title=release-turbo-base::git fetch failed with exit status 128; release OCI build uses full turbo graph/u,
-			);
-			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.9";
-			expect(
-				releaseOciTurboBuildArgs(repo, ["@hobo/hobo...", "hobo-site..."]),
-			).toEqual([
-				"exec",
-				"turbo",
-				"run",
-				"build",
-				"--filter=@hobo/hobo...",
-				"--filter=hobo-site...",
-			]);
-		} finally {
-			process.env.PATH = previousPath;
-			if (previousBase === undefined)
-				delete process.env.HOBO_RELEASE_TURBO_BASE;
-			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
-			rmSync(shim, { recursive: true, force: true });
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("falls through to the full turbo graph when the fetch fails on a tag checkout", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const shim = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-tag-"));
-		writeFileSync(
-			join(shim, "git"),
-			[
-				"#!/bin/sh",
-				'if [ "$1" = "remote" ] && [ "$2" = "get-url" ]; then',
-				'  echo "https://example.invalid/hobo.git"',
-				"  exit 0",
-				"fi",
-				'if [ "$1" = "fetch" ]; then exit 128; fi',
-				`exec ${JSON.stringify(realGit)} "$@"`,
-			].join("\n"),
-			{ mode: 0o755 },
-		);
-		chmodSync(join(shim, "git"), 0o755);
-		const repo = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-tag-repo-"));
-		const previousPath = process.env.PATH;
-		const previousRef = process.env.GITHUB_REF;
-		const previousEvent = process.env.GITHUB_EVENT_NAME;
-		const warnings: string[] = [];
-		const log = vi
-			.spyOn(console, "log")
-			.mockImplementation((...parts: unknown[]) => {
-				warnings.push(parts.map(String).join(" "));
-			});
-		try {
-			const git = (...args: string[]) => {
-				const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-				expect(result.status).toBe(0);
-			};
-			git("init", "--quiet");
-			git(
-				"-c",
-				"user.name=Release Test",
-				"-c",
-				"user.email=release@example.com",
-				"-c",
-				"commit.gpgsign=false",
-				"commit",
-				"--allow-empty",
-				"-m",
-				"head",
-			);
-			process.env.PATH = `${shim}:${previousPath}`;
-			process.env.GITHUB_REF = "refs/tags/v0.0.0-alpha.3";
-			delete process.env.GITHUB_EVENT_NAME;
-			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.3")).toBeUndefined();
-			expect(warnings.join("\n")).toMatch(
-				/::warning title=release-turbo-base::git fetch failed with exit status 128; release OCI build uses full turbo graph/u,
-			);
-		} finally {
-			log.mockRestore();
-			process.env.PATH = previousPath;
-			if (previousRef === undefined) delete process.env.GITHUB_REF;
-			else process.env.GITHUB_REF = previousRef;
-			if (previousEvent === undefined) delete process.env.GITHUB_EVENT_NAME;
-			else process.env.GITHUB_EVENT_NAME = previousEvent;
-			rmSync(shim, { recursive: true, force: true });
-			rmSync(repo, { recursive: true, force: true });
-		}
 	});
 });

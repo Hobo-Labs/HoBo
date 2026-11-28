@@ -59,6 +59,15 @@ Anything else is refused by name rather than ignored.
    Bytes are hashed before upload and must match the descriptor, and the
    registry verifies the digest again on the closing PUT. The manifest is then
    PUT by digest with its **exact bytes**.
+
+   When a chunk receives HTTP 416, the uploader reads the registry's current
+   offset and resumes from it, with at most three status recoveries per blob.
+   Further 416 responses open a fresh upload session. Blobs up to two chunks and
+   64 MiB use one PUT; larger blobs retry in bounded chunks once. A repeated
+   conflict, invalid offset, or invalid upload location fails closed; the
+   closing digest check and subsequent observation still apply.
+   Changes to this provider run the release workflow on ready pull requests and
+   merge groups.
 3. PUT each declared tag with the same bytes. A tag the desired state does not
    name is never written.
 4. Copy referrers (attestations, signatures, SBOMs) of the subject from the

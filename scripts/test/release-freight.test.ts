@@ -15,7 +15,6 @@ import {
 	releaseFreightStructuredFromFields,
 } from "../../packages/cd/src/reconcile/release-freight-detail.ts";
 import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
-import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -30,19 +29,20 @@ import {
 	type ReleaseCd,
 	type ReleaseDriveState,
 	type ReleaseHttpTransport,
+	releaseBlockedRealizerMessage,
 	releaseCampId,
+	releaseCampRealizeScope,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
 	releasePagesWallBudgetMs,
-	releaseBlockedRealizerMessage,
-	releaseCampRealizeScope,
 	releaseSource,
 	releaseWorkflowCredentials,
 	releaseWorkflowGithubAppScopeAllowed,
 	siteTree,
 	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
+import { RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS } from "../lib/release-contract-script-build.mts";
 
 type TransportRequest = Parameters<ReleaseHttpTransport>[0];
 
@@ -189,6 +189,28 @@ describe("release topology names", () => {
 		);
 	});
 
+	it("does not accept a Pages build probe without workflow credentials", async () => {
+		let calls = 0;
+		const inner = async () => {
+			calls++;
+			return {
+				status: 200,
+				headers: {},
+				body: JSON.stringify({ status: "built", commit: COMMIT }),
+			};
+		};
+		const probe = githubApiProbeTransport(undefined, inner);
+		const result = await probe({
+			method: "GET",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+			headers: {},
+			timeoutMs: 5000,
+			maxResponseBytes: 1024,
+		});
+		expect(result.status).toBe(404);
+		expect(calls).toBe(0);
+	});
+
 	it("authenticates GitHub probes and accepts only a built Pages head", async () => {
 		const seen: TransportRequest[] = [];
 		const build = { status: "building", commit: COMMIT };
@@ -234,33 +256,6 @@ describe("release topology names", () => {
 			expect(request.maxResponseBytes).toBeLessThan(64 * 1024);
 		}
 		expect(seen[5]?.headers.authorization).toBeUndefined();
-	});
-
-	it("keeps Pages build validation when GITHUB_TOKEN is absent", async () => {
-		const seen: TransportRequest[] = [];
-		const inner = async (request: TransportRequest) => {
-			seen.push(request);
-			return {
-				status: 200,
-				headers: {},
-				body: JSON.stringify({ status: "building", commit: COMMIT }),
-			};
-		};
-		const probe = githubApiProbeTransport(undefined, inner);
-
-		const response = await probe({
-			method: "GET",
-			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
-			headers: {},
-			timeoutMs: 5_000,
-			maxResponseBytes: 1_048_576,
-		});
-
-		expect(response.status).toBe(404);
-		expect(seen).toHaveLength(1);
-		expect(seen[0]?.headers.authorization).toBeUndefined();
-		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
-		expect(seen[0]?.maxResponseBytes).toBeLessThan(64 * 1024);
 	});
 
 	it("binds the GitHub Camps to HoBo's GitHub App installation on the release repository", () => {
@@ -317,6 +312,42 @@ describe("releaseCampRealizeScope", () => {
 });
 
 describe("releaseBlockedRealizerMessage", () => {
+	it("reports only allowlisted OCI operation and HTTP status without leaking provider text", () => {
+		const digest = `sha256:${"a".repeat(64)}`;
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: `upload blob ${digest} answered HTTP 403 (DENIED)`,
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED: oci operation=upload blob http=403");
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: "token realm for registry ghcr.io answered HTTP 401",
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED: oci operation=token exchange http=401");
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: `upload blob ${digest} answered HTTP 403 (DENIED) secret=ghp_should_not_be_printed`,
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					message: `blob ${digest} is 200 bytes, over the 100-byte transport bound`,
+				},
+			]),
+		).toBe("RESOLVER_PROVIDER_REJECTED: oci blob-too-large");
+	});
+
 	it("labels blocked reasons with stable codes and structured credential-scope fields", () => {
 		expect(
 			releaseBlockedRealizerMessage([
@@ -403,6 +434,44 @@ describe("releaseBlockedRealizerMessage", () => {
 				},
 			]),
 		).toBe("RESOLVER_PROVIDER_REJECTED");
+	});
+
+	it("formats structured oci-registry refusals for release logs", () => {
+		expect(
+			releaseBlockedRealizerMessage([
+				{
+					code: "RESOLVER_PROVIDER_REJECTED",
+					structured: {
+						credentialRef: "owner://GHCR_PUBLISH",
+						requestedScope: "POST:403",
+						detailKind: "oci-http-status",
+					},
+				},
+			]),
+		).toBe(
+			"RESOLVER_PROVIDER_REJECTED: provider=oci-registry oci-reason=oci-http-status credential=owner://GHCR_PUBLISH http=POST:403",
+		);
+	});
+
+	it("does not echo an upload location when oci detail is not a closed scope", () => {
+		const token = `npm_${randomBytes(8).toString("hex")}`;
+		const session = randomBytes(8).toString("hex");
+		const location = `https://uploads.example/v2/app/blobs/uploads/${session}?_state=${token}`;
+		const line = releaseBlockedRealizerMessage([
+			{
+				code: "RESOLVER_PROVIDER_REJECTED",
+				message: location,
+				structured: {
+					credentialRef: "owner://GHCR_PUBLISH",
+					requestedScope: location,
+					detailKind: "oci-upload-foreign-host",
+				},
+			},
+		]);
+		expect(line).toBe("RESOLVER_PROVIDER_REJECTED");
+		expect(line).not.toContain(token);
+		expect(line).not.toContain("_state");
+		expect(line).not.toContain(session);
 	});
 });
 
@@ -873,6 +942,7 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		"release-publish": "push-release-ghcr-images.mts",
 		"release-npm": "publish-npm-sdk.mts",
 		"release-pages": "deploy-site.mts --release-freight",
+		"release-pages-stable": "deploy-site.mts --stable-only",
 		"release-tag": "promote-stable",
 		"release-github": "promote-stable",
 	} as const;
@@ -988,7 +1058,13 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 	});
 
 	it("routes OCI image build and Pages publish through the route job", () => {
-		for (const name of ["release-oci-build-tag", "release-pages"] as const) {
+		for (const name of [
+			"release-oci-build-tag",
+			"release-oci-build-cli",
+			"release-oci-build-mcp",
+			"release-pages",
+			"release-pages-stable",
+		] as const) {
 			const block = job(name);
 			expect(block).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
 		}
@@ -1008,15 +1084,39 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {
 		const block = job("release-pages");
-		expect(block).toContain("deploy-site.mts --release-freight site/dist");
+		expect(block).toContain(
+			"deploy-site.mts --release-freight site/dist --candidate-only",
+		);
+		expect(block).not.toContain("--stable-only");
 		expect(block).not.toContain("peaceiris/actions-gh-pages");
 		expect(block).not.toMatch(/git push/u);
+		const stable = job("release-pages-stable");
+		expect(stable).toContain("deploy-site.mts --stable-only");
+		expect(stable).not.toContain("--release-freight");
+		expect(stable).not.toContain("peaceiris/actions-gh-pages");
+		expect(stable).not.toMatch(/git push/u);
 	});
 
-	it("bounds the Pages promote step with a wall budget under its step timeout", () => {
-		const block = job("release-pages");
-		expect(block).toMatch(/\n {8}timeout-minutes: 21\n/u);
-		expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"');
+	it("bounds each Pages promote step with a wall under the step and the step under the job", () => {
+		const wallMs = 1_080_000;
+		const stepMs = 19 * 60_000;
+		expect(wallMs).toBeLessThan(stepMs);
+		expect(
+			releasePagesWallBudgetMs({
+				HOBO_RELEASE_PAGES_WALL_BUDGET_MS: String(wallMs),
+			}),
+		).toBe(wallMs);
+		for (const [name, jobMinutes] of [
+			["release-pages", 30],
+			["release-pages-stable", 20],
+		] as const) {
+			const block = job(name);
+			expect(stepMs).toBeLessThan(jobMinutes * 60_000);
+			expect(block).toContain(`\n    timeout-minutes: ${jobMinutes}\n`);
+			expect(block).toMatch(/\n {8}timeout-minutes: 19\n/u);
+			expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1080000"');
+			expect(block).not.toMatch(/\n {8}timeout-minutes: 21\n/u);
+		}
 	});
 
 	it("promotes to stable before the signed tag and the GitHub Release", () => {
@@ -1046,10 +1146,17 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 	it("binds Pages deploy to the job GITHUB_TOKEN with contents:write", () => {
 		const block = job("release-pages");
 		expect(block).toMatch(
-			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
+			/Record and promote the Pages candidate[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
 		);
 		expect(block).not.toMatch(
-			/Record, promote and publish the Pages site[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
+			/Record and promote the Pages candidate[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
+		);
+		const stable = job("release-pages-stable");
+		expect(stable).toMatch(
+			/Promote the Pages stable channel[\s\S]*?GITHUB_TOKEN: \$\{\{ github\.token \}\}/u,
+		);
+		expect(stable).not.toMatch(
+			/Promote the Pages stable channel[\s\S]*?GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u,
 		);
 	});
 });
