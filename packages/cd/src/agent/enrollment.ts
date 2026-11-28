@@ -199,7 +199,7 @@ function agentSvidClaims(input: {
 }
 
 function validAgentSvidClaims(
-	claims: JwtSvidClaims,
+	claims: Pick<JwtSvidClaims, "sub" | "aud" | "exp" | "nbf" | "iat">,
 	audience: string,
 	nowS: number,
 ): boolean {
@@ -213,11 +213,34 @@ function validAgentSvidClaims(
 		return false;
 	if (claims.exp <= nowS || claims.iat > nowS || claims.nbf > nowS)
 		return false;
-	const ttl = claims.exp - nowS;
+	const ttl = claims.exp - claims.iat;
 	if (ttl < 1 || ttl > AGENT_SVID_TTL_S) return false;
 	const audiences = audiencesOf(claims.aud);
 	if (audiences === undefined || !audiences.includes(audience)) return false;
 	return SPIFFE_AGENT.test(claims.sub);
+}
+
+function agentClaimsOf(
+	raw: Awaited<ReturnType<typeof verifyJwtWithJwks>>["claims"],
+): Pick<JwtSvidClaims, "sub" | "aud" | "exp" | "nbf" | "iat"> | undefined {
+	const sub = raw.sub;
+	const exp = raw.exp;
+	const iat = raw.iat;
+	const nbf = raw.nbf;
+	if (!isText(sub) || !isNumber(exp) || !isNumber(iat) || !isNumber(nbf))
+		return undefined;
+	let aud: JwtSvidClaims["aud"] | undefined;
+	if (isText(raw.aud)) aud = raw.aud;
+	else if (Array.isArray(raw.aud)) {
+		const list: string[] = [];
+		for (const item of raw.aud) {
+			if (!isText(item)) return undefined;
+			list.push(item);
+		}
+		aud = list;
+	}
+	if (aud === undefined) return undefined;
+	return { sub, aud, exp, iat, nbf };
 }
 
 export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
@@ -961,9 +984,13 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				audience: issuer.issuerUrl,
 				now: nowS,
 			});
-			if (!isText(verified.claims.sub))
+			const claims = agentClaimsOf(verified.claims);
+			if (
+				claims === undefined ||
+				!validAgentSvidClaims(claims, issuer.issuerUrl, nowS)
+			)
 				return agentRefusal("svid-invalid", "The SVID could not be verified.");
-			subject = verified.claims.sub;
+			subject = claims.sub;
 		} catch {
 			return agentRefusal("svid-invalid", "The SVID could not be verified.");
 		}

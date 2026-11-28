@@ -684,6 +684,37 @@ describe("CD-signed agent SVIDs", () => {
 		).toBe(false);
 	});
 
+	it("refuses an issuer SVID whose issued lifetime exceeds 15 minutes", async () => {
+		const issuer = cdIssuer("cd-svid-ttl");
+		const s = await setup(railWith(), [], true, undefined, issuer);
+		const a = await accepted(s);
+		const memberId = parseMemberId(a.id);
+		const nowS = Math.floor(s.clock.now() / 1000);
+		const cap = 15 * 60;
+		const presented = async (iat: number, exp: number) => {
+			const svid = await issuer.signJwtSvid({
+				sub: `spiffe://yard/test/agent/${memberId}`,
+				aud: ["https://station.test"],
+				tenant: "test",
+				parentPrincipal: { kind: "service", id: "cd-station" },
+				codeVersion: { digest: "cd", version: "0" },
+				scope: [],
+				iat,
+				nbf: iat,
+				exp,
+			});
+			return s.enrollment.verify(
+				await feedRequest(
+					a.device,
+					svid,
+					await a.device.proof("GET", FEED_URL, svid),
+				),
+			);
+		};
+		expect(code(await presented(nowS - cap, nowS + 60))).toBe("svid-invalid");
+		expect((await presented(nowS - 60, nowS + (cap - 60))).ok).toBe(true);
+	});
+
 	it.each([
 		["suspend", "fleet-refused", MemberState.SUSPENDED] as const,
 		["revoke", "reconciler-revoked", MemberState.REVOKED] as const,
