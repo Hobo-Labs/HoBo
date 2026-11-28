@@ -1,3 +1,4 @@
+import { Api } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
@@ -8,6 +9,7 @@ import { StackContext } from "alchemy/StackContext";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { bindle } from "../../../bindles/src/bindle.js";
+import { sessionReplay } from "../../../bindles/src/session-replay.js";
 import { CATALOG_ROWS } from "../../../bindles/src/types.js";
 import {
 	ATOMIC_QUEUE_MAX_BYTES,
@@ -49,6 +51,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			credentials: b.secret(),
 			identity: b.auth(),
 			alerts: b.notify(),
+			socket: b.websocket().with(sessionReplay({ enabled: false })),
 		}));
 		// SAFETY: resource declaration only registers constructors; no AWS provider runs at this point.
 		const mapped = await Effect.runPromise(
@@ -69,6 +72,8 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(mapped.primary.credentials?.Type).toBe(Secret.Type);
 		expect(mapped.primary.identity?.Type).toBe(UserPool.Type);
 		expect(mapped.primary.alerts?.Type).toBe(Topic.Type);
+		expect(mapped.primary.socket?.Type).toBe(Api.Type);
+		expect(mapped.primary.socket?.Props).toEqual({ protocolType: "WEBSOCKET" });
 		expect(mapped.primary.credentials?.Props).toEqual({
 			recoveryWindowInDays: 30,
 		});
@@ -80,6 +85,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			"jobs",
 			"objects",
 			"sessions",
+			"socket",
 		]);
 	});
 	it("reports infrastructure-only support and rejects runtime claims", () => {
@@ -92,6 +98,7 @@ describe("AWS Alchemy infrastructure mappings", () => {
 			"secret",
 			"auth",
 			"notify",
+			"websocket",
 		]) {
 			const item = report.find((entry) => entry.kind === kind);
 			expect(item?.status).toBe("partial");
@@ -118,6 +125,32 @@ describe("AWS Alchemy infrastructure mappings", () => {
 		expect(() =>
 			mapBindleToAlchemy(notify, awsBindleMappers(), requirements),
 		).toThrow("PRIMITIVE_UNSUPPORTED");
+		for (const operation of [
+			"accept",
+			"connect",
+			"send",
+			"broadcast",
+			"subscribe",
+		] as const) {
+			const socket = bindle("shop", (b) => ({
+				socket: b.websocket().allow(operation),
+			}));
+			expect(() =>
+				mapBindleToAlchemy(socket, awsBindleMappers(), requirements),
+			).toThrow("PRIMITIVE_UNSUPPORTED");
+		}
+		const replay = bindle("shop", (b) => ({ socket: b.websocket() }));
+		expect(() =>
+			mapBindleToAlchemy(replay, awsBindleMappers(), requirements),
+		).toThrow("session replay to be disabled");
+		const application = bindle("shop", (b) => ({
+			socket: b
+				.websocket(() => "handler")
+				.with(sessionReplay({ enabled: false })),
+		}));
+		expect(() =>
+			mapBindleToAlchemy(application, awsBindleMappers(), requirements),
+		).toThrow("ENTRYPOINT_UNSUPPORTED");
 	});
 	it("refuses declared dependencies that have no runtime binding", () => {
 		const definition = bindle("shop", (b) => {

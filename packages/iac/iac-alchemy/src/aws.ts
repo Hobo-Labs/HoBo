@@ -1,4 +1,5 @@
 import type { Providers } from "@alchemy.run/aws";
+import { Api } from "@alchemy.run/aws/ApiGatewayV2";
 import { UserPool } from "@alchemy.run/aws/Cognito";
 import { Table } from "@alchemy.run/aws/DynamoDB";
 import { Bucket } from "@alchemy.run/aws/S3";
@@ -135,5 +136,48 @@ export function awsBindleMappers<Entrypoint, Requirements>() {
 			"SNS topic infrastructure only; notification delivery, subscriptions, recipients and application bindings are not implemented.",
 		],
 	};
-	return Object.freeze({ kv, bucket, queue, topic, secret, auth, notify });
+	const websocket: Mapper = {
+		resourceTypes: ["AWS.ApiGatewayV2.Api"],
+		operations: [],
+		annotations: ["hobo:session-replay"],
+		bindsEntrypoint: false,
+		limitations: [
+			"WebSocket API infrastructure only; replay must be disabled. Routes, integrations, connections, messaging and application bindings are not implemented.",
+		],
+		validate: (input) => {
+			noDependencies(input);
+			const annotations = input.declaration.annotations;
+			const replay = annotations[0];
+			const config = replay && Object.getOwnPropertyDescriptors(replay.config);
+			if (
+				annotations.length !== 1 ||
+				replay?.provider !== "hobo" ||
+				replay.option !== "session-replay" ||
+				config?.enabled?.value !== false ||
+				config.defaultSupply?.value !== "kit-local-on" ||
+				Object.keys(config).length !== 2
+			)
+				throw new AlchemyIacError(
+					"PRIMITIVE_UNSUPPORTED",
+					"WebSocket infrastructure requires session replay to be disabled",
+				);
+		},
+		build: (input) =>
+			Effect.gen(function* () {
+				const primary = yield* Api(input.declaration.name, {
+					protocolType: "WEBSOCKET",
+				});
+				return { primary, resources: [primary], boundDependencies: [] };
+			}),
+	};
+	return Object.freeze({
+		kv,
+		bucket,
+		queue,
+		topic,
+		secret,
+		auth,
+		notify,
+		websocket,
+	});
 }
