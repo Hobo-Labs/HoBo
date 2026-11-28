@@ -651,8 +651,6 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			}
 			const condition =
 				block.match(/^ {4}if:([^\n]*(?:\n {6}[^\n]*)*)/m)?.[1] ?? "";
-			const mergeGroupTrunkRunsOn =
-				"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
 			if (
 				file === "release-pricing.yml" &&
 				lines[start] === "  pricing-release-publish:"
@@ -670,11 +668,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				continue;
 			}
 			if ((lines[start] ?? "") === "  route:") {
-				assert.equal(
-					runsOn,
-					file === "hobo-ci.yml" ? mergeGroupTrunkRunsOn : "ubuntu-24.04",
-					`${file}: route`,
-				);
+				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
 					block,
 					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
@@ -684,12 +678,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// A required gate runs no action on GitHub-hosted too. `always()` is for
 			// PR gates that still summarize upstream jobs; `!cancelled()` is for
 			// release train gates that must drop when the run is cancelled.
-			if (
-				runsOn === "ubuntu-24.04" ||
-				(file === "hobo-ci.yml" &&
-					runsOn === mergeGroupTrunkRunsOn &&
-					lines[start] === "  pr-gate:")
-			) {
+			if (runsOn === "ubuntu-24.04") {
 				assert.match(
 					condition,
 					/always\(\)|!cancelled\(\)/,
@@ -705,7 +694,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				(file === "hobo-ci.yml" &&
 					lines[start] === "  scripts-tests:" &&
 					runsOn ===
-						"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}")
+						"${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}")
 			) {
 				assert.match(
 					block,

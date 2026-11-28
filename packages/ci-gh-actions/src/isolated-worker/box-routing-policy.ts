@@ -45,6 +45,8 @@ export const DEFAULT_FLEET_MIN_FREE_RUNNERS = 1;
 /** Work assigned to a label with nothing started this long is `stalled`. */
 export const DEFAULT_ROUTING_STALL_MS = 10 * 60_000;
 
+export const DEFAULT_SELF_UPDATE_INTERVAL_HOURS = 3;
+
 /**
  * The code's defaults. The committed `runnerRouting` equals them (ADR-0181,
  * M8), so a checkout without the block routes exactly as one with it.
@@ -92,6 +94,10 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 		"HOBO_CI_BOX_RUNNER",
 		"HOBO_CI_MAIN_REUSE_MERGE_QUEUE",
 	],
+	selfUpdate: {
+		enabled: true,
+		intervalHours: DEFAULT_SELF_UPDATE_INTERVAL_HOURS,
+	},
 };
 
 export type BoxRoutingPolicy = Readonly<{
@@ -126,6 +132,15 @@ export function readBoxRoutingPolicy(checkoutRoot: string): BoxRoutingPolicy {
 			`invalid runnerRouting in ${DEFAULT_CI_PROJECT_PATH}: see schema/ci-project.schema.json`,
 		);
 	return { policy, source: "committed", path };
+}
+
+export function boxFleetLabels(
+	policy: RunnerRouting,
+	trunkSlots: number,
+): readonly string[] {
+	return trunkSlots > 0
+		? [policy.labels.fleet, policy.labels.trunk]
+		: [policy.labels.fleet];
 }
 
 /**

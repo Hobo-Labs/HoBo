@@ -2100,6 +2100,7 @@ export async function main(
 			);
 		}
 		if (
+			workflowFile(env) !== "hobo-ci.yml" &&
 			!(await hasVerifiedBatchCapacity(
 				env,
 				trunkLabel,
@@ -2125,7 +2126,7 @@ export async function main(
 		return report(
 			{
 				...decision,
-				reason: `merge-group Fabric uses ${trunkLabel} with positive pickup evidence and a verified capacity and Broker claim (${decision.reason})`,
+				reason: `merge-group Fabric uses ${trunkLabel} with positive pickup evidence (${decision.reason})`,
 				mergeGroupHostedProbe: hostedProbe,
 				slip: { kind: "unasked", why: "merge-group" },
 			},

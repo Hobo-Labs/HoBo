@@ -1306,7 +1306,7 @@ describe("the committed routing policy the route job reads", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
@@ -2252,7 +2252,7 @@ describe("the script reading the slip", () => {
 					[decision.tier, decision.runner, decision.refusedBy],
 					["fleet", "hobo-trunk", "none"],
 				);
-				assert.match(decision.reason, /verified capacity and Broker claim/u);
+				assert.match(decision.reason, /with positive pickup evidence/u);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
@@ -2285,7 +2285,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("keeps a saturated merge-group batch hosted with pickup and an idle runner page but no claim", async () => {
+	it("routes a saturated merge-group batch to trunk on pickup evidence without a Broker claim", async () => {
 		await withGithub(
 			observedWithRunners(
 				[...saturatedHostedQueue(), pickup("hobo-trunk")],
@@ -2295,25 +2295,25 @@ describe("the script reading the slip", () => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo-trunk", "none"],
 				);
-				assert.match(decision.reason, /no verified capacity and Broker claim/u);
+				assert.match(decision.reason, /with positive pickup evidence/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
 				assert.equal(decision.mergeGroupHostedProbe?.runnerPageIdleTrunk, true);
 			},
 		);
 	});
 
-	it("keeps a healthy merge-group trunk batch hosted without a claim when no idle trunk is verified", async () => {
+	it("routes a healthy merge-group trunk batch to trunk without a Broker claim", async () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo-trunk", "none"],
 				);
-				assert.match(decision.reason, /no verified capacity and Broker claim/u);
+				assert.match(decision.reason, /with positive pickup evidence/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, true);
 			},
 		);
@@ -2429,14 +2429,14 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("falls back to GitHub-hosted while trunk has waiters and runs are choosing", async () => {
+	it("falls back to GitHub-hosted while trunk has an old waiter and runs are choosing", async () => {
 		const fetchImpl = (path: string) => {
 			if (path.includes("/jobs"))
 				return {
 					jobs: [
 						...saturatedHostedQueue(),
 						pickup("hobo-trunk"),
-						waiting("hobo-trunk", 2),
+						waiting("hobo-trunk", 200),
 					],
 				};
 			return {
@@ -4407,7 +4407,7 @@ describe("the workflows that route", () => {
 		);
 		assert.match(
 			ci,
-			/id: trusted-route\n[\s\S]*?\n\s+- id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ inputs\.route \|\| \(github\.event_name == 'merge_group' && steps\.trusted-route\.outputs\.merge_group\) \|\| 'auto' \}\}/,
+			/\n\s+- id: route\n\s+uses: .*route-runner\n\s+with:\n\s+token: \$\{\{ github\.token \}\}\n\s+route: \$\{\{ inputs\.route \|\| 'auto' \}\}/,
 		);
 		assert.match(
 			ci,

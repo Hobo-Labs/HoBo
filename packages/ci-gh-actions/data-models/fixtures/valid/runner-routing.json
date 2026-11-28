@@ -36,7 +36,7 @@
     {
       "labels": ["hobo-agent37"],
       "runnerNamePrefix": "hobo-a37-",
-      "maxRunners": 4
+      "maxRunners": 8
     }
   ],
   "retiredVariables": [
@@ -49,5 +49,9 @@
     "HOBO_CI_TRUNK_RUNNER",
     "HOBO_CI_BOX_RUNNER",
     "HOBO_CI_MAIN_REUSE_MERGE_QUEUE"
-  ]
+  ],
+  "selfUpdate": {
+    "enabled": true,
+    "intervalHours": 3
+  }
 }

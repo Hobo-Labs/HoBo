@@ -146,13 +146,13 @@ function scope(
 }
 
 describe("the scripts lane is a pull-request gate", () => {
-	it("runs pnpm run test:scripts on the routed runner for pull requests and on agent37 for merge groups", () => {
+	it("runs pnpm run test:scripts on the routed runner for pull requests and on agent37 for merge groups the route sends to trunk", () => {
 		assert.equal(scripts.name, "Scripts tests");
 		assert.ok(scripts.needs.includes("route"));
 		assert.ok(scripts.needs.includes("ci-runner-image"));
 		assert.equal(
 			scripts.runsOn,
-			`\${{ github.event_name == 'merge_group' && 'agent37' || (${ROUTED.slice(4, -3)}) }}`,
+			`\${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (${ROUTED.slice(4, -3)}) }}`,
 		);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);

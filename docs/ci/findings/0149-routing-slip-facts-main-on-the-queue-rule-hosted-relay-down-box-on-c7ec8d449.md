@@ -66,9 +66,44 @@ checked on 2026-11-13. They are stated once, here.
 
 | Measure | Before (2026-11-13) | After |
 | --- | --- | --- |
-| Slowest fleet pickup in the last hour, at the run above | 307 s (limit 120 s) | recorded when layer 02 lands |
-| Main gate jobs on the fleet, run 43354645076 | 0 (all on `ubuntu-24.04`) | recorded when layer 02 lands |
-| Pickup p95, main-gate duration, GitHub-hosted minutes per day | not yet computed | recorded with the before figures when layer 02 lands |
+| Slowest fleet pickup in the last hour, at the run above | 307 s (limit 120 s) | the same reading at the first `main` push that a slip routes |
+| Main gate jobs on the fleet, run 43354645076 | 0 (all on `ubuntu-24.04`) | the same count at that push |
+| Pickup p95, main-gate duration, GitHub-hosted minutes per day | computed by the method below for 2026-11-12 (UTC) | computed by the same method for the first full UTC day on which every route notice says `"slip":"used"` |
+
+The box takes the slip writer only after one restart onto a checkout that has
+it (item 3); from then on it keeps itself current. Until that restart the
+"After" column has no day to be computed for.
+
+### How the three are measured
+
+All three come from GitHub's REST API for one UTC day, with a token that can
+read Actions, and need nothing from the box. GitHub keeps run history for 90
+days, so the "Before" day stays computable.
+
+1. **Runs of the day.** `GET /repos/Hobo-Labs/HoBo/actions/runs?created=<day>..<day>&per_page=100`,
+   every page; then each run's jobs, `GET /actions/runs/{id}/jobs?filter=all&per_page=100`.
+2. **Pickup p95.** Over every job of those runs whose `labels` is exactly one
+   of `hobo` or `hobo-trunk` and that has a `runner_name` and a `started_at`:
+   the wait is `started_at − created_at` in seconds. Sort the waits and take
+   the value at rank `ceil(0.95 × n)`. A job still queued at the end of the
+   day counts with `end of day − created_at`. Jobs on `ubuntu-24.04` are not
+   pickups of the fleet and are left out.
+3. **Main-gate duration.** For each `hobo-ci.yml` run of the day with
+   `event: push` and `head_branch: main` whose job `Main full gate (finish)`
+   completed: `completed_at` of that job minus the run's `run_started_at`.
+   Report the median and the slowest, and the count. A run cancelled by the
+   next push is left out (its finish job did not complete).
+4. **GitHub-hosted minutes per day.** Exactly CI health's H8 rule
+   (`paidMinutes` in `scripts/ci/ci-health.mts`): per job on `ubuntu-24.04`
+   with a runner, `ceil((completed_at − started_at) / 60 s)`, summed over the
+   day, leaving out the route job, the fleet probe's `local box enrolled`
+   gate, the two required gates, CI health and its `Routing slip transport`
+   job. Split the sum the way H8 does (`slip`, `queue`, `none`, `fallback`,
+   `unrouted`), so the minutes the queue rule sent away are visible.
+
+The CI health report of every window already carries the H8 sum and the route
+fallbacks by reason (`slipFallbacks`); the day's figures above are its windows
+added up, computed afresh from the API so a missed window does not hide one.
 
 ## Gates
 

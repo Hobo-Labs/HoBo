@@ -453,16 +453,17 @@ describe("Actions runner policy", () => {
 				"hobo-ci.yml",
 				`name: fixture\non:\n  merge_group:\njobs:\n${jobs}  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`,
 			);
-		assert.equal(hoboCi(`${trunkRoute}${trunkGate("pr-gate")}`), 0);
 		assert.notEqual(
+			hoboCi(trunkRoute),
+			0,
+			"a merge-group route job on hobo-trunk cannot fall back to GitHub-hosted runners",
+		);
+		assert.notEqual(hoboCi(`${routeJob}${trunkGate("pr-gate")}`), 0);
+		assert.equal(
 			hoboCi(
-				routeJob.replace(
-					"runs-on: ubuntu-24.04",
-					`runs-on: ${mergeGroupTrunk}`,
-				),
+				`${routeJob}  pr-gate:\n    if: \${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n`,
 			),
 			0,
-			"a route job on the trunk fleet must keep its default-path checkout",
 		);
 		assert.notEqual(hoboCi(`${trunkRoute}${trunkGate("gate")}`), 0);
 		assert.notEqual(lintJobs(trunkRoute), 0);
@@ -474,7 +475,7 @@ describe("Actions runner policy", () => {
 			0,
 		);
 		const mergeGroupScripts =
-			"${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
+			"${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}";
 		const scriptsJob = (id: string, needs: string) =>
 			`  ${id}:\n${needs}    runs-on: ${mergeGroupScripts}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n`;
 		assert.equal(
@@ -800,6 +801,45 @@ describe("Actions runner policy", () => {
 			),
 			0,
 		);
+	});
+
+	it("pins the routing slip probe job in the health workflow (ADR-0181, 3.2)", () => {
+		const workflow = readFileSync(
+			new URL("../../.github/workflows/ci-health.yml", import.meta.url),
+			"utf8",
+		);
+		const at = workflow.indexOf("  routing-slip-probe:\n");
+		assert.ok(at > 0, "ci-health.yml runs the routing slip probe");
+		assert.match(workflow, /^on:\n {2}push:\n {4}branches: \[main\]\n/mu);
+		assert.match(
+			workflow,
+			/^ {2}ci-health:\n {4}name: CI health\n {4}if: github\.event_name != 'push'\n/mu,
+		);
+		const contentsWrite = [...workflow.matchAll(/^\s+contents: write$/gmu)];
+		assert.equal(contentsWrite.length, 1);
+		assert.ok((contentsWrite[0]?.index ?? 0) > at);
+		const job = workflow.slice(at);
+		const health = (probeJob: string) =>
+			lintFile(
+				"ci-health.yml",
+				`name: fixture\non:\n  workflow_dispatch:\npermissions:\n  actions: read\njobs:\n  ci-health:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: node scripts/ci/ci-health.mts\n\n${probeJob}`,
+			);
+		assert.equal(health(job), 0);
+		assert.notEqual(
+			health(job.replace("--write", "--write --ref refs/heads/main")),
+			0,
+		);
+		assert.notEqual(
+			health(job.replace("runs-on: ubuntu-24.04", "runs-on: hobo")),
+			0,
+		);
+		assert.notEqual(
+			health(
+				job.replace("contents: write", "contents: write\n      actions: write"),
+			),
+			0,
+		);
+		assert.notEqual(health(`${job}      - run: echo extra\n`), 0);
 	});
 
 	it("keeps label-by-name out of every other workflow", () => {

@@ -10,6 +10,7 @@ import {
 	DEFAULT_FLEET_MIN_FREE_RUNNERS,
 	DEFAULT_ROUTING_STALL_MS,
 	DEFAULT_RUNNER_ROUTING,
+	DEFAULT_SELF_UPDATE_INTERVAL_HOURS,
 	DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 } from "../../packages/ci-gh-actions/src/isolated-worker/box-routing-policy.ts";
 import {
@@ -293,7 +294,7 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 	});
@@ -357,7 +358,7 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			{
 				labels: ["hobo-agent37"],
 				runnerNamePrefix: "hobo-a37-",
-				maxRunners: 4,
+				maxRunners: 8,
 			},
 		]);
 		assert.equal(committed.verdict.stallMs, DEFAULT_ROUTING_STALL_MS);
@@ -405,5 +406,14 @@ describe("committed runnerRouting against the code's defaults (M8)", () => {
 			"HOBO_CI_ROUTE_MAX_WAIT_SECONDS",
 			"HOBO_CI_TRUNK_RUNNER",
 		]);
+	});
+
+	it("self-update: on, every three hours (ADR-0181, 3.8)", () => {
+		assert.ok(committed);
+		assert.deepEqual(committed.selfUpdate, {
+			enabled: true,
+			intervalHours: DEFAULT_SELF_UPDATE_INTERVAL_HOURS,
+		});
+		assert.equal(DEFAULT_SELF_UPDATE_INTERVAL_HOURS, 3);
 	});
 });

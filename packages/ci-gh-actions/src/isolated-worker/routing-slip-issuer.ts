@@ -18,6 +18,9 @@ export const ROUTING_SLIP_WRITES_PER_HOUR = 300;
 export const ROUTING_SLIP_REFUSED_BACKOFF_MS = 10 * 60_000;
 /** The issuer samples the box this often. */
 export const ROUTING_SLIP_SAMPLE_MS = 10_000;
+export const ROUTING_SLIP_PASS_DEADLINE_MS = 60_000;
+export const ROUTING_SLIP_REQUEST_TIMEOUT_MS = 20_000;
+export const ROUTING_SLIP_STATE_LOG_MS = 10 * 60_000;
 /** The slip's one file; the slip itself is the commit message. */
 // public-contract: the one file of the tree under refs/hobo/routing-slip (ADR-0181).
 export const ROUTING_SLIP_TREE_PATH = "README.md";
@@ -260,21 +263,35 @@ export async function writeRoutingSlipCommit(
 		repository: string;
 		message: string;
 		treeSha?: string | undefined;
+		requestTimeoutMs?: number | undefined;
 	}>,
 ): Promise<RoutingSlipWriteResult> {
 	const git = `/repos/${target.repository}/git`;
+	const requestTimeoutMs =
+		target.requestTimeoutMs ?? ROUTING_SLIP_REQUEST_TIMEOUT_MS;
 	const send = async (
 		path: string,
 		method: "POST" | "PATCH",
 		body: GitDataBody,
-	) => {
+	): Promise<Response> => {
+		const signal = AbortSignal.timeout(requestTimeoutMs);
+		const timedOut = new Promise<Response>((resolve) =>
+			signal.addEventListener(
+				"abort",
+				() => resolve(new Response(null, { status: 598 })),
+				{ once: true },
+			),
+		);
 		try {
-			return await github.request(
-				target.installationId,
-				path,
-				method,
-				JSON.stringify(body),
-			);
+			return await Promise.race([
+				github.request(
+					target.installationId,
+					path,
+					method,
+					JSON.stringify(body),
+				),
+				timedOut,
+			]);
 		} catch {
 			return new Response(null, { status: 599 });
 		}
@@ -324,7 +341,8 @@ export type RoutingSlipIssuerEvent =
 	| "hobo_ci_slip_write_failed"
 	| "hobo_ci_slip_write_deferred"
 	| "hobo_ci_slip_leader"
-	| "hobo_ci_slip_decision_failed";
+	| "hobo_ci_slip_decision_failed"
+	| "hobo_ci_slip_tick_timeout";
 
 export type RoutingSlipIssuerLog = (
 	event: RoutingSlipIssuerEvent,
@@ -356,7 +374,35 @@ export type RoutingSlipIssuerOptions = Readonly<{
 	enabled?: (() => boolean) | undefined;
 	/** Called once, the first time this process finds it is the leader. */
 	onFirstLead?: (() => Promise<void> | void) | undefined;
+	passDeadlineMs?: number | undefined;
+	requestTimeoutMs?: number | undefined;
 }>;
+
+export type RoutingSlipPassStep =
+	| "leader"
+	| "first-lead"
+	| "targets"
+	| "decide"
+	| "write";
+
+export type RoutingSlipIssuerState = Readonly<{
+	leading: boolean | undefined;
+	lastWriteAtMs: number | undefined;
+	lastOutcome: string;
+}>;
+
+export function routingSlipIssuerStateFields(state: RoutingSlipIssuerState) {
+	return {
+		leading: state.leading === undefined ? "unknown" : String(state.leading),
+		lastWriteAt:
+			state.lastWriteAtMs === undefined
+				? "never"
+				: new Date(state.lastWriteAtMs).toISOString(),
+		lastOutcome: state.lastOutcome,
+	};
+}
+
+class StalePass extends Error {}
 
 const classesKey = (classes: RoutingSlipClasses) =>
 	ROUTING_SLIP_CLASSES.map((name) => {
@@ -381,12 +427,33 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 	let firstLead = true;
 	let inFlight: Promise<void> | undefined;
 	let writes = 0;
+	let generation = 0;
+	let step: RoutingSlipPassStep = "leader";
+	let lastWriteAtMs: number | undefined;
+	let lastOutcome = "none";
+	const passDeadlineMs =
+		options.passDeadlineMs ?? ROUTING_SLIP_PASS_DEADLINE_MS;
 
-	async function issue(target: RoutingSlipTarget, nowMs: number) {
+	async function within<T>(
+		pass: number,
+		next: RoutingSlipPassStep,
+		work: () => Promise<T> | T,
+	): Promise<T> {
+		if (pass !== generation) throw new StalePass();
+		step = next;
+		const value = await work();
+		if (pass !== generation) throw new StalePass();
+		return value;
+	}
+
+	async function issue(pass: number, target: RoutingSlipTarget, nowMs: number) {
 		let classes: RoutingSlipClasses;
 		try {
-			classes = await options.decide(target.repository);
+			classes = await within(pass, "decide", () =>
+				options.decide(target.repository),
+			);
 		} catch (error) {
+			if (error instanceof StalePass) throw error;
 			log("hobo_ci_slip_decision_failed", {
 				repository: target.repository,
 				message: error instanceof Error ? error.message : "unknown",
@@ -420,13 +487,18 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		);
 		budget.spend(nowMs);
 		writes += 1;
-		const result = await writeRoutingSlipCommit(options.github, {
-			installationId: target.installationId,
-			repository: target.repository,
-			message,
-			treeSha: trees.get(target.repository),
-		});
+		const result = await within(pass, "write", () =>
+			writeRoutingSlipCommit(options.github, {
+				installationId: target.installationId,
+				repository: target.repository,
+				message,
+				treeSha: trees.get(target.repository),
+				requestTimeoutMs: options.requestTimeoutMs,
+			}),
+		);
+		lastOutcome = result.ok ? "written" : `${result.step}:${result.status}`;
 		if (result.ok) {
+			lastWriteAtMs = nowMs;
 			trees.set(target.repository, result.treeSha);
 			written.set(target.repository, { key, atMs: nowMs });
 			if (changed)
@@ -455,12 +527,13 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		});
 	}
 
-	async function tickOnce(): Promise<void> {
+	async function tickOnce(pass: number): Promise<void> {
 		if (options.enabled && !options.enabled()) return;
 		let leads: boolean;
 		try {
-			leads = await options.leader();
-		} catch {
+			leads = await within(pass, "leader", () => options.leader());
+		} catch (error) {
+			if (error instanceof StalePass) throw error;
 			leads = false;
 		}
 		if (leads !== leading) {
@@ -474,32 +547,56 @@ export function createRoutingSlipIssuer(options: RoutingSlipIssuerOptions) {
 		if (firstLead) {
 			firstLead = false;
 			try {
-				await options.onFirstLead?.();
-			} catch {
-				/* Its own logging says what failed; slips go on. */
+				await within(pass, "first-lead", () => options.onFirstLead?.());
+			} catch (error) {
+				if (error instanceof StalePass) throw error;
 			}
 		}
-		const targets = await options.targets();
+		const targets = await within(pass, "targets", () => options.targets());
 		for (const target of targets) {
 			if (now() < refusedUntilMs) return;
-			await issue(target, now());
+			await issue(pass, target, now());
 		}
 	}
 
 	/** One pass, unless the last one is still running. */
 	function tick(): Promise<void> {
 		if (inFlight) return inFlight;
-		const current = tickOnce()
-			.catch(() => undefined)
-			.finally(() => {
-				inFlight = undefined;
-			});
+		generation += 1;
+		const pass = generation;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<void>((resolve) => {
+			timer = setTimeout(() => {
+				if (pass !== generation) return resolve();
+				generation += 1;
+				lastOutcome = `timeout:${step}`;
+				log("hobo_ci_slip_tick_timeout", {
+					step,
+					deadlineMs: passDeadlineMs,
+					nodeId: options.relay.nodeId,
+				});
+				resolve();
+			}, passDeadlineMs);
+			timer.unref?.();
+		});
+		const current = Promise.race([
+			tickOnce(pass).catch(() => undefined),
+			deadline,
+		]).finally(() => {
+			clearTimeout(timer);
+			if (inFlight === current) inFlight = undefined;
+		});
 		inFlight = current;
 		return current;
 	}
 
 	return {
 		tick,
+		state: (): RoutingSlipIssuerState => ({
+			leading,
+			lastWriteAtMs,
+			lastOutcome,
+		}),
 		/** Slip writes attempted by this process. */
 		writes: () => writes,
 	};

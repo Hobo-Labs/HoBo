@@ -40,12 +40,21 @@ Both are runner routing's real output for the catalog in [Runner routing](/HoBo/
 
 ## How a workflow learns the route
 
-The relay no longer publishes this table as a repository variable. The variables that carried the route table and the box's capacity have been removed with the code that wrote them.
+The box relay writes its decision where the **Route runners** job reads it with its own token: a **routing slip**, the message of a commit at the git ref `refs/hobo/routing-slip` ([ADR-0181](https://github.com/Hobo-Labs/HoBo/blob/main/docs/design/adr/routing-slips.md#adr-0181)). No environment variable and no repository variable carries routing: the settings are committed in `.hobo/ci.json` under `runnerRouting` (the labels, the queue limits, the box's slot split, the hold times, the external pools and the self-update interval), and a repository test fails on any read of a routing name from the environment or from `vars.`.
 
-| Question | Answered by |
+Each slip holds one route per class: a `runner` (one of `runnerRouting.labels`), a `tier` (`fleet`, `local` or `github`) and a reason code (`fleet-open`, `fleet-busy`, `no-node`, `no-capacity`, `stalled` or `pinned`), never a figure. A busy box is `fleet-busy`: still the fleet.
+
+| Behavior | Rule |
 |---|---|
-| Is the hobo fleet open, and how many slots are free? | The route job fetches the hobo fleet's **fleet verdict** and reads its capacity. Its mode values (`fleet`, `local`, `github`) and its output `tier=fleet` are unchanged |
-| Which provider should take a job the fleet cannot? | Runner routing, as above, with the hobo provider's health and active jobs read from the same fleet capacity |
+| Writer | The box that leads the fleet's slip election; a box outside a fleet leads itself |
+| Writing | When the decision changes, and every 3 minutes as a heartbeat; at most 20 writes a minute and 300 an hour; 10 minutes of back-off after a 403 or 429; a pass that has not finished in 60 seconds is abandoned and logged, so the next one runs |
+| Lifetime | 10 minutes from issue |
+| Reading | The route job: two GET calls, 3 seconds at most |
+| No usable slip | Missing, expired, for another repository or naming an unknown label: the route job reads GitHub's queue exactly as before, and says why in a `hobo-ci-route-fallback` warning |
+| Monitoring | CI health counts every fallback by reason, and proves the slip's write and read calls on every push to `main` and every two hours on a probe ref |
+| Staying current | The box relay updates itself from `main` every 3 hours when idle, so a committed change to `runnerRouting` reaches it without a manual restart |
+
+The slip does not carry the balanced table above: its classes say fleet, local box or GitHub-hosted, and a paid label provider is never named.
 
 ## Status honesty
 

@@ -46,6 +46,7 @@ export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"PR impact gate",
 	"HoBo release PR gate (required)",
 	"CI health",
+	"Routing slip transport",
 ]);
 export const RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"hobo",
@@ -277,6 +278,12 @@ export type HealthReport = Readonly<{
 	requests: number;
 	signals: Signals;
 	paidMinutes: Readonly<{ total: number; byRefusal: RefusalMinutes }>;
+	slipFallbacks: SlipFallbacks;
+}>;
+
+export type SlipFallbacks = Readonly<{
+	total: number;
+	byReason: Readonly<Record<string, number>>;
 }>;
 
 export type Thresholds = Readonly<{
@@ -394,6 +401,29 @@ export function signalH2(evidence: readonly RouteEvidence[]): SignalResult {
 	};
 }
 
+export function countSlipFallbacks(
+	evidence: readonly RouteEvidence[],
+): SlipFallbacks {
+	const counts = new Map<string, number>();
+	for (const entry of evidence)
+		for (const notice of entry.notices)
+			if (notice.slip === "fallback")
+				counts.set(notice.why, (counts.get(notice.why) ?? 0) + 1);
+	const sorted = [...counts].sort(
+		([a, left], [b, right]) => right - left || a.localeCompare(b),
+	);
+	return {
+		total: sorted.reduce((sum, [, count]) => sum + count, 0),
+		byReason: Object.fromEntries(sorted),
+	};
+}
+
+function describeFallbacks(fallbacks: SlipFallbacks): string {
+	return Object.entries(fallbacks.byReason)
+		.map(([why, count]) => `${why} ${count}`)
+		.join(", ");
+}
+
 /** Runs the queue routed because the relay has no current slip: none written, or expired. */
 export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 	const hits = evidence.filter((entry) =>
@@ -408,9 +438,13 @@ export function signalH3(evidence: readonly RouteEvidence[]): SignalResult {
 			summary: "every route job that read a slip found a current one",
 			evidence: [],
 		};
+	const reasons = Object.entries(countSlipFallbacks(evidence).byReason)
+		.filter(([why]) => ABSENT_SLIP_WHYS.has(why))
+		.map(([why, count]) => `${why} ${count}`)
+		.join(", ");
 	return {
 		state: "breach",
-		summary: `${plural(hits.length, "run")} routed with no current routing slip`,
+		summary: `${plural(hits.length, "run")} routed with no current routing slip (${reasons})`,
 		evidence: cap(hits.map((entry) => entry.run.htmlUrl)),
 	};
 }
@@ -570,6 +604,7 @@ export function evaluate(input: EvaluateInput): HealthReport {
 		requests: input.requests,
 		signals,
 		paidMinutes: { total: h8.total, byRefusal: h8.byRefusal },
+		slipFallbacks: countSlipFallbacks(evidence),
 	};
 }
 
@@ -581,6 +616,12 @@ export function renderReport(report: HealthReport): string {
 		`Window ${report.windowStart} to ${report.windowEnd}: ${plural(report.runs, "run")}${report.truncated ? `, truncated at ${MAX_RUNS}` : ""}, ${plural(report.requests, "request")}.`,
 	];
 	if (report.failure) lines.push("", `Failed: ${report.failure}`);
+	lines.push(
+		"",
+		report.slipFallbacks.total === 0
+			? "Route fallbacks to the queue rule: none."
+			: `Route fallbacks to the queue rule: ${report.slipFallbacks.total} (${describeFallbacks(report.slipFallbacks)}).`,
+	);
 	lines.push("", "| Signal | State | Summary |", "| --- | --- | --- |");
 	for (const signal of SIGNALS) {
 		const result = report.signals[signal];
@@ -1102,6 +1143,7 @@ export async function main(
 				total: 0,
 				byRefusal: { slip: 0, queue: 0, none: 0, fallback: 0, unrouted: 0 },
 			},
+			slipFallbacks: { total: 0, byReason: {} },
 		};
 	}
 	const markdown = renderReport(report);

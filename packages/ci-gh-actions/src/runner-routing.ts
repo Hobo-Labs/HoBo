@@ -109,6 +109,9 @@ export const RunnerRoutingSchema = z
 		retiredVariables: z
 			.array(z.string().regex(/^HOBO_CI_[A-Z0-9_]{1,60}$/u))
 			.max(32),
+		selfUpdate: z
+			.object({ enabled: z.boolean(), intervalHours: whole(1, 168) })
+			.strict(),
 	})
 	.strict()
 	.meta({ id: "RunnerRouting" });

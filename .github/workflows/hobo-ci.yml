@@ -57,7 +57,7 @@ jobs:
   route:
     name: Route runners
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
@@ -136,25 +136,11 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/pr-fabric-reuse.mts
-      - id: trusted-route
-        shell: bash
-        run: |
-          set -euo pipefail
-          file=".ci-trusted/scripts/ci/route-runner.mts"
-          if [[ ! -f "$file" ]]; then
-            echo "::error::The trusted route-runner file is missing ($file)"
-            exit 1
-          fi
-          if grep -F -q -- 'workflowFile(env) !== "hobo-ci.yml"' "$file"; then
-            echo "merge_group=fleet" >> "$GITHUB_OUTPUT"
-          else
-            echo "merge_group=auto" >> "$GITHUB_OUTPUT"
-          fi
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ inputs.route || (github.event_name == 'merge_group' && steps.trusted-route.outputs.merge_group) || 'auto' }}
+          route: ${{ inputs.route || 'auto' }}
       - name: Record the tree this run tests
         id: tested
         if: github.event_name == 'pull_request'
@@ -975,7 +961,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
-    runs-on: ${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}
+    runs-on: ${{ github.event_name == 'merge_group' && needs.route.outputs.tier != 'github' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1297,7 +1283,7 @@ jobs:
     # local run covering that job, and the job was skipped for it.
     needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
-    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read

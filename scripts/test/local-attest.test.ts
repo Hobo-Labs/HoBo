@@ -66,7 +66,13 @@ for (const name of Object.keys(process.env)) {
 		delete process.env[name];
 }
 
-const rootIgnoresPermissions = process.getuid?.() === 0;
+function releaseBrokenCleanup(scratch: string): void {
+	const info = join(scratch, "objects", "info");
+	const hold = join(info, "hobo-hold");
+	if (existsSync(hold)) spawnSync("chattr", ["-i", hold], { stdio: "ignore" });
+	chmodSync(info, 0o700);
+}
+
 const script = fileURLToPath(
 	new URL("../ci/local-attest.mts", import.meta.url),
 );
@@ -2137,7 +2143,13 @@ if [ "\${HOBO_SIGNOFF_REQUIRE_REMOTE_REF:-0}" = 1 ]; then
 fi
 printf '%s\\n' "$@" > "$HOBO_SIGNOFF_TEST_CALLS"
 printf '%s\\n%s\\n' "$GH_HOST" "$GH_REPO" > "$HOBO_SIGNOFF_TEST_ENV"
-if [ "\${HOBO_SIGNOFF_BREAK_CLEANUP:-0}" = 1 ]; then chmod 000 objects/info; fi
+if [ "\${HOBO_SIGNOFF_BREAK_CLEANUP:-0}" = 1 ]; then
+  if [ "$(id -u)" = 0 ]; then
+    : > objects/info/hobo-hold && chattr +i objects/info/hobo-hold
+  else
+    chmod 000 objects/info
+  fi
+fi
 exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 `,
 			{ mode: 0o755 },
@@ -3132,9 +3144,7 @@ exec /usr/bin/git "$@"
 		);
 	});
 
-	it("reports possible publication when the isolated Git view cannot be removed", {
-		skip: rootIgnoresPermissions,
-	}, async () => {
+	it("reports possible publication when the isolated Git view cannot be removed", async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
@@ -3149,14 +3159,12 @@ exec /usr/bin/git "$@"
 				/some statuses may already have been posted/u,
 			);
 		} finally {
-			chmodSync(join(scratch, "objects", "info"), 0o700);
+			releaseBrokenCleanup(scratch);
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	});
 
-	it("preserves the publication failure when cleanup also fails", {
-		skip: rootIgnoresPermissions,
-	}, async () => {
+	it("preserves the publication failure when cleanup also fails", async () => {
 		const run = await fixture(false);
 		const result = run.command([], {
 			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
@@ -3169,7 +3177,7 @@ exec /usr/bin/git "$@"
 			assert.match(result.stderr, /gh-signoff failed/u);
 			assert.match(result.stderr, /could not remove temporary Git view/u);
 		} finally {
-			chmodSync(join(scratch, "objects", "info"), 0o700);
+			releaseBrokenCleanup(scratch);
 			rmSync(scratch, { recursive: true, force: true });
 		}
 	});
