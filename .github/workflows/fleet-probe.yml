@@ -6,9 +6,6 @@ name: Fleet probe
 # reads before it sends work to that label (scripts/ci/route-runner.mts): a
 # label no runner has been seen on is not sent work.
 #
-# Started by each CI run, so the record is fresh whenever it is needed and
-# nothing runs while the repository is quiet.
-#
 # Each label has its own concurrency group and nothing is cancelled once it
 # is waiting for a runner. A label that is down therefore holds one job that
 # goes on waiting, which is what the route job needs to see, plus at most one
@@ -17,6 +14,9 @@ on:
   workflow_run:
     workflows: ["HoBo CI Fabric"]
     types: [requested]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_dispatch:
 
 permissions: {}
@@ -24,6 +24,7 @@ permissions: {}
 jobs:
   pr-fleet:
     name: hobo picks a job up
+    if: (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'
     runs-on: hobo
     concurrency:
       group: fleet-probe-hobo
@@ -34,6 +35,7 @@ jobs:
 
   trunk-fleet:
     name: hobo-trunk picks a job up
+    if: (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'
     runs-on: hobo-trunk
     concurrency:
       group: fleet-probe-hobo-trunk
@@ -47,6 +49,7 @@ jobs:
   # dependency-free reader. GitHub-hosted, so it never waits on a label it probes.
   local-box-enrolled:
     name: local box enrolled
+    if: (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
@@ -56,6 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false

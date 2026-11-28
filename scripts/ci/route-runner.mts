@@ -1207,6 +1207,7 @@ export const TRUNK_EVENTS: ReadonlySet<string> = new Set([
 	"workflow_dispatch",
 	"merge_group",
 	"workflow_run",
+	"schedule",
 ]);
 
 /** The labels the code holds, for a `.hobo/ci.json` with no `runnerRouting`. */
@@ -1922,6 +1923,7 @@ export async function main(
 		});
 		if (
 			mergeGroupTrusted &&
+			workflowFile(env) !== "hobo-ci.yml" &&
 			pinned.tier === "fleet" &&
 			!(await hasVerifiedBatchCapacity(
 				env,

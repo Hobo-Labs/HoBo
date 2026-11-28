@@ -41,7 +41,11 @@ import {
 	releaseWorkflowCredentials,
 	releaseWorkflowGithubAppScopeAllowed,
 } from "../ci/create-github-release.mts";
-import { qualifySiteRelease } from "../deploy-site.mts";
+import {
+	promoteSiteStable,
+	qualifySiteCandidate,
+	qualifySiteRelease,
+} from "../deploy-site.mts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
@@ -644,6 +648,47 @@ describe.skipIf(!built)(
 					.mutations()
 					.filter((r) => r.method === "POST" && r.url.endsWith("/git/commits")),
 			).toHaveLength(1);
+			expect(journalText(home)).not.toContain(fx.TOKEN);
+		});
+
+		it("Pages: candidate records one gh-pages commit, and stable promotes that Freight without another", async () => {
+			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
+			const github: HttpTransport = async (request) => {
+				const response = await world.transport(request);
+				if (request.method !== "GET") world.finishBuild("built");
+				return response;
+			};
+			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-split-"));
+			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
+			writeFileSync(join(dist, ".nojekyll"), "");
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-split-"));
+			const releaseSeams = seams(withProbes(github, []), 700, fx.TOKEN);
+			await qualifySiteCandidate({
+				dist,
+				home,
+				env,
+				seams: releaseSeams,
+			});
+			const afterCandidate = JSON.parse(
+				readFileSync(releaseReportPath(home, "pages"), "utf8"),
+			);
+			expect(afterCandidate.channels.candidate.outcome).toBe("qualified");
+			expect(afterCandidate.channels.stable).toBeUndefined();
+			const commits = () =>
+				world
+					.mutations()
+					.filter((r) => r.method === "POST" && r.url.endsWith("/git/commits"));
+			expect(commits()).toHaveLength(1);
+			expect(world.commits.get(world.head("gh-pages"))?.message).toBe(
+				`deploy: ${COMMIT}`,
+			);
+			await promoteSiteStable({ home, env, seams: releaseSeams });
+			const afterStable = JSON.parse(
+				readFileSync(releaseReportPath(home, "pages"), "utf8"),
+			);
+			expect(afterStable.freightId).toBe(afterCandidate.freightId);
+			expect(afterStable.channels.stable.outcome).toBe("qualified");
+			expect(commits()).toHaveLength(1);
 			expect(journalText(home)).not.toContain(fx.TOKEN);
 		});
 

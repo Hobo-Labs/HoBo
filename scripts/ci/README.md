@@ -64,8 +64,9 @@ Blocked release verdicts and `::error::` lines use
 detectors, fail closed) before aggregation or logging.
 `announceVerdict` keeps resolver codes (`releaseFreightVerdictCodesForAnnounce`)
 and structured GitHub Pages refusal detail on `::error::` lines instead of
-`blocked (none)`. The `Record, promote and publish` step of `release-hobo.yml`
-passes `GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
+`blocked (none)`. The `Record and promote the Pages candidate` step of `release-hobo.yml`,
+and the stable job's `Promote the Pages stable channel` step, pass
+`GITHUB_TOKEN: ${{ github.token }}` so Pages realize uses the job-scoped
 token with `contents: write`, not `secrets.GITHUB_TOKEN`. The `release-contract` job builds those workspace
 packages (`RELEASE_CONTRACT_SCRIPT_BUILD_FILTERS` in
 `scripts/lib/release-contract-script-build.mts`) before its vitest list so sparse
@@ -78,9 +79,15 @@ When `scripts/ci/attested-jobs.json` changes, bump `SHADOW_PLAN_BLOB` in
 Hermetic checks live in
 [`scripts/test/release-freight.test.ts`](../test/release-freight.test.ts).
 Page and OCI realize behavior is documented in [`packages/hobo/CD.md`](../../packages/hobo/CD.md).
+While holding the Pages publish slot, the stable job verifies that `gh-pages`
+still names its exact candidate source before promotion. A superseded or
+unverifiable source fails the job so it cannot report a stale promotion as passed.
+If dependency-layer materialization times out without a complete decision, the
+recovery action checks the pnpm store again and installs only when it is warm.
 
 Pages release sparse checkout lists directory cones only in `RELEASE_PAGES_SPARSE_PATHS`
-(`examples` covers `examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
+(including `src` for the gh-pages deps checkout-key path and `examples` for
+`examples/browser-runtime/wit/station.wit`); `hobo-checkout` routes
 nested file paths through `sparse-checkout add`, not cone `set`. The release-pages job also
 passes `RELEASE_PAGES_MATERIALIZE_PATHS` so blobless checkouts always run
 `sparse-checkout add` plus `git checkout HEAD --` for `examples/browser-runtime/wit`
@@ -132,6 +139,8 @@ before the artifacts are accepted.
 Published package manifests retain workspace import names as npm aliases for
 their public package names. OCI app staging installs matching workspace-name
 links so the same packed modules resolve in the deployed app.
+Its Turbo builds honor the runner's `HOBO_TURBO_CONCURRENCY` memory limit.
+The staging test checks the configured-store fallback with no package manager on `PATH`.
 
 
 The SQLite SDK includes backend-routing and Fleet implementation code and their
@@ -227,3 +236,12 @@ The OCI image input key includes SDK bundling helpers for the SDK image. The CLI
 image key also depends on the SDK image key because CLI staging installs its npm
 artifacts; the MCP image depends on the CLI image. This prevents an unchanged image
 key from hiding a changed SDK artifact while leaving unrelated image keys independent.
+
+## Composite action lint
+
+`pnpm run actions:lint` walks `.github/actions/**/action.yml` and rejects
+composite steps that set workflow-only fields such as `timeout-minutes` (use a
+shell `timeout` instead) or `continue-on-error: ${{ ... }}`. Job timeout and
+retry policy belong on the workflow job, not inside the composite. The composite
+field walk parses `yaml` AST nodes in `scripts/lint-actions.ts` via
+`lintCompositeStepFields` before matching unsupported step keys.
