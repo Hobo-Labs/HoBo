@@ -1,6 +1,7 @@
 import { PassThrough } from "node:stream";
 import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
 import {
+	type CallToolRequest,
 	Client,
 	type JSONRPCMessage,
 	parseJSONRPCMessage,
@@ -14,6 +15,7 @@ import {
 import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { createComposedHoboCli } from "../../src/cli.js";
+import { isJsonObject, isJsonString } from "../../src/json.js";
 import {
 	createInfisicalCaptureConnector,
 	RELAY_SECRET_CAPTURE_SPECS,
@@ -66,6 +68,9 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			createStoreChoiceApp({
 				cwd: project,
 				locatorFor: () => ({
+					assertCurrent: () => {},
+					onOwnerChoice: () => {},
+					selectionRevision: () => 0,
 					read: async () => ({ ...saved }),
 					write: async (values: Record<string, string>) => {
 						Object.assign(saved, values);
@@ -117,7 +122,7 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			},
 		);
 		await client.connect(serverTransport);
-		const calls: unknown[] = [];
+		const calls: CallToolRequest["params"][] = [];
 		const messages: unknown[] = [];
 		try {
 			const tools = (await client.listTools()).tools;
@@ -133,11 +138,24 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 				arguments: { cwd: project },
 			});
 			expect(shown.structuredContent).toEqual({ status: "shown" });
+			const meta = shown._meta;
+			if (!isJsonObject(meta) || !isJsonString(meta.hoboChoiceTicket))
+				throw new Error("The tool result did not carry the picker ticket.");
+			const choiceTicket = meta.hoboChoiceTicket;
+			expect(JSON.stringify(shown.content)).not.toContain(choiceTicket);
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				choiceTicket,
+			);
+			expect(JSON.stringify(shown.content)).not.toContain("hoboChoiceTicket");
+			expect(JSON.stringify(shown.structuredContent)).not.toContain(
+				"hoboChoiceTicket",
+			);
 			const contents = (await client.readResource({ uri: required(uri) }))
 				.contents;
 			const resource = required(contents[0]);
 			if (!("text" in resource))
 				throw new Error("Expected a text app resource");
+			expect(resource.text).not.toContain(choiceTicket);
 			const dom = new JSDOM(resource.text, {
 				runScripts: "outside-only",
 				url: "https://example.invalid",
@@ -153,7 +171,7 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			});
 			bridge.oninitialized = resolveInitialized;
 			bridge.oncalltool = async (params) => {
-				calls.push(params.name);
+				calls.push(params);
 				return await client.callTool(params);
 			};
 			bridge.onmessage = async (params) => {
@@ -183,6 +201,12 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 			view.eval(required(script?.textContent));
 			await initialized;
 			await bridge.sendToolInput({ arguments: { cwd: project } });
+			const button = required(
+				view.document.querySelector<HTMLButtonElement>("button"),
+			);
+			expect(button.disabled).toBe(true);
+			await bridge.sendToolResult(shown);
+			expect(button.disabled).toBe(false);
 			const radio = required(
 				view.document.querySelector<HTMLInputElement>(
 					'input[value="infisical"]',
@@ -209,7 +233,13 @@ describe("EVAL: MCP Apps SDK owner store picker", () => {
 				new view.Event("submit", { bubbles: true, cancelable: true }),
 			);
 			await completed;
-			expect(calls).toEqual(["submit_store_choice"]);
+			expect(calls.map((call) => call.name)).toEqual(["submit_store_choice"]);
+			expect(calls[0]?.arguments).toMatchObject({
+				choiceTicket,
+				cwd: project,
+				store: "infisical",
+				INFISICAL_PROJECT_ID: privateValue,
+			});
 			expect(saved.INFISICAL_PROJECT_ID).toBe(privateValue);
 			expect(established).toBe(true);
 			await vi.waitFor(() => expect(messages).toHaveLength(1), {

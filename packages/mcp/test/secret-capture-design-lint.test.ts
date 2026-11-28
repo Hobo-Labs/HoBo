@@ -59,7 +59,7 @@ describe("secret-capture form design lint (HoBo Rubberhose)", () => {
 				'el("capture-label").textContent = next.label || next.name;',
 				'el("capture-purpose").textContent = next.purpose || "";',
 				'el("capture-name").textContent = next.name;',
-				'done.textContent = String(answer.ref || "")',
+				'done.textContent = ticket && ticket.target === "handoff"',
 			])
 				expect(html).toContain(assignment);
 		}

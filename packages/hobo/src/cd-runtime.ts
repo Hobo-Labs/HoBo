@@ -93,6 +93,7 @@ import {
 	type PrincipalRef,
 	ResolverError,
 } from "@hobo/core";
+import type { CdIssuerSigningKey } from "@hobo/hobo-cd";
 import { GithubPagesRefusal } from "@hobo/provider-github";
 import { OciRegistryRefusal } from "@hobo/provider-oci-registry";
 import type { Yard } from "@hobo/yards";
@@ -113,6 +114,7 @@ import {
 	type CdStoreOpener,
 	openCdStore,
 } from "./cd-store.js";
+import { injectedCdSvidIssuer, ownerCdSvidIssuer } from "./cd-svid-issuer.js";
 import {
 	loadTopologyFiles,
 	mergeTopologyReaders,
@@ -133,6 +135,8 @@ import {
 	catalogRealizedProvider,
 } from "./provider-hosting-catalog.js";
 
+export { CD_SVID_SIGNING_KEY } from "./cd-svid-issuer.js";
+
 export type CdRuntimeOptions = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
 	/** HOBO_HOME. */
@@ -140,6 +144,8 @@ export type CdRuntimeOptions = Readonly<{
 	cwd: string;
 	/** `--simulate`: the only path to fixtures. */
 	simulate: boolean;
+	publicOrigin?: string;
+	openSigningKey?: (origin: string) => Promise<CdIssuerSigningKey>;
 	now?: () => number;
 	principal?: PrincipalRef;
 	/** Share an already-open journal (e.g. the Yard runtime's, for `hobo up`). */
@@ -201,6 +207,9 @@ export type CdRuntimeOptions = Readonly<{
 export type CdRuntime = Readonly<{
 	cd: ComposedContinuousDelivery;
 	config: CdComposeConfig;
+	publicOrigin?: string;
+	issuerKeyId?: string;
+	issuerReady?: () => boolean;
 	ctx: CdContext;
 	host: CdDeployHost;
 	store: DurableEventStore;
@@ -271,6 +280,34 @@ function refusal(code: string, message: string, remediation: string) {
 export async function openCdRuntime(
 	options: CdRuntimeOptions,
 ): Promise<Outcome<CdRuntime>> {
+	let publicOrigin: string | undefined;
+	if (options.publicOrigin !== undefined) {
+		try {
+			const origin = new URL(options.publicOrigin);
+			if (
+				origin.protocol !== "https:" ||
+				origin.username ||
+				origin.password ||
+				origin.pathname !== "/" ||
+				origin.search ||
+				origin.hash
+			)
+				throw new Error("invalid public origin");
+			publicOrigin = origin.origin;
+		} catch {
+			return refusal(
+				"cd-public-origin-invalid",
+				"the CD public origin must be an HTTPS origin without credentials, path, query, or fragment",
+				"Configure the public HTTPS origin of the CD service before starting a public listener.",
+			);
+		}
+	}
+	if (options.openSigningKey && publicOrigin === undefined)
+		return refusal(
+			"cd-public-origin-invalid",
+			"an injected CD signing authority requires a public HTTPS origin",
+			"Configure the public HTTPS origin before opening the signing authority.",
+		);
 	const parsed = parseCdComposeConfig({
 		env: options.env,
 		home: options.home,
@@ -278,6 +315,66 @@ export async function openCdRuntime(
 	});
 	if (!parsed.ok) return parsed;
 	const config = parsed.value;
+	let agentIssuer: Awaited<ReturnType<typeof ownerCdSvidIssuer>> | undefined;
+	if (publicOrigin !== undefined) {
+		try {
+			if (options.openSigningKey) {
+				const key = await options.openSigningKey(publicOrigin);
+				agentIssuer = injectedCdSvidIssuer(key, publicOrigin);
+			} else {
+				if (!options.readSecret) throw new Error("CD owner store unavailable");
+				agentIssuer = await ownerCdSvidIssuer(options.readSecret, publicOrigin);
+			}
+		} catch {
+			return refusal(
+				"cd-svid-issuer-unavailable",
+				"the CD public service cannot load its owner-managed signing key",
+				"Complete the HoBo owner setup and provision the CD signing key in the owner store before starting the public service.",
+			);
+		}
+	}
+	let retained = false;
+	let opened: Awaited<ReturnType<CdStoreOpener>> | undefined;
+	const openStore: CdStoreOpener = async (selection, clock, readSecret) => {
+		opened = await (options.openStore ?? openCdStore)(
+			selection,
+			clock,
+			readSecret,
+		);
+		return opened;
+	};
+	try {
+		const result = await openComposedCdRuntime(
+			{ ...options, openStore },
+			config,
+			publicOrigin,
+			agentIssuer,
+		);
+		retained = result.ok;
+		return result;
+	} catch {
+		return refusal(
+			"cd-runtime-unavailable",
+			"The CD runtime could not be composed.",
+			"Check the CD configuration and its service dependencies before retrying.",
+		);
+	} finally {
+		if (!retained) {
+			try {
+				await closeCdStore(opened);
+			} finally {
+				agentIssuer?.close();
+			}
+		}
+	}
+}
+
+async function openComposedCdRuntime(
+	options: CdRuntimeOptions,
+	config: CdComposeConfig,
+	publicOrigin: string | undefined,
+	agentIssuer: Awaited<ReturnType<typeof ownerCdSvidIssuer>> | undefined,
+): Promise<Outcome<CdRuntime>> {
 	// Declared topology is read before the journal opens: a malformed file
 	// refuses the command with nothing opened.
 	const files = options.topologyFiles ?? [];
@@ -291,8 +388,15 @@ export async function openCdRuntime(
 					stationId: config.stationId,
 					importModule,
 				});
-	if (!declared.ok)
-		return refusal(declared.code, declared.message, declared.remediation);
+	if (!declared.ok) {
+		const message = {
+			"cd-topology-unreadable": "A CD topology file could not be read.",
+			"cd-topology-invalid": "A CD topology declaration is invalid.",
+			"cd-topology-station-mismatch":
+				"A CD topology Camp belongs to another Station.",
+		}[declared.code];
+		return refusal(declared.code, message, declared.remediation);
+	}
 	const declaredRails =
 		files.length === 0
 			? ({ ok: true, value: [] } as const)
@@ -304,7 +408,7 @@ export async function openCdRuntime(
 	if (!declaredRails.ok)
 		return refusal(
 			declaredRails.code,
-			declaredRails.message,
+			"A CD Rail declaration could not be read or validated.",
 			declaredRails.remediation,
 		);
 	let declaredTopology: TopologyReader;
@@ -315,7 +419,11 @@ export async function openCdRuntime(
 		]);
 	} catch (error) {
 		if (error instanceof TopologyConflictError)
-			return refusal(error.code, error.message, error.remediation);
+			return refusal(
+				error.code,
+				"A CD Camp is declared by more than one topology source.",
+				error.remediation,
+			);
 		throw error;
 	}
 	const now = options.now ?? (() => Date.now());
@@ -329,10 +437,10 @@ export async function openCdRuntime(
 				{ now },
 				options.readSecret,
 			);
-		} catch (error) {
+		} catch {
 			return refusal(
 				"cd-store-unavailable",
-				error instanceof Error ? error.message : String(error),
+				"The CD journal store could not be opened.",
 				config.store.backend === "postgres-fleet"
 					? "Keep each member's connection string in the secret store (entry HOBO_CD_POSTGRES_URL_<ID>), give the runtime access to the store, and check that a majority of members and witnesses are reachable on PostgreSQL 16 or later."
 					: config.store.backend === "postgres"
@@ -355,7 +463,6 @@ export async function openCdRuntime(
 		now,
 	});
 	if (kube && !kube.ok) {
-		await opened?.close();
 		return kube;
 	}
 	const topology = mergeTopologyReaders([
@@ -368,8 +475,16 @@ export async function openCdRuntime(
 		declaredRails.value,
 	);
 	if (!rails.ok) {
-		await opened?.close();
-		return rails;
+		return {
+			ok: false,
+			reasons: rails.reasons.map((reason) =>
+				create(ReasonRecordSchema, {
+					code: reason.code,
+					message: "The CD topology declares conflicting Rails.",
+					remediation: reason.remediation,
+				}),
+			),
+		};
 	}
 	const railCatalog = rails.value;
 	const policyPack = options.policyPack ?? createCdBaselinePack();
@@ -387,12 +502,9 @@ export async function openCdRuntime(
 		kube?.value.realizer &&
 		!options.realizers?.conductor
 	) {
-		await opened?.close();
 		return refusal(
 			"cd-conductor-conflict",
-			`the topology declares publication Camps (${catalogCamps
-				.map((camp) => camp.campId)
-				.join(", ")}) and a Kubernetes fleet: both need the conductor realizer`,
+			"Publication Camps and a Kubernetes fleet both need the conductor realizer.",
 			"Open publication Camps (--yard) and the Kubernetes fleet (HOBO_CD_KUBE_*) in separate hobo deploy runs, or compose one conductor through options.realizers.",
 		);
 	}
@@ -541,6 +653,10 @@ export async function openCdRuntime(
 			? { members: options.members }
 			: undefined),
 		railCatalog,
+		...(publicOrigin === undefined ? undefined : { publicOrigin }),
+		...(agentIssuer === undefined
+			? undefined
+			: { agentIssuer: agentIssuer.issuer }),
 		readRailEvents: createJournalRailEventReader({ store }),
 		...(options.readCiEvents
 			? { readCiEvents: options.readCiEvents }
@@ -564,6 +680,21 @@ export async function openCdRuntime(
 		value: Object.freeze({
 			cd,
 			config,
+			...(publicOrigin === undefined ? undefined : { publicOrigin }),
+			...(agentIssuer === undefined
+				? undefined
+				: {
+						issuerKeyId: agentIssuer.issuer.activeKeyId,
+						issuerReady: () => {
+							try {
+								return agentIssuer.issuer.kms.hasKey(
+									agentIssuer.issuer.activeKeyId,
+								);
+							} catch {
+								return false;
+							}
+						},
+					}),
 			ctx,
 			store,
 			conductor,
@@ -604,10 +735,24 @@ export async function openCdRuntime(
 				? { maintainJournal: opened.maintain }
 				: undefined),
 			close: async () => {
-				await opened?.close();
+				try {
+					agentIssuer?.close();
+				} finally {
+					await closeCdStore(opened);
+				}
 			},
 		}),
 	};
+}
+
+async function closeCdStore(
+	opened: Awaited<ReturnType<CdStoreOpener>> | undefined,
+): Promise<void> {
+	try {
+		await opened?.close();
+	} catch {
+		throw new Error("CD journal cleanup failed");
+	}
 }
 
 /** A failed health ingest leaves readiness stale: say so on stderr. */
@@ -1369,10 +1514,10 @@ async function openKubeFleet(
 				...(topology ? { topology } : undefined),
 			},
 		};
-	} catch (error) {
+	} catch {
 		return refusal(
 			"cd-kube-fleet-invalid",
-			error instanceof Error ? error.message : String(error),
+			"The Kubernetes fleet could not be read or initialized.",
 			"Fix the HOBO_CD_KUBE_FLEET file: one of ocm|karmada realizer records, and optionally clusterProfiles (see packages/hobo/CD.md).",
 		);
 	}

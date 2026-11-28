@@ -52,7 +52,7 @@ export const WRITER_SESSION_MAX_MS = 15 * 60_000;
 const DEPLOY_SECRET_PATH = "/";
 
 const NEXT_STEP_CONNECT =
-	"Start HoBo's private owner setup for the owner's existing store. This relay capture adapter also needs a supported connection before capture can continue.";
+	"Start HoBo's private owner setup for the owner's existing store, then use the HoBo owner hand-off to open the selected store and authorize this session. This relay capture adapter also needs a supported connection before capture can continue.";
 
 /**
  * What a relay deployment still captures from a person (ADR-0179 amendment

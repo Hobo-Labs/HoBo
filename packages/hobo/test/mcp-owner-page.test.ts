@@ -25,6 +25,11 @@ import { createRelayOwnerSessions } from "../src/relay-owner-session.js";
 const ORIGIN = "https://owner-page.hobo.test/";
 const TOKEN = "header.payload-owner-page-fixture.signature";
 const PROJECT = "synthetic-project";
+const guards = {
+	assertCurrent: () => {},
+	onOwnerChoice: () => {},
+	selectionRevision: () => 0,
+};
 
 const saved = z.object({
 	path: z.string(),
@@ -187,6 +192,7 @@ describe.skipIf(browser === undefined)("HoBo's owner page", () => {
 
 		const unsealed = await pages.unseal(out.data.sealed);
 		expect(unsealed).toEqual({
+			page: opened.page,
 			cwd: "/synthetic/project",
 			answers: {
 				store: "infisical",
@@ -240,7 +246,9 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			const deposited = new Map<string, string>();
 			const written: Record<string, string>[] = [];
 			const sessions: OwnerStoreSessions = {
-				establish: async () => {
+				establish: async (_cwd, signIn) => {
+					if (signIn?.INFISICAL_TOKEN)
+						deposited.set("INFISICAL_TOKEN", signIn.INFISICAL_TOKEN);
 					expect(deposited.get("INFISICAL_TOKEN")).toBe(TOKEN);
 					return { status: "established", store: "Infisical" };
 				},
@@ -261,6 +269,7 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			const app = createStoreChoiceApp({
 				cwd: "/synthetic/project",
 				locatorFor: () => ({
+					...guards,
 					read: async () => ({}),
 					write: async (values: Record<string, string>) => {
 						written.push(values);
@@ -268,7 +277,6 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 				}),
 				sessions,
 				pages,
-				deposit: (name, value) => deposited.set(name, value),
 			});
 			expect(app.tools(NO_STORE_CHOICE_SUPPORT).map((t) => t.name)).toEqual([
 				CHOOSE_SECRET_STORE_TOOL,
@@ -322,7 +330,12 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			const written = new Map<string, string>();
 			let established = false;
 			const sessions: OwnerStoreSessions = {
-				establish: async () => {
+				establish: async (_cwd, signIn) => {
+					if (signIn?.INFISICAL_CLI_SESSION)
+						deposited.set(
+							"INFISICAL_CLI_SESSION",
+							signIn.INFISICAL_CLI_SESSION,
+						);
 					established = deposited.has("INFISICAL_CLI_SESSION");
 					return established
 						? { status: "established", store: "Infisical" }
@@ -348,10 +361,13 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 			};
 			const app = createStoreChoiceApp({
 				cwd: "/synthetic/project",
-				locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+				locatorFor: () => ({
+					...guards,
+					read: async () => ({}),
+					write: async () => {},
+				}),
 				sessions,
 				pages: createOwnerPages(),
-				deposit: (name, value) => deposited.set(name, value),
 			});
 			const support = { formElicitation: true, apps: false };
 			const shown = await app.callTool(
@@ -403,7 +419,11 @@ describe("choose_secret_store on a host without forms or MCP Apps", () => {
 	it("still reports no private form when no owner page is wired", async () => {
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			locatorFor: () => ({
+				...guards,
+				read: async () => ({}),
+				write: async () => {},
+			}),
 		});
 		const shown = await app.callTool(
 			CHOOSE_SECRET_STORE_TOOL,
@@ -498,7 +518,11 @@ describe("HoBo's relay owner page", () => {
 			});
 			const app = createStoreChoiceApp({
 				cwd: "/synthetic/project",
-				locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+				locatorFor: () => ({
+					...guards,
+					read: async () => ({}),
+					write: async () => {},
+				}),
 				pages,
 				relayLogin: createRelayLoginTool({ relay: sessions, pages }),
 			});
@@ -533,7 +557,11 @@ describe("HoBo's relay owner page", () => {
 		const pages = createOwnerPages();
 		const app = createStoreChoiceApp({
 			cwd: "/synthetic/project",
-			locatorFor: () => ({ read: async () => ({}), write: async () => {} }),
+			locatorFor: () => ({
+				...guards,
+				read: async () => ({}),
+				write: async () => {},
+			}),
 			pages,
 			relayLogin: createRelayLoginTool({
 				relay: createRelayOwnerSessions({

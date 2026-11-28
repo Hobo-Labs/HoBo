@@ -27,6 +27,7 @@ import type {
 	MemberId,
 	RegistryView,
 } from "@hobo/fleet";
+import type { JwtSvidIssuer } from "@hobo/identity";
 import type {
 	ArtifactKind,
 	ArtifactRef,
@@ -815,6 +816,9 @@ export type DeliveryFleet = Readonly<{
 	station: Pick<FleetClient, "issueToken" | "approveKey" | "accept" | "revoke">;
 	forward(dpopProof: string): Pick<FleetClient, "enroll" | "credentials">;
 	authenticate: EnrollmentAuthority["authenticate"];
+	assertMemberActive(
+		memberId: MemberId,
+	): Promise<import("@hobo/fleet").Outcome<true>>;
 }>;
 
 export interface AgentEnrollment {
@@ -1420,6 +1424,8 @@ export interface CdFactories {
 			readonly rails: RailDeliveryReader;
 			readonly inventory: CampInventory;
 			readonly fleet?: DeliveryFleet | undefined;
+			readonly publicOrigin?: string;
+			readonly agentIssuer?: JwtSvidIssuer;
 		},
 	): AgentEnrollment;
 	/** "./agent" (WP11) */

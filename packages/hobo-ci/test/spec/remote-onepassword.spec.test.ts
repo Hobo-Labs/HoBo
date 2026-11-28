@@ -62,6 +62,7 @@ function fakeOp(
 function provisioner(
 	op: ReturnType<typeof fakeOp>,
 	owner?: ReturnType<typeof heldOwnerChannel>,
+	allowPrivate = true,
 ) {
 	return () =>
 		provisionOnePasswordAccess({
@@ -74,7 +75,16 @@ function provisioner(
 			interactive: false,
 			exists: () => false,
 			tempDir: () => mkdtemp(path.join(tmpdir(), "hobo-op-spec-")),
-			...(owner !== undefined ? { owner } : undefined),
+			...(owner !== undefined
+				? {
+						owner: {
+							...owner,
+							...(allowPrivate
+								? { privateSubprocessAllowed: true }
+								: undefined),
+						},
+					}
+				: undefined),
 		});
 }
 
@@ -96,6 +106,17 @@ const handsOver =
 	};
 
 describe("SPEC remote 1Password: signed in through the HoBo form", () => {
+	it("refuses an agent session that cannot keep subprocess arguments private", async () => {
+		const op = fakeOp();
+		const owner = heldOwnerChannel();
+		const result = await provisioner(op, owner, false)();
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE",
+		});
+		expect(op.argv).toEqual([]);
+	});
+
 	it("happy path: three values in the form, then HoBo's own service account", async () => {
 		const op = fakeOp();
 		const owner = heldOwnerChannel();

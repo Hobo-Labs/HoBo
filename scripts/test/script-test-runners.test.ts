@@ -260,4 +260,26 @@ test("fixture ${index}", async () => {
 		}
 		assert.ok(selected > 0);
 	});
+
+	it("runs a staged release-integration test under the config that includes it", () => {
+		const { checks } = selectRelevantChecks({
+			files: [
+				"packages/hobo/test/evals/ceremony-explorer.eval.test.ts",
+				"packages/hobo/test/json.test.ts",
+			],
+			base: "origin/main",
+			staged: true,
+			workspacePackageExists: () => true,
+			releaseIntegrationTestFiles: () => [
+				"test/evals/ceremony-explorer.eval.test.ts",
+			],
+		});
+		const direct = checks
+			.filter((check) => check.args.includes("vitest"))
+			.map((check) => check.args.join(" "));
+		assert.deepEqual(direct, [
+			"--filter @hobo/hobo exec vitest run test/json.test.ts",
+			"--filter @hobo/hobo exec vitest run --config vitest.release-integration.config.ts test/evals/ceremony-explorer.eval.test.ts",
+		]);
+	});
 });

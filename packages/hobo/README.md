@@ -50,8 +50,8 @@ connects (`src/mcp-store-choice.ts`, `src/owner-store-session.ts`). It asks the 
 through MCP form elicitation or the `ui://hobo/store-choice` MCP App, never through tool
 arguments, writes the choice to the owner's locator for the project `cwd`
 (`ownerLocator` in `@hobo/hobo-ci`), and signs in with `signInOwnerStore` over the MCP
-owner channel. The opened store stays in the server's memory, keyed by project. Its
-`credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
+owner channel. Opened stores stay in the server's memory, keyed by project and CI/CD
+family. Its `credentials(cwd)` is the `@hobo/cd` `CredentialResolver` that `hobo deploy` passes to
 the CD runtime: `owner://<NAME>` reads the store's CD entry and is the only locator it
 resolves; an `env://<NAME>` locator is refused with a pointer to `choose_secret_store`,
 because the process environment never holds credentials. Hostinger's resolvers receive
@@ -92,7 +92,8 @@ written ([CI.md](CI.md#reconnect-after-a-restart-hobo-login---relay)).
 
 `store_owner_entries` is the optional later step that joins a Hostinger fleet: it fills the store with the provider entries HoBo reads
 (`HOSTINGER_API_TOKEN`, `HOSTINGER_ARC_KUBECONFIG`, `HOBO_CI_ACCOUNT_TOKEN`, in `mcp-owner-entries.ts`): one host form per missing entry,
-each value checked for shape and written with the session's `entries(cwd).write`,
+each value checked for shape and written with the selected family's session. Pass
+`family: "ci"` for the CI store; the default is `"cd"`. Values go to `entries(cwd).write`,
 never returned. It needs form elicitation and an established session. The server
 declares `tools.listChanged` and sends `notifications/tools/list_changed` after
 `notifications/initialized`, so a host that reconnects to a restarted server lists
@@ -351,6 +352,68 @@ opening a form, verify that its owner settings remain private; otherwise report
 the missing capability instead of collecting identifiers or values in chat.
 The transcript audit flags known private fields in nested owner-tool inputs and
 results, including API keys and numeric identifiers, without printing their values.
+
+An owner page passes its sign-in only to the selected project's store session,
+after the choice is recorded. It cannot fill another project's pending handoff.
+Changing the selection invalidates the old session and prevents an earlier
+sign-in from restoring it after the change.
+
+The MCP owner session records an opaque write-ahead marker under the owner's
+private state directory before changing a secret store. A lost response or a
+server crash before the write callback returns leaves the scope blocked;
+restarting HoBo or waiting does not establish whether the provider can still
+apply the request. The marker contains
+no store coordinates or credentials. Current owner-store adapters cannot prove
+that an interrupted request has reached a terminal state, so HoBo cannot yet
+clear such a marker automatically. A verified provider operation receipt tied
+to the original request is required for safe recovery.
+Changing the owner selection rotates an opaque local scope generation. Another
+server using the same scope discards its cached selection and credentials when
+it detects the change, and a stale write is refused before dispatch. A new
+server session asks for a fresh private choice instead of restoring an older
+saved store after a selection change. The project directory must exist and
+resolve to the same canonical path before and after a protected operation. A
+detected change to a project symlink invalidates the owner session and requires
+a fresh choice.
+The same scoped state records a monotonic revision for owner-store setting
+changes and protected secret writes. A release handle can detect a change even
+if the previous value is restored; the active setup session can continue its
+own writes.
+Read-only preparation takes a clear snapshot of the selection and revisions
+without holding a write marker. Before an effect starts, HoBo compares that
+snapshot and records the write in one transaction. A canceled or crashed
+reader cannot dispatch later after another scoped operation has started.
+All HoBo processes sharing this scope must use the same guard protocol. Stop
+older owner servers before upgrading; versions that do not maintain these
+revisions cannot participate in this protection.
+An owner-session proof revision detects changes by revision-aware writers, but
+does not establish that an unguarded writer is absent. Reusing owner approval
+requires an independently verified exclusive protocol authority; otherwise a
+protected operation needs fresh owner authorization.
+
+This guard coordinates only processes using the same persistent state directory
+and the same canonical project path and CI or CD family. Two checkouts or hosts
+can select the same store without sharing this guard; it is not a global store
+or production fence. Shared mutations need a shared atomic coordinator or
+provider-enforced idempotency.
+After a write callback returns successfully, the marker is removed. A crash
+before the caller records that success can still cause a completed operation to
+be retried; preventing that requires a durable operation key and receipt.
+That limitation includes one-time Infisical and Bitwarden bootstrap tokens:
+the current flow has no verified owner-only durable receipt for their values.
+The directory is under `XDG_STATE_HOME` or `~/.local/state`, independent of
+`HOBO_HOME`. The filesystem and platform must honor SQLite locking and
+durable file synchronization, directory synchronization for the entire state
+directory ancestry, and no-follow file opens.
+Network and virtual filesystems can violate these requirements even when a sync
+call succeeds; use a local filesystem whose SQLite locking and sync semantics
+are verified. The guard trusts the current user and the filesystem root owner.
+Windows runtimes without these primitives cannot perform protected writes or
+change the owner selection; read-only use of an existing selection remains
+available. When the durable state becomes available again, the owner session
+must be refreshed before a protected write.
+Removing or rolling back the state directory also removes this protection;
+do not delete a marker to force a retry.
 
 Vercel source preparation builds a file manifest from a pinned commit without
 contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)

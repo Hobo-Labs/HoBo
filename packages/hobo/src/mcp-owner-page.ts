@@ -90,6 +90,7 @@ export interface OpenedOwnerPage {
 export interface OwnerPages {
 	open(cwd: string): Promise<OpenedOwnerPage>;
 	unseal(sealed: string): Promise<{
+		readonly page: string;
 		readonly cwd: string;
 		readonly answers: OwnerPageAnswers;
 	}>;
@@ -241,10 +242,12 @@ export function createOwnerPages(
 			);
 		},
 		async unseal(sealed) {
+			const parsed = sealedText.safeParse(sealed);
+			if (!parsed.success) throw new OwnerPageRefused("malformed");
 			const { cwd, decoded } = await openSealed(sealed, "store");
 			const answers = answersSchema.safeParse(decoded);
 			if (!answers.success) throw new OwnerPageRefused("unreadable");
-			return { cwd, answers: answers.data };
+			return { page: parsed.data.page, cwd, answers: answers.data };
 		},
 		openRelay(cwd) {
 			return openPage(cwd, "relay", renderRelayOriginPageHtml);

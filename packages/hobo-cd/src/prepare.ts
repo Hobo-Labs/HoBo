@@ -15,6 +15,7 @@ import {
 import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	adoptStoreSignIn,
+	ClaimStoreUnavailableError,
 	canReachOwner,
 	type Env,
 	ensureBitwardenSignIn,
@@ -25,9 +26,11 @@ import {
 	lazyEgressFetch,
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
+	OwnerStoreOperationUncertainError,
 	openInBrowser,
 	ownerLocator,
 	ownerStore,
+	ownerStoreSessionEnvironment,
 	runPage,
 	scopeRunVault,
 	showOwnerPage,
@@ -40,10 +43,12 @@ import {
 	takeHandOffSignIn,
 	withoutSecretEnv,
 	withoutStoreSignIn,
+	withStoreWriteLock,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
 
 import {
+	JournalFleetSettingsError,
 	type JournalMemberProvisioner,
 	prepareJournalFleet,
 } from "./journal-fleet.js";
@@ -184,7 +189,13 @@ async function journalStep(
 	try {
 		return [await prepareJournalFleet({ store, provisioners, whatIf })];
 	} catch (error) {
-		if (error instanceof Error && error.name === "ClaimStoreUnavailableError")
+		if (error instanceof OwnerStoreOperationUncertainError)
+			return refused(
+				"HOBO_CD_STORE_OPERATION_UNCERTAIN",
+				"A store operation may have completed and needs reconciliation before retrying.",
+				["Reconcile the store operation before trying setup again."],
+			);
+		if (error instanceof ClaimStoreUnavailableError)
 			return refused(
 				"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
 				"The selected store cannot safely guard new CD journal members.",
@@ -192,6 +203,10 @@ async function journalStep(
 					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
 				],
 			);
+		if (error instanceof JournalFleetSettingsError)
+			return refused("HOBO_CD_JOURNAL_SETTINGS_INVALID", error.message, [
+				"Restore the journal fleet and witness settings in your secret store, then run hobo cd up again.",
+			]);
 		return refused(
 			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
 			`The CD journal's fleet could not be provisioned: ${error instanceof Error ? error.message : String(error)}`,
@@ -270,12 +285,33 @@ export async function prepareVercelConnection(
 			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
 			vault,
 		});
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch (error) {
+			if (error instanceof OwnerStoreOperationUncertainError)
+				return refused(
+					"HOBO_CD_STORE_OPERATION_UNCERTAIN",
+					"A store operation may have completed and needs reconciliation before retrying.",
+					["Reconcile the store operation before trying setup again."],
+				);
+			return refused(
+				"HOBO_CD_OWNER_CHOICE_CHANGED",
+				"The owner changed the selected store while this operation was running.",
+				["Run hobo cd up again for the selected store."],
+			);
+		}
 		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
 		return outcome;
 	} finally {
 		// What signs this run in to the store stays for the next run, in the
 		// owner channel's memory only.
-		for (const name of KEPT_STORE_SIGN_INS) {
+		let current = true;
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch {
+			current = false;
+		}
+		for (const name of current ? KEPT_STORE_SIGN_INS : []) {
 			const value = vault.reveal(name);
 			if (value !== undefined) deps.ownerChannel?.vault?.put(name, value);
 		}
@@ -292,18 +328,21 @@ async function prepareVercelWithVault(
 	// The environment's own store sign-in (a Bitwarden Secrets Manager access
 	// token) moves into this run's vault and leaves the environment. It says
 	// Bitwarden is configured here; it is used only if the owner chose it.
-	const storeSignIn = adoptStoreSignIn(
-		deps.env === undefined ? process.env : { ...deps.env },
-		deps.vault,
-	);
+	const storeEnv = await ownerStoreSessionEnvironment(deps, env);
+	const storeSignIn =
+		storeEnv === env &&
+		adoptStoreSignIn(
+			deps.env === undefined ? process.env : { ...deps.env },
+			deps.vault,
+		);
 	const notice = ignoredSecretEnvNotice(
 		storeSignIn ? withoutStoreSignIn(env) : env,
 	);
 	if (notice !== undefined) input.run.emitProgress(notice);
-	const plainEnv = withoutSecretEnv(env);
-	if (env.HOBO_SECRET_STORE) {
+	const plainEnv = withoutSecretEnv(storeEnv);
+	if (storeEnv.HOBO_SECRET_STORE) {
 		try {
-			storeIdOf(env.HOBO_SECRET_STORE);
+			storeIdOf(storeEnv.HOBO_SECRET_STORE);
 		} catch (error) {
 			if (!(error instanceof InvalidSecretStoreError)) throw error;
 			return refused("HOBO_CD_SECRET_STORE_INVALID", error.message, [
@@ -311,7 +350,7 @@ async function prepareVercelWithVault(
 			]);
 		}
 		// The validated choice is a non-secret setting despite its name.
-		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
+		plainEnv.HOBO_SECRET_STORE = storeEnv.HOBO_SECRET_STORE;
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
@@ -578,9 +617,12 @@ async function prepareVercelWithVault(
 				{ link: grant.link, code: grant.code },
 				async (signal) => {
 					try {
+						const selectionSignal = ownerLocator(deps).selectionSignal;
 						const { token } = await awaitVercelDeviceToken(grant, {
 							fetch: http,
-							signal,
+							signal: selectionSignal
+								? AbortSignal.any([signal, selectionSignal])
+								: signal,
 							clock: {
 								now: deps.now ?? SYSTEM_CLOCK.now,
 								sleep:
@@ -601,8 +643,10 @@ async function prepareVercelWithVault(
 						} satisfies Readonly<
 							Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 						>;
-						for (const name of VERCEL_CONNECTION_KEYS)
-							await store.port.put(name, values[name]);
+						await withStoreWriteLock(store, async () => {
+							for (const name of VERCEL_CONNECTION_KEYS)
+								await store.port.put(name, values[name]);
+						});
 						return { state: "done" };
 					} catch (error) {
 						if (error instanceof VercelDeviceError)
@@ -686,8 +730,10 @@ async function prepareVercelWithVault(
 			} satisfies Readonly<
 				Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 			>;
-			for (const key of VERCEL_CONNECTION_KEYS)
-				await store.port.put(key, values[key]);
+			await withStoreWriteLock(store, async () => {
+				for (const key of VERCEL_CONNECTION_KEYS)
+					await store.port.put(key, values[key]);
+			});
 			const expected: StoredVercelConnection = {
 				token,
 				teamId,

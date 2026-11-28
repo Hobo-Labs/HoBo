@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-141 codes.
+143 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -135,6 +135,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_NO_RUNNER`](#hobo_ci_no_runner) | `packages/hobo/src/ci-route.ts` |
 | [`HOBO_CI_NO_WORKFLOWS`](#hobo_ci_no_workflows) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_OPERATION_TIMEOUT`](#hobo_ci_operation_timeout) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_OWNER_CHOICE_CHANGED`](#hobo_ci_owner_choice_changed) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_RELAY_ERROR`](#hobo_ci_relay_error) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_RERUN_AMBIGUOUS`](#hobo_ci_rerun_ambiguous) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_RUNNER_ORDER_INVALID`](#hobo_ci_runner_order_invalid) | `packages/hobo/src/ci-route.ts` |
@@ -160,6 +161,7 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SETUP_ERROR`](#hobo_ci_setup_error) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_STORE_CHOICE`](#hobo_ci_store_choice) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_NEEDS_SIGN_IN`](#hobo_ci_store_needs_sign_in) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_STORE_OPERATION_UNCERTAIN`](#hobo_ci_store_operation_uncertain) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_STORE_UNAVAILABLE`](#hobo_ci_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_UP_NO_BRANCH`](#hobo_ci_up_no_branch) | `packages/hobo/src/ci-up-relay.ts` |
@@ -1712,6 +1714,20 @@ The GitHub request timed out. A rerun may already have been accepted; inspect th
 
 What to do: follow the message.
 
+### HOBO_CI_OWNER_CHOICE_CHANGED
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+The owner changed the selected store while this operation was running.
+```
+
+What to do:
+
+- Run hobo ci up again for the selected store.
+
 ### HOBO_CI_RELAY_ERROR
 
 Returned from `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts`.
@@ -2053,6 +2069,20 @@ A handed-off run shows no sign-in page: {owner.id} must open without one.
 What to do:
 
 - Choose the store and give its non-secret ids when the run asks; they are kept in your own HoBo settings.
+
+### HOBO_CI_STORE_OPERATION_UNCERTAIN
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+A store operation may have completed and needs reconciliation before retrying.
+```
+
+What to do:
+
+- Reconcile the store operation before trying setup again.
 
 ### HOBO_CI_STORE_UNAVAILABLE
 

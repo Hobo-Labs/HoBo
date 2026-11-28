@@ -16,14 +16,22 @@ import {
 	type PrincipalRef,
 } from "@hobo/core";
 import {
+	type CredentialResponse,
+	CredentialResponseSchema,
 	DeviceClass,
 	type FleetFailure,
 	LifecycleRequestSchema,
 	type MemberRecord,
 	MemberRecordSchema,
+	parseMemberId,
 	Role,
 	TokenCreateRequestSchema,
 } from "@hobo/fleet";
+import {
+	type JwtSvidClaims,
+	type JwtSvidIssuer,
+	verifyJwtWithJwks,
+} from "@hobo/identity";
 import {
 	CampConditionRecordSchema,
 	CampConditionType,
@@ -43,6 +51,7 @@ import {
 import {
 	headerOf,
 	isNumber,
+	isText,
 	isWireObject,
 	text,
 	texts,
@@ -80,6 +89,7 @@ export type AgentEnrollmentDeps = CdBase & {
 	readonly fleet?: DeliveryFleet | undefined;
 	readonly telemetry?: TelemetrySink;
 	readonly publicOrigin?: string;
+	readonly agentIssuer?: JwtSvidIssuer;
 };
 
 type View = {
@@ -133,6 +143,11 @@ const FLEET_CODES: ReadonlyMap<string, AgentFailureCode> = new Map([
 	["proof-invalid", "dpop-invalid"],
 	["proof-replayed", "dpop-replayed"],
 	["member-revoked", "reconciler-revoked"],
+	["member-suspended", "fleet-refused"],
+	["member-locked", "fleet-refused"],
+	["approval-pending", "fleet-refused"],
+	["forbidden", "fleet-refused"],
+	["member-unknown", "svid-invalid"],
 ]);
 
 function fleetRefusal(
@@ -145,6 +160,87 @@ function fleetRefusal(
 		`The fleet authority refused the request (${failure.code}).`,
 		subject,
 	);
+}
+
+const AGENT_SVID_TTL_S = 15 * 60;
+const SPIFFE_AGENT =
+	/^spiffe:\/\/yard\/([a-z0-9](?:[a-z0-9._-]{0,62})?)\/agent\/((?:dev|bkd|tgt)_[0-9a-f]{32})$/u;
+
+function audiencesOf(aud: JwtSvidClaims["aud"]): readonly string[] | undefined {
+	const list = Array.isArray(aud) ? [...aud] : [aud];
+	if (list.length === 0) return undefined;
+	if (!list.every((item) => isText(item) && item.length > 0)) return undefined;
+	return list;
+}
+
+function agentSvidClaims(input: {
+	readonly tenant: string;
+	readonly memberId: string;
+	readonly audience: string;
+	readonly nowS: number;
+}): JwtSvidClaims | undefined {
+	if (!Number.isInteger(input.nowS) || input.nowS <= 0) return undefined;
+	if (input.audience.length === 0) return undefined;
+	const sub = `spiffe://yard/${input.tenant}/agent/${input.memberId}`;
+	const parsed = SPIFFE_AGENT.exec(sub);
+	if (parsed?.[1] !== input.tenant || parsed[2] !== input.memberId)
+		return undefined;
+	return {
+		sub,
+		aud: [input.audience],
+		tenant: input.tenant,
+		parentPrincipal: { kind: "service", id: "cd-station" },
+		codeVersion: { digest: "cd", version: "0" },
+		scope: [],
+		iat: input.nowS,
+		nbf: input.nowS,
+		exp: input.nowS + AGENT_SVID_TTL_S,
+	};
+}
+
+function validAgentSvidClaims(
+	claims: Pick<JwtSvidClaims, "sub" | "aud" | "exp" | "nbf" | "iat">,
+	audience: string,
+	nowS: number,
+): boolean {
+	if (!Number.isInteger(nowS) || nowS <= 0) return false;
+	if (audience.length === 0) return false;
+	if (
+		!Number.isInteger(claims.exp) ||
+		!Number.isInteger(claims.iat) ||
+		!Number.isInteger(claims.nbf)
+	)
+		return false;
+	if (claims.exp <= nowS || claims.iat > nowS || claims.nbf > nowS)
+		return false;
+	const ttl = claims.exp - claims.iat;
+	if (ttl < 1 || ttl > AGENT_SVID_TTL_S) return false;
+	const audiences = audiencesOf(claims.aud);
+	if (audiences === undefined || !audiences.includes(audience)) return false;
+	return SPIFFE_AGENT.test(claims.sub);
+}
+
+function agentClaimsOf(
+	raw: Awaited<ReturnType<typeof verifyJwtWithJwks>>["claims"],
+): Pick<JwtSvidClaims, "sub" | "aud" | "exp" | "nbf" | "iat"> | undefined {
+	const sub = raw.sub;
+	const exp = raw.exp;
+	const iat = raw.iat;
+	const nbf = raw.nbf;
+	if (!isText(sub) || !isNumber(exp) || !isNumber(iat) || !isNumber(nbf))
+		return undefined;
+	let aud: JwtSvidClaims["aud"] | undefined;
+	if (isText(raw.aud)) aud = raw.aud;
+	else if (Array.isArray(raw.aud)) {
+		const list: string[] = [];
+		for (const item of raw.aud) {
+			if (!isText(item)) return undefined;
+			list.push(item);
+		}
+		aud = list;
+	}
+	if (aud === undefined) return undefined;
+	return { sub, aud, exp, iat, nbf };
 }
 
 export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
@@ -212,6 +308,60 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 					"this Station has no fleet authority configured",
 				)
 			: { ok: true, value: d.fleet };
+	}
+
+	async function signAgentSvid(
+		memberId: string,
+	): Promise<Outcome<{ readonly svid: string; readonly expiresAt: string }>> {
+		const issuer = d.agentIssuer;
+		if (issuer === undefined)
+			return agentRefusal("svid-invalid", "The SVID could not be issued.");
+		const fleet = fleetOrRefuse();
+		if (!fleet.ok) return fleet;
+		const nowS = Math.floor(d.now() / 1000);
+		const claims = agentSvidClaims({
+			tenant: fleet.value.tenant,
+			memberId,
+			audience: issuer.issuerUrl,
+			nowS,
+		});
+		if (
+			claims === undefined ||
+			!validAgentSvidClaims(claims, issuer.issuerUrl, nowS)
+		)
+			return agentRefusal("svid-invalid", "The SVID could not be issued.");
+		try {
+			const svid = await issuer.signJwtSvid(claims);
+			return {
+				ok: true,
+				value: {
+					svid,
+					expiresAt: new Date(claims.exp * 1000).toISOString(),
+				},
+			};
+		} catch {
+			return agentRefusal("svid-invalid", "The SVID could not be issued.");
+		}
+	}
+
+	async function issuedCredential(
+		memberId: string,
+		issued: CredentialResponse,
+	): Promise<Outcome<CredentialResponse>> {
+		if (d.agentIssuer === undefined) return { ok: true, value: issued };
+		const signed = await signAgentSvid(memberId);
+		if (!signed.ok) return signed;
+		return {
+			ok: true,
+			value: create(CredentialResponseSchema, {
+				svid: signed.value.svid,
+				svidExpiresAt: signed.value.expiresAt,
+				generation: issued.generation,
+				sessionTicket: issued.sessionTicket,
+				memberRecord: issued.memberRecord,
+				trust: issued.trust,
+			}),
+		};
 	}
 
 	async function govern(
@@ -694,13 +844,22 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 					"hobo.cd.agent.refresh_refusals",
 				);
 			}
+			const credential = await issuedCredential(input.memberId, issued.value);
+			if (!credential.ok) {
+				await reportCredential(
+					view.record.campIds,
+					ConditionStatus.FALSE,
+					"svid-refresh-failed",
+				);
+				return refused(credential, "hobo.cd.agent.refresh_refusals");
+			}
 			meter("hobo.cd.agent.svids_issued", 1, { kind: "refresh" });
 			await reportCredential(
 				view.record.campIds,
 				ConditionStatus.TRUE,
-				`expires-at:${issued.value.svidExpiresAt}`,
+				`expires-at:${credential.value.svidExpiresAt}`,
 			);
-			return { ok: true, value: issued.value };
+			return { ok: true, value: credential.value };
 		},
 
 		async revoke(reconcilerId, reason, ctx) {
@@ -763,9 +922,31 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		if (!dpop) return agentRefusal("dpop-required", "send a DPoP proof header");
 		const fleet = fleetOrRefuse();
 		if (!fleet.ok) return fleet;
+		const memberId =
+			d.agentIssuer === undefined
+				? await fleetMemberId(request, fleet.value, authorization, dpop)
+				: await issuerMemberId(request, fleet.value, authorization, dpop);
+		if (!memberId.ok) return memberId;
+		const view = await load(memberId.value);
+		if (!view)
+			return agentRefusal(
+				"svid-invalid",
+				"the SVID names no enrolled reconciler",
+			);
+		const state = stateRefusal(view);
+		if (state) return state;
+		return { ok: true, value: view.record };
+	}
+
+	async function fleetMemberId(
+		request: FeedRequest,
+		fleet: DeliveryFleet,
+		authorization: string,
+		dpop: string,
+	): Promise<Outcome<string>> {
 		let caller: Awaited<ReturnType<DeliveryFleet["authenticate"]>>;
 		try {
-			caller = await fleet.value.authenticate({
+			caller = await fleet.authenticate({
 				method: request.method,
 				url: feedUrl(request),
 				authorization,
@@ -780,15 +961,73 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				"svid-invalid",
 				"the credential is not a fleet member SVID",
 			);
-		const view = await load(caller.value.memberId);
-		if (!view)
+		return { ok: true, value: caller.value.memberId };
+	}
+
+	async function issuerMemberId(
+		request: FeedRequest,
+		fleet: DeliveryFleet,
+		authorization: string,
+		dpop: string,
+	): Promise<Outcome<string>> {
+		const issuer = d.agentIssuer;
+		if (issuer === undefined)
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		const nowS = Math.floor(d.now() / 1000);
+		if (!Number.isInteger(nowS) || nowS <= 0)
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		const token = authorization.slice(authorization.indexOf(" ") + 1);
+		let subject = "";
+		try {
+			const verified = await verifyJwtWithJwks(token, issuer.jwks(), {
+				issuer: issuer.issuerUrl,
+				audience: issuer.issuerUrl,
+				now: nowS,
+			});
+			const claims = agentClaimsOf(verified.claims);
+			if (
+				claims === undefined ||
+				!validAgentSvidClaims(claims, issuer.issuerUrl, nowS)
+			)
+				return agentRefusal("svid-invalid", "The SVID could not be verified.");
+			subject = claims.sub;
+		} catch {
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		}
+		const parsed = SPIFFE_AGENT.exec(subject);
+		const memberText = parsed?.[2];
+		if (parsed?.[1] !== fleet.tenant || memberText === undefined)
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		let memberId: ReturnType<typeof parseMemberId>;
+		try {
+			memberId = parseMemberId(memberText);
+		} catch {
+			return agentRefusal("svid-invalid", "The SVID could not be verified.");
+		}
+		let caller: Awaited<ReturnType<DeliveryFleet["authenticate"]>>;
+		try {
+			caller = await fleet.authenticate({
+				method: request.method,
+				url: feedUrl(request),
+				authorization: "",
+				dpop,
+			});
+		} catch {
 			return agentRefusal(
-				"svid-invalid",
-				"the SVID names no enrolled reconciler",
+				"dpop-invalid",
+				"The DPoP proof could not be verified.",
 			);
-		const state = stateRefusal(view);
-		if (state) return state;
-		return { ok: true, value: view.record };
+		}
+		if (!caller.ok) return fleetRefusal("dpop-invalid", caller.error);
+		if (caller.value.kind !== "member" || caller.value.memberId !== memberId)
+			return agentRefusal(
+				"dpop-key-mismatch",
+				"the DPoP proof does not match the SVID",
+			);
+		const active = await fleet.assertMemberActive(memberId);
+		if (!active.ok)
+			return fleetRefusal("fleet-refused", active.error, memberId);
+		return { ok: true, value: memberId };
 	}
 
 	async function enrollOnce(

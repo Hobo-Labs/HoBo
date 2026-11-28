@@ -5,6 +5,24 @@ export {
 	UnknownMemberPlanError,
 } from "./fleet-plans.js";
 export {
+	type CdIssuerBootstrapInput,
+	type CdIssuerKms,
+	type CdIssuerSigningKey,
+	type CdIssuerWinner,
+	createIssuerCandidatesFromSecrets,
+	createIssuerJournalFromEventStore,
+	createIssuerKms,
+	createRandomIssuerCandidatesFromSecrets,
+	type IssuerEventStore,
+	type IssuerJournalEvent,
+	type IssuerSecretStore,
+	openCdIssuer,
+	type PrivateIssuerCandidates,
+	type PrivateIssuerJournal,
+	prepareCdIssuer,
+	type RandomIssuerSecretStore,
+} from "./issuer-bootstrap.js";
+export {
 	JOURNAL_FLEET_SETTING,
 	JOURNAL_WITNESS_SETTING,
 	type JournalFleetLayout,

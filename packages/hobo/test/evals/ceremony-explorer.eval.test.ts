@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -25,19 +25,12 @@ import {
 	copiedSession,
 	startFakeInfisical,
 } from "./support/fake-infisical-api.js";
-import { fakeNeon, fakeVercel } from "./support/fake-providers.js";
+import {
+	fakeNeon,
+	fakeVercel,
+	fakeVercelCli,
+} from "./support/fake-providers.js";
 import { startTlsWorld } from "./support/tls-world.js";
-
-// EVAL: the remote cd up ceremony explored, not sampled by hand. Every
-// combination of the owner's choices and the providers' faults below is run
-// end to end, in-process, through the real composed CLI and HoBo MCP server,
-// behind an inspecting proxy that answers as the providers' real hosts, on a
-// virtual clock. Each trace is checked against every property derived from
-// the ceremony's spec (packages/hobo-ci/src/ceremony-spec/model.ts) and
-// must reach the frontier: the owner is fair (what they decline or get
-// wrong once, they get right the next time), so every path must end with
-// nothing more asked of them. fast-check then runs deeper, random schedules
-// (repeated declines, restarts of the server) with shrinking and a seed.
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const LIVE_HOST = {
@@ -92,7 +85,17 @@ function virtualClock() {
 async function runSchedule(schedule: Schedule) {
 	const api = await startFakeInfisical("org-1");
 	api.seedJournalFleet();
-	const vercel = fakeVercel();
+	const vercelCli = fakeVercelCli(
+		mkdtempSync(path.join(tmpdir(), "hobo-explore-vercel-")),
+		path.join(
+			REPO,
+			"packages",
+			"cd-vercel",
+			"deploy",
+			"secret-store.binding.json",
+		),
+	);
+	const vercel = fakeVercel(vercelCli.staged);
 	const neon = fakeNeon();
 	const world = await startTlsWorld({
 		"app.infisical.com": api.handle,
@@ -115,7 +118,10 @@ async function runSchedule(schedule: Schedule) {
 	}
 	for (const [name, value] of Object.entries({
 		XDG_CONFIG_HOME: config,
+		XDG_STATE_HOME: config,
 		CLAUDE_CODE_REMOTE: "true",
+		HOBO_VERCEL_CLI: vercelCli.cli,
+		GITHUB_HEAD_REF: process.env.GITHUB_HEAD_REF || "hobo-explore",
 		HTTPS_PROXY: world.proxyUrl,
 		HTTP_PROXY: world.proxyUrl,
 		NO_PROXY: "",
@@ -311,6 +317,7 @@ async function runSchedule(schedule: Schedule) {
 			const ran = await pending;
 			const code = /\\"code\\":\\"(\w+)\\"/u.exec(ran)?.[1];
 			story.push(`cd: ${code ?? ran.slice(0, 300)}`);
+			if (code === "HOBO_CD_VERCEL_DEVICE_DENIED") break;
 			if (owner.restartAfterCapture && signedIn) {
 				owner.restartAfterCapture = false;
 				server.toServer.end();
@@ -327,11 +334,7 @@ async function runSchedule(schedule: Schedule) {
 				await next((m) => m.id === ids);
 				continue;
 			}
-			if (
-				code !== undefined &&
-				code.startsWith("HOBO_CD_") &&
-				!/PLAN_REJECTED/u.test(code)
-			)
+			if (code?.startsWith("HOBO_CD_") && !/PLAN_REJECTED/u.test(code))
 				continue;
 			break;
 		}
@@ -341,6 +344,7 @@ async function runSchedule(schedule: Schedule) {
 		await world.close();
 		await api.close();
 		vi.unstubAllEnvs();
+		rmSync(config, { recursive: true, force: true });
 	}
 	return {
 		events: eventsFromWire(wire),
@@ -351,9 +355,23 @@ async function runSchedule(schedule: Schedule) {
 }
 
 function verdictsOf(run: Awaited<ReturnType<typeof runSchedule>>) {
-	return [...ceremonyProperties({ secrets: run.secrets }), REACHES_FRONTIER]
+	return ceremonyProperties({ secrets: run.secrets })
 		.map((property) => check(property, run.events))
 		.filter((verdict) => !verdict.holds);
+}
+
+function expectedOutcome(
+	schedule: Schedule,
+	run: Awaited<ReturnType<typeof runSchedule>>,
+): boolean {
+	const reached = check(REACHES_FRONTIER, run.events).holds;
+	if (schedule.denyVercel === 0) return reached;
+	const result = run.events.filter((event) => event.kind === "result").at(-1);
+	return (
+		result?.kind === "result" &&
+		result.code === "HOBO_CD_VERCEL_DEVICE_DENIED" &&
+		!reached
+	);
 }
 
 const dispatcher = getGlobalDispatcher();
@@ -398,9 +416,20 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 			failed: [],
 		});
 		expect(run.blocked).toEqual([]);
+		expect(run.story.at(-1)).toBe("cd: HOBO_OK");
+		expect(check(REACHES_FRONTIER, run.events).holds).toBe(true);
 	}, 120_000);
 
-	it("bounded exhaustive: all 72 schedules satisfy every derived property and reach the frontier", async () => {
+	it("stops after the owner explicitly denies Vercel approval", async () => {
+		const run = await runSchedule({ ...BASE, denyVercel: 1 });
+		expect(run.story.filter((entry) => entry.startsWith("cd:"))).toEqual([
+			"cd: HOBO_CD_VERCEL_DEVICE_DENIED",
+		]);
+		expect(verdictsOf(run)).toEqual([]);
+		expect(check(REACHES_FRONTIER, run.events).holds).toBe(false);
+	}, 120_000);
+
+	it("bounded exhaustive: all 72 schedules preserve safety and reach the frontier unless the owner denies Vercel", async () => {
 		const failures: {
 			schedule: Schedule;
 			failed: string[];
@@ -414,6 +443,8 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 			);
 			if (run.blocked.length > 0)
 				failed.push(`egress outside the proxy: ${run.blocked.join(", ")}`);
+			if (!expectedOutcome(schedule, run))
+				failed.push("unexpected terminal outcome");
 			if (failed.length > 0)
 				failures.push({ schedule, failed, story: run.story });
 		}
@@ -452,6 +483,7 @@ describe("EVAL ceremony explorer: every owner choice and provider fault, end to 
 					const run = await runSchedule(schedule);
 					expect(verdictsOf(run)).toEqual([]);
 					expect(run.blocked).toEqual([]);
+					expect(expectedOutcome(schedule, run)).toBe(true);
 				},
 			),
 			{ numRuns: 25 },

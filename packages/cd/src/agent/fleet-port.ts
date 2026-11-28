@@ -1,11 +1,19 @@
 import { createPrivateKey, type KeyObject, sign } from "node:crypto";
+import { fromBinary } from "@bufbuild/protobuf";
 import type { JsonObject, TenantId } from "@hobo/core";
 import {
 	type EnrollmentAuthority,
+	type FleetFailure,
 	type FleetId,
 	KeyAlgorithm,
+	MEMBER_RECORD_CONTEXT,
+	type MemberId,
+	MemberRecordSchema,
+	MemberState,
+	type Outcome,
 	type PublicJwk,
 	parseKeyId,
+	type SignedEnvelope,
 	type Signer,
 	type VerifiedToken,
 } from "@hobo/fleet";
@@ -14,6 +22,81 @@ import { memberIdFromJwk } from "@hobo/fleet/keys";
 import type { DeliveryFleet } from "../ports.js";
 
 const MEMBERS = "/v1/fleet/members";
+
+function memberActiveRefusal(
+	record: Readonly<{ memberId: string; state: MemberState }>,
+): Outcome<true> | undefined {
+	switch (record.state) {
+		case MemberState.ACTIVE:
+			return undefined;
+		case MemberState.PENDING:
+			return {
+				ok: false,
+				error: {
+					code: "approval-pending",
+					message: `${record.memberId} is pending`,
+				},
+			};
+		case MemberState.SUSPENDED:
+			return {
+				ok: false,
+				error: {
+					code: "member-suspended",
+					message: `${record.memberId} is suspended`,
+				},
+			};
+		case MemberState.LOCKED:
+			return {
+				ok: false,
+				error: {
+					code: "member-locked",
+					message: `${record.memberId} is locked`,
+				},
+			};
+		case MemberState.REVOKED:
+			return {
+				ok: false,
+				error: {
+					code: "member-revoked",
+					message: `${record.memberId} is revoked`,
+				},
+			};
+		default:
+			return {
+				ok: false,
+				error: {
+					code: "forbidden",
+					message: `${record.memberId} is not active`,
+				},
+			};
+	}
+}
+
+function unknownMember(memberId: MemberId): Outcome<true> {
+	const error: FleetFailure = {
+		code: "member-unknown",
+		message: `no member ${memberId}`,
+	};
+	return { ok: false, error };
+}
+
+async function assertMemberActiveFromEnvelope(
+	read: Outcome<SignedEnvelope>,
+	memberId: MemberId,
+): Promise<Outcome<true>> {
+	if (!read.ok) return read;
+	const envelope = read.value;
+	if (envelope.context !== MEMBER_RECORD_CONTEXT)
+		return unknownMember(memberId);
+	try {
+		const record = fromBinary(MemberRecordSchema, envelope.payload);
+		if (record.memberId !== memberId) return unknownMember(memberId);
+		const refusal = memberActiveRefusal(record);
+		return refusal ?? { ok: true, value: true };
+	} catch {
+		return unknownMember(memberId);
+	}
+}
 
 export function remoteDeliveryFleet(
 	options: Readonly<{
@@ -52,6 +135,11 @@ export function remoteDeliveryFleet(
 			});
 		},
 		authenticate: options.authenticate,
+		assertMemberActive: async (memberId) =>
+			assertMemberActiveFromEnvelope(
+				await station.getMember({ memberId }),
+				memberId,
+			),
 	});
 }
 
@@ -91,6 +179,10 @@ export function inProcessDeliveryFleet(
 			};
 		},
 		authenticate: (request) => authority.authenticate(request),
+		assertMemberActive: async (memberId) => {
+			const read = await authority.getMember({ memberId }, station);
+			return assertMemberActiveFromEnvelope(read, memberId);
+		},
 	});
 }
 

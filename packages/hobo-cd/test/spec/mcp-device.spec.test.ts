@@ -1,5 +1,9 @@
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
-import { createOwnerJobs, type OwnerChannel } from "@hobo/hobo-ci";
+import {
+	createOwnerJobs,
+	type OwnerChannel,
+	type OwnerSettingsStore,
+} from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 
@@ -99,6 +103,7 @@ function vercel(script: readonly ("pending" | "slow_down" | "denied")[] = []) {
 function harness(
 	provider: ReturnType<typeof vercel>,
 	confirm?: OwnerChannel["confirm"],
+	selection?: OwnerSettingsStore,
 ) {
 	const clock = virtualClock();
 	const jobs = createOwnerJobs();
@@ -112,6 +117,7 @@ function harness(
 		},
 		...(confirm !== undefined ? { confirm } : undefined),
 		jobs,
+		...(selection ? { storeSettings: selection } : undefined),
 	};
 	const port = createMemorySecretsPort({ id: "memory" });
 	const store = {
@@ -125,7 +131,7 @@ function harness(
 			vault: handedOverInfisicalToken(),
 			workload: fakeWorkload(),
 			ownerChannel: owner,
-			locator: {
+			locator: selection ?? {
 				read: async () => ({
 					HOBO_SECRET_STORE: "infisical",
 					INFISICAL_PROJECT_ID: "proj",
@@ -146,6 +152,48 @@ function harness(
 const LINK = "https://vercel.com/device?user_code=WXYZ-1234";
 
 describe("SPEC cd up through MCP: Vercel's device grant off the request path", () => {
+	it("does not write a device grant after the owner changes the store", async () => {
+		const controller = new AbortController();
+		const selection: OwnerSettingsStore = {
+			selectionSignal: controller.signal,
+			assertCurrent: () => {
+				if (controller.signal.aborted) throw new Error("session changed");
+			},
+			read: async () => ({
+				HOBO_SECRET_STORE: "infisical",
+				INFISICAL_PROJECT_ID: "fixture",
+				INFISICAL_SIGN_IN: "egress-proxy",
+			}),
+			write: async () => {},
+		};
+		const provider = vercel();
+		provider.approve();
+		let release: (() => void) | undefined;
+		let entered: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const polling = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const delayed = {
+			...provider,
+			fetch: async (input: string | URL | Request, init?: RequestInit) => {
+				if (String(input) === VERCEL_DEVICE_TOKEN_URL) {
+					entered?.();
+					await gate;
+				}
+				return provider.fetch(input, init);
+			},
+		};
+		const h = harness(delayed, undefined, selection);
+		await h.run();
+		await polling;
+		controller.abort();
+		release?.();
+		await h.jobs.settled();
+		expect((await h.port.access("HOBO_CD_VERCEL_TOKEN")).status).not.toBe("ok");
+	});
 	it("shows only the accepted grant when two starts race for one store", async () => {
 		const provider = vercel();
 		let starts = 0;

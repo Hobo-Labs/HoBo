@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 
 import type { CredentialResolver } from "@hobo/cd";
@@ -65,12 +66,30 @@ export function publicReason(message: string): string {
 		.slice(0, 300);
 }
 
+export type OwnerPageSignIn = Readonly<
+	Partial<
+		Record<
+			| "INFISICAL_CLI_SESSION"
+			| "INFISICAL_TOKEN"
+			| "OP_CONNECT_TOKEN"
+			| "BW_CLIENTID"
+			| "BW_CLIENTSECRET",
+			string
+		>
+	>
+>;
+
 export interface OwnerStoreSessions {
-	establish(cwd: string): Promise<OwnerSessionState>;
-	status(cwd: string): OwnerSessionStatus;
-	credentials(cwd: string): CredentialResolver;
-	entries(cwd: string): OwnerStoreEntries;
-	agentVault(cwd: string): AgentVaultRouter | undefined;
+	establish(
+		cwd: string,
+		signIn?: OwnerPageSignIn,
+		family?: "ci" | "cd",
+	): Promise<OwnerSessionState>;
+	invalidate?(cwd: string, family?: "ci" | "cd"): void;
+	status(cwd: string, family?: "ci" | "cd"): OwnerSessionStatus;
+	credentials(cwd: string, family?: "ci" | "cd"): CredentialResolver;
+	entries(cwd: string, family?: "ci" | "cd"): OwnerStoreEntries;
+	agentVault(cwd: string, family?: "ci" | "cd"): AgentVaultRouter | undefined;
 	close(): Promise<void>;
 }
 
@@ -167,27 +186,56 @@ type Held = Readonly<{
 export type OwnerSignIn = (input: {
 	readonly cwd: string;
 	readonly vault: TrustedVault;
+	readonly family?: "ci" | "cd";
+	readonly infisicalSession?: string;
 }) => Promise<OwnerSignInOutcome>;
+
+export function ownerWithPageSession(
+	owner: OwnerChannel,
+	session: string | undefined,
+): OwnerChannel {
+	let copiedSession = session;
+	return {
+		...owner,
+		async openUrl(url, message, name) {
+			if (name === "INFISICAL_CLI_SESSION" && copiedSession !== undefined)
+				return;
+			return owner.openUrl(url, message, name);
+		},
+		async captureSecret(request) {
+			if (
+				request.name === "INFISICAL_CLI_SESSION" &&
+				copiedSession !== undefined
+			) {
+				const value = copiedSession;
+				copiedSession = undefined;
+				return value;
+			}
+			return owner.captureSecret(request);
+		},
+	};
+}
 
 export function ownerChannelSignIn(options: {
 	readonly owner: OwnerChannel;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	readonly deps?: Omit<OwnerStoreDeps, "env" | "cwd" | "ownerChannel">;
 }): OwnerSignIn {
-	return async ({ cwd, vault }) => {
+	return async ({ cwd, vault, infisicalSession, family = "cd" }) => {
 		const plainEnv = withoutSecretEnv(options.env ?? process.env);
+		const owner = ownerWithPageSession(options.owner, infisicalSession);
 		const deps: OwnerStoreDeps = {
 			...options.deps,
 			env: plainEnv,
 			cwd,
-			ownerChannel: options.owner,
+			ownerChannel: owner,
 			noBrowser: true,
 		};
 		return signInOwnerStore({
-			family: "cd",
+			family,
 			vault,
 			open: (resolved) =>
-				ownerStore("cd", vault, {
+				ownerStore(family, vault, {
 					...deps,
 					env: { ...plainEnv, ...resolved },
 				}),
@@ -280,11 +328,24 @@ export function createOwnerStoreSessions(options: {
 	readonly relayFolder?: OwnerRelayFolder;
 	readonly fetch?: typeof fetch;
 	readonly kept?: TrustedVault;
+	readonly keptFor?: (cwd: string, family: "ci" | "cd") => TrustedVault;
+	readonly assertCurrent?: (cwd: string, family: "ci" | "cd") => void;
 	readonly agentVault?: AgentVaultProxyDeps;
 }): OwnerStoreSessions {
 	const held = new Map<string, Held>();
 	const closing = new Set<Promise<void>>();
-	const keyOf = (cwd: string) => path.resolve(cwd);
+	const revisions = new Map<string, number>();
+	let closed = false;
+	const projectOf = (cwd: string) => {
+		const absolute = path.resolve(cwd);
+		try {
+			return realpathSync(absolute);
+		} catch {
+			return absolute;
+		}
+	};
+	const keyOf = (project: string, family: "ci" | "cd") =>
+		`${family}\0${project}`;
 	const drop = (key: string) => {
 		const current = held.get(key);
 		current?.vault.clear();
@@ -295,6 +356,18 @@ export function createOwnerStoreSessions(options: {
 			void ending.finally(() => closing.delete(ending));
 		}
 	};
+	const currentFor = (project: string, family: "ci" | "cd") => {
+		const key = keyOf(project, family);
+		if (!held.has(key)) return undefined;
+		try {
+			options.assertCurrent?.(project, family);
+		} catch {
+			revisions.set(key, (revisions.get(key) ?? 0) + 1);
+			drop(key);
+			return undefined;
+		}
+		return held.get(key);
+	};
 	const brokerFor = (store: OpenedSecretStore) =>
 		store.agentVault !== undefined && options.agentVault !== undefined
 			? createAgentVaultBroker({
@@ -303,18 +376,50 @@ export function createOwnerStoreSessions(options: {
 				})
 			: undefined;
 	return {
-		async establish(cwd) {
-			const key = keyOf(cwd);
+		async establish(cwd, signIn, family = "cd") {
+			const project = projectOf(cwd);
+			const key = keyOf(project, family);
+			const revision = revisions.get(key) ?? 0;
 			const vault = createTrustedVault();
+			if (closed)
+				return {
+					status: "sign-in-needed",
+					store: "Infisical",
+					code: "HOBO_OWNER_SESSION_CLOSED",
+				};
+			for (const name of [
+				"INFISICAL_TOKEN",
+				"OP_CONNECT_TOKEN",
+				"BW_CLIENTID",
+				"BW_CLIENTSECRET",
+			] as const) {
+				const value = signIn?.[name];
+				if (value !== undefined) vault.put(name, value);
+			}
 			let outcome: OwnerSignInOutcome;
 			try {
-				outcome = await options.signIn({ cwd: key, vault });
+				outcome = await options.signIn({
+					cwd: project,
+					vault,
+					family,
+					...(signIn?.INFISICAL_CLI_SESSION === undefined
+						? undefined
+						: { infisicalSession: signIn.INFISICAL_CLI_SESSION }),
+				});
 			} catch {
 				vault.clear();
 				return {
 					status: "sign-in-needed",
 					store: "Infisical",
 					code: "HOBO_OWNER_STORE_UNAVAILABLE",
+				};
+			}
+			if (closed || (revisions.get(key) ?? 0) !== revision) {
+				vault.clear();
+				return {
+					status: "sign-in-needed",
+					store: "Infisical",
+					code: "HOBO_OWNER_SESSION_CHANGED",
 				};
 			}
 			if (outcome.kind === "refused") {
@@ -341,9 +446,19 @@ export function createOwnerStoreSessions(options: {
 					code: "HOBO_OWNER_SIGN_IN",
 				};
 			}
-			for (const name of KEPT_STORE_SIGN_INS) {
-				const value = vault.reveal(name);
-				if (value !== undefined) options.kept?.put(name, value);
+			try {
+				const kept = options.keptFor?.(project, family) ?? options.kept;
+				for (const name of KEPT_STORE_SIGN_INS) {
+					const value = vault.reveal(name);
+					if (value !== undefined) kept?.put(name, value);
+				}
+			} catch {
+				vault.clear();
+				return {
+					status: "sign-in-needed",
+					store: label,
+					code: "HOBO_OWNER_SESSION_CHANGED",
+				};
 			}
 			drop(key);
 			held.set(key, {
@@ -354,85 +469,108 @@ export function createOwnerStoreSessions(options: {
 			});
 			return { status: "established", store: label };
 		},
-		status(cwd) {
-			const current = held.get(keyOf(cwd));
+		invalidate(cwd, family) {
+			const project = projectOf(cwd);
+			for (const scope of family === undefined
+				? (["ci", "cd"] as const)
+				: [family]) {
+				const key = keyOf(project, scope);
+				revisions.set(key, (revisions.get(key) ?? 0) + 1);
+				drop(key);
+			}
+		},
+		status(cwd, family = "cd") {
+			const current = currentFor(projectOf(cwd), family);
 			if (current === undefined) return { established: false };
 			const agentVault = current.broker?.status();
 			return agentVault === undefined
 				? { established: true, store: current.label }
 				: { established: true, store: current.label, agentVault };
 		},
-		agentVault(cwd) {
-			const key = keyOf(cwd);
-			if (held.get(key)?.broker === undefined) return undefined;
+		agentVault(cwd, family = "cd") {
+			const project = projectOf(cwd);
+			if (currentFor(project, family)?.broker === undefined) return undefined;
 			return async (host) => {
-				const broker = held.get(key)?.broker;
-				return broker === undefined
-					? {
-							ok: false,
-							refusal: {
-								code: "HOBO_AGENT_VAULT_UNAVAILABLE",
-								message:
-									"The owner's store session closed before Agent Vault was reached.",
-								remediation: [
-									"Run HoBo MCP's choose_secret_store again, then ask again.",
-								],
-							},
-						}
-					: broker.route(host);
+				const current = currentFor(project, family);
+				const unavailable = () =>
+					({
+						ok: false,
+						refusal: {
+							code: "HOBO_AGENT_VAULT_UNAVAILABLE",
+							message:
+								"The owner's store session closed before Agent Vault was reached.",
+							remediation: [
+								"Run HoBo MCP's choose_secret_store again, then ask again.",
+							],
+						},
+					}) as const;
+				if (current?.broker === undefined) return unavailable();
+				const result = await current.broker.route(host);
+				return currentFor(project, family) === current ? result : unavailable();
 			};
 		},
-		credentials(cwd) {
-			const key = keyOf(cwd);
+		credentials(cwd, family = "cd") {
+			const project = projectOf(cwd);
 			return {
 				async resolve(ref) {
 					const repository = parseGithubAppInstallationRef(ref);
 					const name = repository === undefined ? entryOf(ref) : undefined;
-					const current = held.get(key);
+					const current = currentFor(project, family);
 					if (current === undefined)
 						throw new OwnerCredentialUnavailable(ref, "no-session");
 					if (repository !== undefined) {
 						const relay = await options
-							.relayFolder?.({ cwd: key, vault: current.vault })
+							.relayFolder?.({ cwd: project, vault: current.vault })
 							.catch(() => undefined);
-						return {
-							token: await mintInstallationToken({
-								ref,
-								repository,
-								relay,
-								fetch: options.fetch,
-							}),
-						};
+						const token = await mintInstallationToken({
+							ref,
+							repository,
+							relay,
+							fetch: options.fetch,
+						});
+						if (currentFor(project, family) !== current)
+							throw new OwnerCredentialUnavailable(ref, "no-session");
+						return { token };
 					}
 					const material =
 						name === undefined
 							? undefined
 							: await readMaterial(current.store.port, name);
+					if (currentFor(project, family) !== current)
+						throw new OwnerCredentialUnavailable(ref, "no-session");
 					if (material === undefined)
 						throw new OwnerCredentialUnavailable(ref, "not-in-store");
 					return { token: material };
 				},
 			};
 		},
-		entries(cwd) {
-			const key = keyOf(cwd);
+		entries(cwd, family = "cd") {
+			const project = projectOf(cwd);
 			const opened = (name: string) => {
 				const ref = `${OWNER_CREDENTIAL_SCHEME}${entryOf(`${OWNER_CREDENTIAL_SCHEME}${name}`)}`;
-				const current = held.get(key);
+				const current = currentFor(project, family);
 				if (current === undefined)
 					throw new OwnerCredentialUnavailable(ref, "no-session");
-				return current.store.port;
+				return { current, ref };
 			};
 			return {
 				async read(name) {
-					return readMaterial(opened(name), name);
+					const { current, ref } = opened(name);
+					const value = await readMaterial(current.store.port, name);
+					if (currentFor(project, family) !== current)
+						throw new OwnerCredentialUnavailable(ref, "no-session");
+					return value;
 				},
 				async write(name, value) {
-					await opened(name).put(name, value);
+					const { current, ref } = opened(name);
+					await current.store.port.put(name, value);
+					if (currentFor(project, family) !== current)
+						throw new OwnerCredentialUnavailable(ref, "no-session");
 				},
 			};
 		},
 		async close() {
+			closed = true;
 			for (const key of held.keys()) drop(key);
 			await Promise.all(closing);
 		},
@@ -452,8 +590,8 @@ export function withRelaySession(
 ): OwnerStoreSessions {
 	return {
 		...sessions,
-		status(cwd) {
-			const store = sessions.status(cwd);
+		status(cwd, family) {
+			const store = sessions.status(cwd, family);
 			const held = relay.held();
 			return held === undefined
 				? store
@@ -467,12 +605,12 @@ export function withRelaySession(
 						},
 					};
 		},
-		credentials(cwd) {
-			const store = sessions.credentials(cwd);
+		credentials(cwd, family) {
+			const store = sessions.credentials(cwd, family);
 			return {
 				async resolve(ref, scope) {
 					const held = relay.held();
-					return held === undefined || sessions.status(cwd).established
+					return held === undefined || sessions.status(cwd, family).established
 						? store.resolve(ref, scope)
 						: held.credentials.resolve(ref, scope);
 				},

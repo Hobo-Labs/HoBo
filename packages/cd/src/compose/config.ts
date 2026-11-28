@@ -302,6 +302,12 @@ export function parseCdComposeConfig(
 			region,
 			credentialRef,
 		};
+	} else if (replicas > 1) {
+		return composeRefusal(
+			"compose-artifacts-invalid",
+			"multiple CD replicas require a shared s3-compatible artifact store",
+			CD_COMPOSE_ENV.s3Endpoint,
+		);
 	} else if (simulate) {
 		artifacts = { backend: "memory", simulated: true };
 	} else {

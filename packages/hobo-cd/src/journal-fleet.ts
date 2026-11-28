@@ -1,5 +1,11 @@
-import type { OpenedSecretStore } from "@hobo/hobo-ci";
-import { familySettings } from "@hobo/hobo-ci";
+import {
+	ClaimStoreUnavailableError,
+	familySettings,
+	type OpenedSecretStore,
+	OwnerStoreOperationUncertainError,
+	supportsAtomicOwnerClaim,
+	withPreparedStoreWriteLock,
+} from "@hobo/hobo-ci";
 
 import { cdJournalContinuity } from "./continuity.js";
 import { CD_JOURNAL_MEMBER_PLANS } from "./fleet-plans.js";
@@ -31,6 +37,7 @@ export const JOURNAL_WITNESS_SETTING = "HOBO_CD_POSTGRES_WITNESSES";
 export interface JournalMemberProvisioner {
 	/** The member plan (`CD_JOURNAL_MEMBER_PLANS`) its databases run on. */
 	readonly plan: string;
+	readonly requiredOwnerStoreCapability?: "atomic-create";
 	create(input: {
 		readonly member: string;
 		/** Stable for this member of this fleet: a retry adopts, never duplicates. */
@@ -79,6 +86,14 @@ export function journalFleetLayout(
 }
 
 const entry = (member: JournalFleetMember) => `${member.id}:${member.plan}`;
+const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
+
+export class JournalFleetSettingsError extends Error {
+	constructor(reason: "invalid" | "incomplete") {
+		super(`The saved journal fleet is ${reason}.`);
+		this.name = "JournalFleetSettingsError";
+	}
+}
 
 function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 	return (text ?? "")
@@ -86,9 +101,37 @@ function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 		.map((part) => part.trim())
 		.filter((part) => part !== "")
 		.map((part) => {
-			const [id = "", plan = ""] = part.split(":");
+			const [id = "", plan = "", ...rest] = part.split(":");
+			if (!MEMBER_ID.test(id) || plan === "" || rest.length > 0)
+				throw new JournalFleetSettingsError("invalid");
 			return { id, plan };
 		});
+}
+
+function checkedLayout(layout: JournalFleetLayout): JournalFleetLayout {
+	const all = [...layout.members, ...layout.witnesses];
+	if (layout.members.length === 0 || layout.witnesses.length === 0)
+		throw new JournalFleetSettingsError("incomplete");
+	if (new Set(all.map((member) => member.id)).size !== all.length)
+		throw new JournalFleetSettingsError("invalid");
+	for (const member of all)
+		if (!Object.hasOwn(CD_JOURNAL_MEMBER_PLANS, member.plan))
+			throw new JournalFleetSettingsError("invalid");
+	return layout;
+}
+
+function savedLayout(
+	settings: Readonly<Record<string, string>>,
+): JournalFleetLayout | undefined {
+	const members = settings[JOURNAL_FLEET_SETTING];
+	const witnesses = settings[JOURNAL_WITNESS_SETTING];
+	if (members === undefined && witnesses === undefined) return undefined;
+	if (members === undefined || witnesses === undefined)
+		throw new JournalFleetSettingsError("incomplete");
+	return checkedLayout({
+		members: parseEntries(members),
+		witnesses: parseEntries(witnesses),
+	});
 }
 
 export type JournalFleetStep = Readonly<{
@@ -101,7 +144,7 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 	const read = await store.port.access(name);
 	if (read.status === "ok") return Boolean(read.material);
 	if (read.code === "secret-not-found") return false;
-	throw new Error(`Cannot read ${store.reference(name)}.`);
+	throw new Error(`Cannot read the journal setting ${name}.`);
 }
 
 /** Provision what the journal's fleet is missing (see the module comment). */
@@ -112,74 +155,121 @@ export async function prepareJournalFleet(input: {
 }): Promise<JournalFleetStep> {
 	const { store } = input;
 	const settings = familySettings(store, "cd");
-	const saved = await settings.read();
-	const layout: JournalFleetLayout =
-		saved[JOURNAL_FLEET_SETTING] !== undefined
-			? {
-					members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
-					witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
-				}
-			: journalFleetLayout(input.provisioners);
-	const all = [...layout.members, ...layout.witnesses];
-	for (const member of all)
-		if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
-			throw new Error(
-				`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
-			);
-	const missing: JournalFleetMember[] = [];
-	for (const member of all)
-		if (!(await holds(store, journalMemberUrlEntry(member.id))))
-			missing.push(member);
-	const roster = `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`;
-	const unchangedSettings = saved[JOURNAL_FLEET_SETTING] !== undefined;
-	if (missing.length === 0 && unchangedSettings)
+	const inspect = async () => {
+		const saved = await settings.read();
+		const layout =
+			savedLayout(saved) ??
+			checkedLayout(journalFleetLayout(input.provisioners));
+		const all = [...layout.members, ...layout.witnesses];
+		const missing: JournalFleetMember[] = [];
+		for (const member of all)
+			if (!(await holds(store, journalMemberUrlEntry(member.id))))
+				missing.push(member);
+		return {
+			saved,
+			layout,
+			missing,
+			roster: `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`,
+			unchangedSettings: saved[JOURNAL_FLEET_SETTING] !== undefined,
+		};
+	};
+	const initial = await inspect();
+	if (initial.missing.length === 0 && initial.unchangedSettings)
 		return {
 			id: "cd-journal",
 			outcome: "unchanged",
-			detail: `fleet ${roster}; connection strings in ${store.id}`,
+			detail: `fleet ${initial.roster}; connection strings in ${store.id}`,
 		};
 	if (input.whatIf)
 		return {
 			id: "cd-journal",
 			outcome: "would-create",
-			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
+			detail: `would create ${initial.missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${initial.roster} in ${store.id}`,
 		};
-	for (const member of missing) {
-		const provisioner = input.provisioners.find(
-			(candidate) => candidate.plan === member.plan,
-		);
-		if (provisioner === undefined)
-			throw new Error(
-				`no provisioner here creates ${member.plan} databases for ${member.id}`,
-			);
-		const created = await provisioner.create({
-			member: member.id,
-			idempotencyKey: `hobo-cd-journal:${member.id}`,
-			store,
-		});
-		if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
-			throw new Error(
-				`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
-			);
-		// The claim link first: a member whose URL is stored is complete.
-		if (created.claimUrl !== undefined)
-			await store.port.put(
-				journalMemberClaimEntry(member.id),
-				created.claimUrl,
-			);
-		await store.port.put(
-			journalMemberUrlEntry(member.id),
-			created.connectionString,
-		);
-	}
-	await settings.write({
-		...saved,
-		[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-		[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
-	});
+	type FleetState = Awaited<ReturnType<typeof inspect>>;
+	type FleetWrite = {
+		readonly state: FleetState;
+		readonly operations: readonly {
+			readonly member: JournalFleetMember;
+			readonly provisioner: JournalMemberProvisioner;
+		}[];
+	};
+	type FleetOutcome = {
+		readonly kind: "unchanged" | "completed";
+		readonly state: FleetState;
+	};
+	const outcome = await withPreparedStoreWriteLock<FleetWrite, FleetOutcome>(
+		store,
+		async () => {
+			const state = await inspect();
+			if (state.missing.length === 0 && state.unchangedSettings)
+				return {
+					kind: "completed",
+					result: { kind: "unchanged", state } as const,
+				} as const;
+			const operations = state.missing.map((member) => {
+				const provisioner = input.provisioners.find(
+					(candidate) => candidate.plan === member.plan,
+				);
+				if (provisioner === undefined)
+					throw new Error(
+						`no provisioner here creates ${member.plan} databases for ${member.id}`,
+					);
+				if (
+					provisioner.requiredOwnerStoreCapability === "atomic-create" &&
+					!supportsAtomicOwnerClaim(store)
+				)
+					throw new ClaimStoreUnavailableError();
+				return { member, provisioner };
+			});
+			return { kind: "write", value: { state, operations } } as const;
+		},
+		async ({ state, operations }) => {
+			try {
+				for (const { member, provisioner } of operations) {
+					const created = await provisioner.create({
+						member: member.id,
+						idempotencyKey: `hobo-cd-journal:${member.id}`,
+						store,
+					});
+					if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
+						throw new Error(
+							`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
+						);
+					if (created.claimUrl !== undefined)
+						await store.port.put(
+							journalMemberClaimEntry(member.id),
+							created.claimUrl,
+						);
+					await store.port.put(
+						journalMemberUrlEntry(member.id),
+						created.connectionString,
+					);
+				}
+				const latest = await settings.read();
+				await settings.write({
+					...latest,
+					[JOURNAL_FLEET_SETTING]: state.layout.members.map(entry).join(","),
+					[JOURNAL_WITNESS_SETTING]: state.layout.witnesses
+						.map(entry)
+						.join(","),
+				});
+				return { kind: "completed", state } as const;
+			} catch {
+				throw new OwnerStoreOperationUncertainError();
+			}
+		},
+	);
+	const { missing, roster } = outcome.state;
+	if (outcome.kind === "unchanged")
+		return {
+			id: "cd-journal",
+			outcome: "unchanged",
+			detail: `fleet ${roster}; connection strings in ${store.id}`,
+		};
 	const claims =
 		missing.length > 0
-			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} at ${missing.map((member) => store.reference(journalMemberClaimEntry(member.id))).join(", ")}.`
+			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} under ${missing.map((member) => journalMemberClaimEntry(member.id)).join(", ")}.`
 			: "";
 	return {
 		id: "cd-journal",
@@ -198,6 +288,7 @@ export async function journalFleetRuntime(store: OpenedSecretStore): Promise<{
 	readonly readSecret: (entry: string) => Promise<string | undefined>;
 }> {
 	const saved = await familySettings(store, "cd").read();
+	savedLayout(saved);
 	return {
 		env: Object.fromEntries(
 			[JOURNAL_FLEET_SETTING, JOURNAL_WITNESS_SETTING].flatMap((name) => {

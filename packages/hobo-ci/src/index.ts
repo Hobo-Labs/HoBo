@@ -145,6 +145,7 @@ export {
 	type OwnerJobOutcome,
 	type OwnerJobState,
 	type OwnerJobs,
+	type OwnerSettingsStore,
 	ownerCaptureLine,
 } from "./owner-channel.js";
 export {
@@ -161,12 +162,14 @@ export {
 	hasSecretStoreLocator,
 	INFISICAL_TOKEN_AUTH_DOCS,
 	InvalidSecretStoreError,
+	isOwnerStoreSetting,
 	ONE_PASSWORD_CONNECT_GUIDE,
 	OWNER_STORE_CHOICE_LINE_PREFIX,
 	type OwnerStore,
 	type OwnerStoreDeps,
 	ownerLocator,
 	ownerStore,
+	ownerStoreSessionEnvironment,
 	SECRET_STORE_LOCATOR_FILE,
 	STORE_CHOICE,
 	secretStoreLocatorPath,
@@ -174,6 +177,11 @@ export {
 	storeIdOf,
 	storeSignInGuidance,
 } from "./owner-store.js";
+export {
+	ClaimStoreUnavailableError,
+	OwnerStoreOperationUncertainError,
+	supportsAtomicOwnerClaim,
+} from "./owner-store-errors.js";
 export {
 	type AppHandOffMode,
 	checkedBy,
@@ -190,6 +198,7 @@ export {
 } from "./parsed-values.js";
 export {
 	canReachOwner,
+	loadDeployCredentials,
 	OWNER_PAGE_LINE_PREFIX,
 	openInBrowser,
 	type PrepareGithubDeps,
@@ -242,9 +251,12 @@ export {
 	type OpenedSecretStore,
 	type OwnerAgentVault,
 	openSecretStore,
+	type PreparedStoreWrite,
 	type SecretStoreDeps,
 	type SecretStoreId,
 	type SecretStoreOpening,
+	withPreparedStoreWriteLock,
+	withStoreWriteLock,
 } from "./secret-stores.js";
 export {
 	type CommandEnv,

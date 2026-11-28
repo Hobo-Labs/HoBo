@@ -179,6 +179,25 @@ describe("wireContinuousDelivery", () => {
 		expect(verifier).not.toBe(cd.artifacts);
 	});
 
+	it("binds agent proofs to the configured service origin", () => {
+		const fleet = {} as never;
+		const agentIssuer = { issuerUrl: "https://cd.example.test" } as never;
+		wireContinuousDelivery(
+			input(log, calls, {
+				publicOrigin: "https://cd.example.test",
+				fleet,
+				agentIssuer,
+			}),
+		);
+		expect(argsOf(calls, "createAgentEnrollment").publicOrigin).toBe(
+			"https://cd.example.test",
+		);
+		expect(argsOf(calls, "createAgentEnrollment").fleet).toBe(fleet);
+		expect(argsOf(calls, "createAgentEnrollment").agentIssuer).toBe(
+			agentIssuer,
+		);
+	});
+
 	it("binds the placed-Camps reader and the fan-out aggregate gate into the promotion service (D20, D21)", async () => {
 		wireContinuousDelivery(
 			input(log, calls, {

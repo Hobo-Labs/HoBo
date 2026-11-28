@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { relaySetupForm } from "@hobo/ci-gh-actions";
 import { RELAY_SETUP_ENTRIES } from "@hobo/ci-vercel";
-import type { SettingsStore } from "@hobo/connect-ui";
+import type { OwnerSettingsStore } from "@hobo/hobo-ci";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -129,9 +129,12 @@ function expectConformant(sent: readonly JsonObject[]) {
 	}
 }
 
-function emptyLocator(): SettingsStore {
+function emptyLocator(): OwnerSettingsStore {
 	const saved: Record<string, string> = {};
 	return {
+		assertCurrent: () => {},
+		onOwnerChoice: () => {},
+		selectionRevision: () => 0,
 		read: async () => ({ ...saved }),
 		write: async (entries: Readonly<Record<string, string>>) => {
 			Object.assign(saved, entries);

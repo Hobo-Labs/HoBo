@@ -29,7 +29,7 @@ import {
 } from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
 import type { provisionOnePasswordAccess } from "./onepassword-access.js";
-import type { OwnerChannel } from "./owner-channel.js";
+import type { OwnerChannel, OwnerSettingsStore } from "./owner-channel.js";
 import { parseHttpsOrigin } from "./parsed-values.js";
 import {
 	type Env,
@@ -40,6 +40,7 @@ import {
 	type SecretStoreOpening,
 } from "./secret-stores.js";
 import type { RunCommand } from "./store-cli.js";
+import { terminalOwnerWriteProtocol } from "./terminal-owner-guard.js";
 
 // The owner's secret store, as the first stage of every lifecycle ceremony.
 //
@@ -150,10 +151,10 @@ export function storeChoiceGuidance(
 	const note = (store: SecretStoreId) =>
 		configured.has(store) ? " (configured here: its sign-in is provided)" : "";
 	return [
-		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — run again with HOBO_SECRET_STORE set to the owner's choice (a non-secret setting), and the store's ids:`,
-		`infisical${note("infisical")}: its project ID (INFISICAL_PROJECT_ID). Once chosen, HoBo installs Infisical's CLI if it is missing, uses your existing Infisical sign-in or has you sign in once in your browser, and creates its own machine identity, access and project membership through Infisical's API. A project that is not a Secrets Management project, or an environment the project lacks, gives way to one HoBo finds or creates.`,
-		`1password${note("1password")}: the vault ID (OP_VAULT_ID). Once chosen, HoBo installs the 1Password CLI if it is missing, uses your existing 1Password sign-in or your 1Password app's approval, and creates its own service account for that vault.`,
-		`bitwarden${note("bitwarden")}: nothing to look up. Once chosen, the run asks for your personal API key and one approval in a Bitwarden app, and sets up the rest itself. Optional: BITWARDEN_SERVER_URL for a self-hosted server.`,
+		`${OWNER_STORE_CHOICE_LINE_PREFIX} infisical|1password|bitwarden — choose your store in HoBo's secure owner form.`,
+		`infisical${note("infisical")}: use your existing store and sign-in; HoBo finds or creates its Secrets Management project and environment.`,
+		`1password${note("1password")}: use your existing store and sign-in.`,
+		`bitwarden${note("bitwarden")}: use your existing store and sign-in.`,
 	];
 }
 
@@ -255,7 +256,7 @@ export interface OwnerStoreDeps extends SecretStoreDeps {
 	readonly env?: Env;
 	/** Where the locator is committed; the working directory by default. */
 	readonly cwd?: string;
-	readonly locator?: SettingsStore;
+	readonly locator?: OwnerSettingsStore;
 	readonly openStore?: (
 		id: SecretStoreId,
 		coordinates: Env,
@@ -353,11 +354,14 @@ function nonSecret(
  * and removed from the tree.
  */
 export function ownerLocator(deps: {
-	readonly locator?: SettingsStore;
+	readonly locator?: OwnerSettingsStore;
+	readonly ownerChannel?: Pick<OwnerChannel, "storeSettings">;
 	readonly cwd?: string;
 	readonly env?: Readonly<Record<string, string | undefined>>;
-}): SettingsStore {
+}): OwnerSettingsStore {
 	if (deps.locator !== undefined) return deps.locator;
+	if (deps.ownerChannel?.storeSettings !== undefined)
+		return deps.ownerChannel.storeSettings;
 	const cwd = deps.cwd ?? process.cwd();
 	const user = fileSettingsStore(secretStoreLocatorPath(cwd, deps.env));
 	const legacyPath = path.join(cwd, SECRET_STORE_LOCATOR_FILE);
@@ -376,13 +380,39 @@ export function ownerLocator(deps: {
 	};
 }
 
+export function isOwnerStoreSetting(name: string): boolean {
+	return /^(?:HOBO_SECRET_STORE|INFISICAL_.*|OP_.*|BWS_.*|BITWARDEN_.*|BW_.*)$/u.test(
+		name,
+	);
+}
+
+export async function ownerStoreSessionEnvironment(
+	deps: Pick<OwnerStoreDeps, "locator" | "ownerChannel" | "cwd">,
+	env: Env,
+): Promise<Env> {
+	const locator = ownerLocator(deps);
+	locator.assertCurrent?.();
+	if (locator.requiresOwnerChoice?.())
+		return Object.fromEntries(
+			Object.entries(env).filter(([name]) => !isOwnerStoreSetting(name)),
+		);
+	if (
+		!locator.hasSessionChoice?.() ||
+		!(await locator.read()).HOBO_SECRET_STORE
+	)
+		return env;
+	return Object.fromEntries(
+		Object.entries(env).filter(([name]) => !isOwnerStoreSetting(name)),
+	);
+}
+
 /** Find the owner's store: committed locator, the run's vault, or a workload's OIDC. */
 export async function ownerStore(
 	family: "ci" | "cd",
 	vault: TrustedVault,
 	deps: OwnerStoreDeps = {},
 ): Promise<OwnerStore> {
-	const env = deps.env ?? {};
+	const env = await ownerStoreSessionEnvironment(deps, deps.env ?? {});
 	const locator = ownerLocator({
 		...deps,
 		env: {
@@ -395,6 +425,100 @@ export async function ownerStore(
 		((id: SecretStoreId, coordinates: Env, signIn: SecretHolder) =>
 			openSecretStore(id, coordinates, signIn, deps));
 	const saved = await locator.read();
+	locator.assertCurrent?.();
+	const protocol:
+		| Pick<
+				OwnerSettingsStore,
+				| "assertCurrent"
+				| "runStoreWrite"
+				| "runPreparedStoreWrite"
+				| "recordStoreChange"
+				| "markUncertainWrite"
+		  >
+		| undefined = locator.assertCurrent
+		? locator
+		: deps.locator === undefined &&
+				deps.ownerChannel?.storeSettings === undefined
+			? terminalOwnerWriteProtocol(family, deps.cwd ?? process.cwd())
+			: undefined;
+	const guarded = (store: OpenedSecretStore): OpenedSecretStore => {
+		if (!protocol?.assertCurrent) return store;
+		const port = store.port;
+		const check = protocol.assertCurrent;
+		const write = <T>(operation: () => Promise<T>): Promise<T> =>
+			protocol.runStoreWrite ? protocol.runStoreWrite(operation) : operation();
+		const writePrepared: NonNullable<
+			OpenedSecretStore["withPreparedWriteLock"]
+		> = (prepareReadOnly, operation) => {
+			if (protocol.runPreparedStoreWrite)
+				return protocol.runPreparedStoreWrite(prepareReadOnly, operation);
+			return write(async () => {
+				const prepared = await prepareReadOnly();
+				return prepared.kind === "completed"
+					? prepared.result
+					: operation(prepared.value);
+			});
+		};
+		const mutate = <T>(operation: () => Promise<T>): Promise<T> =>
+			write(async () => {
+				check();
+				protocol.recordStoreChange?.();
+				try {
+					return await operation();
+				} catch (error) {
+					protocol.markUncertainWrite?.();
+					throw error;
+				}
+			});
+		return {
+			...store,
+			withWriteLock: write,
+			withPreparedWriteLock: writePrepared,
+			port: {
+				id: port.id,
+				kind: port.kind,
+				put: async (name, value) => {
+					check();
+					const result = await mutate(() => port.put(name, value));
+					check();
+					return result;
+				},
+				access: async (name) => {
+					check();
+					const result = await port.access(name);
+					check();
+					return result;
+				},
+				accessVersion: async (name, version) => {
+					check();
+					const result = await port.accessVersion(name, version);
+					check();
+					return result;
+				},
+				listVersions: async (name) => {
+					check();
+					const result = await port.listVersions(name);
+					check();
+					return result;
+				},
+				...(port.createOnly
+					? {
+							createOnly: async (name: string, value: string) => {
+								check();
+								const result = await mutate(
+									() =>
+										port.createOnly?.(name, value) ??
+										Promise.resolve(undefined),
+								);
+								check();
+								if (!result) throw new Error("Store operation unavailable.");
+								return result;
+							},
+						}
+					: undefined),
+			},
+		};
+	};
 	const ownerChose = Boolean(env.HOBO_SECRET_STORE || saved.HOBO_SECRET_STORE);
 	// Only the owner chooses: a token in the environment says a provider is
 	// configured and reachable, never that the owner chose it.
@@ -472,7 +596,8 @@ export async function ownerStore(
 	const lacking = [...choice.missing, ...missingSide];
 	if (lacking.length === 0) {
 		const attempt = await open(id, coordinates, vault);
-		if (attempt.ok) opened = attempt.store;
+		locator.assertCurrent?.();
+		if (attempt.ok) opened = guarded(attempt.store);
 		else
 			unopened = {
 				message: attempt.message,
@@ -516,6 +641,7 @@ export async function ownerStore(
 				: undefined,
 		unopened,
 		async stage({ provider, reason, proceed }) {
+			locator.assertCurrent?.();
 			if (opened !== undefined) return proceed(opened);
 			const signInStage = async (chosen: SecretStoreId) => {
 				const settings = storeSettings(chosen, folder);
@@ -559,6 +685,7 @@ export async function ownerStore(
 								: nonSecret(settings, values),
 							vault,
 						);
+						locator.assertCurrent?.();
 						if (!attempt.ok) {
 							const field =
 								settings.find((s) => s.field.kind === "secret")?.field.name ??
@@ -571,8 +698,8 @@ export async function ownerStore(
 								},
 							};
 						}
-						opened = attempt.store;
-						return { ok: true, flow: await proceed(attempt.store) };
+						opened = guarded(attempt.store);
+						return { ok: true, flow: await proceed(opened) };
 					},
 				});
 			};

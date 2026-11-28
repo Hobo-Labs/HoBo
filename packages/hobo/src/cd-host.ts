@@ -6,6 +6,7 @@ import {
 	type CampReconciler,
 	type FeedRequest,
 	type FeedResponse,
+	type HealthReport,
 } from "@hobo/cd";
 import { defaultRetention } from "@hobo/cd/compose";
 import { asCamp } from "@hobo/cd/rollout";
@@ -81,7 +82,7 @@ export type CdHost = Readonly<{
 	managed: readonly CampId[];
 	reconcilers: number;
 	refusals: readonly string[];
-	pathPrefix: string;
+	pathPrefix: "/v1/cd/";
 	passDeadlineMs: number;
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
 	pass(signal?: AbortSignal): Promise<CdPassReport>;
@@ -172,6 +173,7 @@ export async function composeCdHost(
 		readiness?: CdReadiness;
 		fleetPassLease?: boolean;
 		passDeadlineMs?: number;
+		health?: (report: HealthReport) => HealthReport;
 	}>,
 ): Promise<CdHost> {
 	const { runtime } = input;
@@ -191,7 +193,11 @@ export async function composeCdHost(
 	const managed: CampId[] = camps
 		.filter((camp) => camp.management === CampManagement.MANAGED)
 		.map((camp) => camp.campId);
-	if (camps.length > 0 && managed.length === 0)
+	if (
+		input.readiness === "composed" &&
+		camps.length > 0 &&
+		managed.length === 0
+	)
 		refusals.push(CD_NO_MANAGED_CAMPS);
 	const reconcilers: CampReconciler[] = [];
 	if (managed.length > 0) {
@@ -212,13 +218,17 @@ export async function composeCdHost(
 		principal: servicePrincipal,
 		telemetry: cd.sink,
 	});
+	const decorate = input.health;
 	const api = createCdControlApi({
 		store: runtime.store,
 		tenant: config.tenant,
 		now: runtime.ctx.now,
 		cd,
 		topology: cd.topology,
-		service,
+		service:
+			decorate === undefined
+				? service
+				: { health: () => decorate(service.health()) },
 		telemetry: cd.sink,
 	});
 	const hostPassStream = `${config.tenant}:${HOST_PASS_STREAM}`;

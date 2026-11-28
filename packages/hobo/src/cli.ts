@@ -216,6 +216,23 @@ registerInstallable("runtime-cloud-native", () =>
 	createCloudNativeRuntimeCatalogEntry(),
 );
 
+export function ownerForFamily(
+	owner: OwnerChannel | undefined,
+	family: "ci" | "cd",
+	cwd: string,
+): OwnerChannel | undefined {
+	if (!owner) return undefined;
+	if (owner.bindScope) return owner.bindScope(family, cwd);
+	const scoped = owner.forScope?.(family, cwd) ?? owner;
+	return {
+		...scoped,
+		...(owner.vaultFor ? { vault: owner.vaultFor(family, cwd) } : undefined),
+		...(owner.storeSettingsFor
+			? { storeSettings: owner.storeSettingsFor(family, cwd) }
+			: undefined),
+	};
+}
+
 export function createComposedHoboCli(
 	options: ComposedHoboCliOptions = {},
 ): HoboCli {
@@ -298,13 +315,20 @@ export function createComposedHoboCli(
 		candidates: installableProvidersFor,
 		interactive: false,
 	});
+	const familyOwner = (
+		family: "ci" | "cd",
+		cwd: string,
+	): OwnerChannel | undefined =>
+		ownerForFamily(options.ownerChannel, family, cwd);
+	const ownerSession = options.ownerSession;
 	const ci = createCiCommand({
 		runtime,
-		...(options.ownerSession !== undefined
+		...(ownerSession !== undefined
 			? {
-					ownerCredentials: options.ownerSession.credentials,
-					fleetAgentVault: options.ownerSession.agentVault,
-					ownerEntries: options.ownerSession.entries,
+					ownerCredentials: (cwd: string) =>
+						ownerSession.credentials(cwd, "ci"),
+					fleetAgentVault: (cwd: string) => ownerSession.agentVault(cwd, "ci"),
+					ownerEntries: (cwd: string) => ownerSession.entries(cwd, "ci"),
 				}
 			: undefined),
 	});
@@ -328,17 +352,18 @@ export function createComposedHoboCli(
 				// GitHub first: the App and its credentials in the owner's secret
 				// store, via the generative connect page (idempotent).
 				// The machine: install and run the chosen store's CLI.
-				prepare: (input) =>
-					prepareGithubConnection(input, {
+				prepare: (input) => {
+					const ciOwner = familyOwner("ci", input.run.context.cwd);
+					return prepareGithubConnection(input, {
 						runCommand: machineRunner(),
-						...(options.ownerChannel !== undefined
-							? { ownerChannel: options.ownerChannel }
-							: undefined),
+						cwd: input.run.context.cwd,
+						...(ciOwner !== undefined ? { ownerChannel: ciOwner } : undefined),
 						...(options.clock !== undefined
 							? { now: options.clock.now, sleep: options.clock.sleep }
 							: undefined),
 						which: (bin) => whichOnPath(bin),
-					}),
+					});
+				},
 				// The relay is placed through its own Yards (the Vercel project
 				// hobo-ci and the Yards its junction joins), and `up` delivers it.
 				plan: createCiRelayPlanCommand(runtime, plan),
@@ -346,11 +371,12 @@ export function createComposedHoboCli(
 					createCiRelayUpCommand(
 						credentials,
 						up,
-						options.ownerSession !== undefined
+						ownerSession !== undefined
 							? {
 									owner: {
-										credentials: options.ownerSession.credentials,
-										entries: options.ownerSession.entries,
+										credentials: (cwd: string) =>
+											ownerSession.credentials(cwd, "ci"),
+										entries: (cwd: string) => ownerSession.entries(cwd, "ci"),
 									},
 								}
 							: {},
@@ -379,23 +405,24 @@ export function createComposedHoboCli(
 				// executor whose IaC provider deploys with the junction's token,
 				// resolved from the owner's secret store for this run only.
 				// hobo cd up also provisions the CD journal's fleet.
-				prepare: (input) =>
-					!input.whatIf && (runtime.delivery || runtime.hostingExecution)
-						? Promise.resolve({
-								kind: "refused" as const,
-								result: cdUnavailableResult("up"),
-							})
-						: prepareVercelConnection(input, {
-								journalProvisioners: defaultJournalProvisioners(),
-								runCommand: machineRunner(),
-								...(options.ownerChannel !== undefined
-									? { ownerChannel: options.ownerChannel }
-									: undefined),
-								...(options.clock !== undefined
-									? { now: options.clock.now, sleep: options.clock.sleep }
-									: undefined),
-								which: (bin) => whichOnPath(bin),
-							}),
+				prepare: (input) => {
+					if (!input.whatIf && (runtime.delivery || runtime.hostingExecution))
+						return Promise.resolve({
+							kind: "refused" as const,
+							result: cdUnavailableResult("up"),
+						});
+					const cdOwner = familyOwner("cd", input.run.context.cwd);
+					return prepareVercelConnection(input, {
+						journalProvisioners: defaultJournalProvisioners(),
+						runCommand: machineRunner(),
+						cwd: input.run.context.cwd,
+						...(cdOwner !== undefined ? { ownerChannel: cdOwner } : undefined),
+						...(options.clock !== undefined
+							? { now: options.clock.now, sleep: options.clock.sleep }
+							: undefined),
+						which: (bin) => whichOnPath(bin),
+					});
+				},
 				upWith: (credentials) =>
 					runtime.delivery || runtime.hostingExecution
 						? cdUnavailable("up")

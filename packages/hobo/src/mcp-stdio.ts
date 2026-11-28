@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { parseArgv, parseLifecycleArgs } from "@hobo/cli";
+import { OwnerStoreOperationUncertainError } from "@hobo/hobo-ci";
 import {
 	type AuthContext,
 	capabilityForTool,
@@ -12,6 +14,7 @@ import {
 	scopeAuthorizesCapability,
 } from "@hobo/mcp";
 import { z } from "zod";
+import { parseCiArgs } from "./ci-command.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -27,6 +30,7 @@ import {
 	type StoreChoiceApp,
 	type StoreChoiceSupport,
 } from "./mcp-store-choice.js";
+import { OwnerWriteGuardUnavailableError } from "./owner-write-guard.js";
 
 // The MCP stdio protocol layer for the composed `hobo-mcp` binary.
 // Newline-delimited JSON-RPC 2.0 per the MCP
@@ -112,6 +116,7 @@ export interface McpStdioSession {
 	storeSupport: StoreChoiceSupport;
 	/** Send a request to the client (set by the transport: elicitation). */
 	request?: ClientRequest;
+	notify?: (method: string, params: JsonObject) => void;
 }
 
 export function createMcpStdioSession(
@@ -128,6 +133,220 @@ export function createMcpStdioSession(
 
 function captureAllowed(auth: AuthContext, tool: string): boolean {
 	return scopeAuthorizesCapability(auth.scope, capabilityForTool(tool));
+}
+
+const OWNER_SETUP_CODES = new Set([
+	"HOBO_OK",
+	"HOBO_UP_INCOMPLETE",
+	"HOBO_UP_FAILED",
+	"HOBO_UP_NO_BINDLE",
+	"HOBO_CLI_USAGE",
+	"HOBO_CI_APP_NEEDS_OWNER",
+	"HOBO_CI_SETTINGS_NEEDED",
+	"HOBO_CI_GITHUB_OWNER_UNKNOWN",
+	"HOBO_CI_MANAGED_PREVIEW",
+	"HOBO_CI_UP_VERCEL_NOT_CONNECTED",
+	"HOBO_CD_VERCEL_AWAITING_APPROVAL",
+	"HOBO_CD_VERCEL_DEVICE_DENIED",
+	"HOBO_CD_VERCEL_DEVICE_EXPIRED",
+	"HOBO_CD_VERCEL_DEVICE_FAILED",
+	"HOBO_CD_JOURNAL_NOT_PROVISIONED",
+	"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+	"HOBO_CD_JOURNAL_SETTINGS_INVALID",
+	"HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+	"MCP_SCOPE_DENIED",
+	"MCP_RATE_LIMITED",
+	...["CI", "CD"].flatMap((family) =>
+		[
+			"STORE_CHOICE",
+			"STORE_NEEDS_SIGN_IN",
+			"STORE_UNAVAILABLE",
+			"STORE_OPERATION_UNCERTAIN",
+			"SECRET_STORE_INVALID",
+			"SECRET_STORE_UNAVAILABLE",
+			"OWNER_CHOICE_CHANGED",
+			"INFISICAL_SIGN_IN",
+			"INFISICAL_CLI_INSTALL",
+			"INFISICAL_EGRESS",
+			"INFISICAL_API",
+			"ONEPASSWORD_SIGN_IN",
+			"ONEPASSWORD_CLI_INSTALL",
+			"ONEPASSWORD_SERVICE_ACCOUNT",
+			"ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE",
+			"BITWARDEN_ORGANIZATION",
+			"BITWARDEN_APPROVAL_REQUIRED",
+			"BITWARDEN_NEEDS_API_KEY",
+			"BITWARDEN_API",
+			"BITWARDEN_API_KEY_REJECTED",
+			"BITWARDEN_DENIED",
+			"BITWARDEN_NOT_APPROVED",
+			"BITWARDEN_ACCOUNT",
+		].map((suffix) => `HOBO_${family}_${suffix}`),
+	),
+]);
+
+const OWNER_SETUP_STATUSES = new Set([
+	"ok",
+	"ready",
+	"up",
+	"waiting",
+	"needs-connection",
+	"unavailable",
+	"refused",
+	"error",
+	"usage",
+	"usage_error",
+	"deployed",
+	"rejected",
+	"denied",
+	"throttled",
+]);
+
+const OWNER_STEP_CODES = new Set([
+	"HOBO_CI_APP_NEEDS_OWNER",
+	"HOBO_CI_SETTINGS_NEEDED",
+	"HOBO_CD_VERCEL_AWAITING_APPROVAL",
+	"HOBO_CD_VERCEL_DEVICE_EXPIRED",
+	...["CI", "CD"].flatMap((family) =>
+		[
+			"STORE_CHOICE",
+			"STORE_NEEDS_SIGN_IN",
+			"INFISICAL_SIGN_IN",
+			"ONEPASSWORD_SIGN_IN",
+			"BITWARDEN_ORGANIZATION",
+			"BITWARDEN_APPROVAL_REQUIRED",
+			"BITWARDEN_NEEDS_API_KEY",
+		].map((suffix) => `HOBO_${family}_${suffix}`),
+	),
+]);
+
+function ownerSetupResponse(
+	result: {
+		readonly ok: boolean;
+		readonly code: string;
+		readonly status: string;
+		readonly output: unknown;
+	},
+	formAvailable: boolean,
+	ci: boolean,
+) {
+	const completed =
+		result.ok &&
+		isJsonObject(result.output) &&
+		result.output.ok === true &&
+		((result.output.status === "deployed" &&
+			result.output.code === "HOBO_OK") ||
+			(ci &&
+				result.output.status === "ok" &&
+				result.output.code === "HOBO_CI_MANAGED_PREVIEW"));
+	if (result.ok && !completed)
+		return {
+			ok: false,
+			status: "incomplete",
+			code: "HOBO_MCP_SETUP_NOT_COMPLETED",
+			action: "run-setup",
+			message: "HoBo did not report a completed deployment.",
+		};
+	const missingForm =
+		!result.ok && !formAvailable && OWNER_STEP_CODES.has(result.code);
+	const unavailableApproval =
+		!result.ok &&
+		(result.code === "HOBO_CI_HANDOFF_SILENT" ||
+			result.code === "HOBO_CD_HANDOFF_SILENT");
+	const code = unavailableApproval
+		? "HOBO_MCP_OWNER_APPROVAL_UNAVAILABLE"
+		: missingForm
+			? "HOBO_MCP_OWNER_FORM_UNAVAILABLE"
+			: OWNER_SETUP_CODES.has(result.code)
+				? result.code
+				: "HOBO_MCP_SETUP_RESULT";
+	return {
+		ok: result.ok,
+		status:
+			missingForm || unavailableApproval
+				? "unavailable"
+				: OWNER_SETUP_STATUSES.has(result.status)
+					? result.status
+					: "unknown",
+		code,
+		action: result.ok
+			? "none"
+			: unavailableApproval
+				? "secure-owner-approval-required"
+				: missingForm
+					? "secure-owner-form-required"
+					: code === "HOBO_CI_UP_VERCEL_NOT_CONNECTED"
+						? "run-cd-setup"
+						: code === "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"
+							? "atomic-claim-store-required"
+							: code === "HOBO_CD_JOURNAL_SETTINGS_INVALID"
+								? "restore-journal-settings"
+								: code === "HOBO_CD_JOURNAL_NOT_PROVISIONED"
+									? "reconcile-journal-provisioning"
+									: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
+										? "wait-for-owner-request"
+										: code.endsWith("_STORE_OPERATION_UNCERTAIN")
+											? "reconcile-store-operation"
+											: code.endsWith(
+														"_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE",
+													)
+												? "private-owner-session-required"
+												: code === "MCP_SCOPE_DENIED"
+													? "authorization-required"
+													: code === "MCP_RATE_LIMITED"
+														? "retry-after-throttle"
+														: code.endsWith("_STORE_CHOICE")
+															? "choose-secret-store"
+															: "retry-setup-when-ready",
+		message: unavailableApproval
+			? "This owner approval cannot be completed privately in this HoBo session."
+			: missingForm
+				? "This host cannot provide the secure HoBo owner hand-off."
+				: code === "HOBO_CI_UP_VERCEL_NOT_CONNECTED"
+					? "Run the HoBo CD setup ceremony before retrying CI."
+					: code === "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"
+						? "A verified atomic claim store or an existing complete CD journal fleet is required."
+						: code === "HOBO_CD_JOURNAL_SETTINGS_INVALID"
+							? "Restore the journal fleet and witness settings in your secret store before retrying setup."
+							: code === "HOBO_CD_JOURNAL_NOT_PROVISIONED"
+								? "Reconcile any incomplete journal database creation before retrying setup."
+								: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
+									? "The owner declined Vercel approval. Retry only if they request it."
+									: code.endsWith("_STORE_OPERATION_UNCERTAIN")
+										? "A store operation may have completed; reconcile it before retrying."
+										: code.endsWith("_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE")
+											? "This HoBo session cannot provision that connection privately."
+											: code === "HOBO_CD_VERCEL_DEVICE_EXPIRED"
+												? "Run again to request a new Vercel approval."
+												: !result.ok && OWNER_STEP_CODES.has(result.code)
+													? "Run again when the owner is ready."
+													: "HoBo returned a setup status. Owner steps use the secure form.",
+	};
+}
+
+function ownerSetupRefusal(
+	id: number | string | null,
+	code: string,
+	message: string,
+): JsonRpcResponse {
+	return {
+		jsonrpc: "2.0",
+		id,
+		result: {
+			content: [
+				{
+					type: "text",
+					text: JSON.stringify({
+						ok: false,
+						status: "unavailable",
+						code,
+						message,
+					}),
+				},
+			],
+			isError: true,
+		},
+	};
 }
 
 // Handle one JSON-RPC message. Returns the response to write, or null for
@@ -262,7 +481,9 @@ export async function handleMcpMessage(
 				const outcome = await session.storeChoice.callTool(
 					params.name,
 					isJsonObject(params.arguments) ? params.arguments : {},
-					session.storeSupport,
+					session.notify === undefined
+						? session.storeSupport
+						: { ...session.storeSupport, notify: session.notify },
 					session.request,
 				);
 				return { jsonrpc: "2.0", id, result: outcome };
@@ -299,19 +520,121 @@ export async function handleMcpMessage(
 				camp?: unknown;
 				args?: unknown;
 			};
-			const result = await server.callTool(
-				params.name,
-				{
-					...(isJsonString(args.cwd) ? { cwd: args.cwd } : undefined),
-					...(isJsonString(args.camp) ? { camp: args.camp } : undefined),
-					...(Array.isArray(args.args)
-						? {
-								args: args.args.filter((a): a is string => isJsonString(a)),
-							}
-						: undefined),
-				},
-				auth,
-			);
+			const commandArgs = Array.isArray(args.args)
+				? args.args.filter((a): a is string => isJsonString(a))
+				: [];
+			const family = params.name === "ci" || params.name === "cd";
+			let familyArgs: readonly string[] = [];
+			let help = false;
+			if (family) {
+				try {
+					const parsed = parseArgv([
+						params.name,
+						"--json",
+						...(isJsonString(args.camp) ? ["--camp", args.camp] : []),
+						...commandArgs,
+					]);
+					familyArgs = parsed.args;
+					help = parsed.help;
+				} catch {
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_INPUT_INVALID",
+						"HoBo could not parse the command arguments.",
+					);
+				}
+			}
+			const action = familyArgs[0];
+			const ownerUp = family && action === "up";
+			let fallbackAction = action;
+			if (
+				params.name === "ci" &&
+				action !== "up" &&
+				action !== "down" &&
+				action !== "plan" &&
+				action !== "status"
+			) {
+				try {
+					fallbackAction = parseCiArgs(familyArgs).positionals[0];
+				} catch {
+					fallbackAction = action;
+				}
+			}
+			if (
+				params.name === "ci" &&
+				(action === "app" ||
+					action === "secret-store" ||
+					fallbackAction === "app" ||
+					fallbackAction === "secret-store")
+			)
+				return ownerSetupRefusal(
+					id,
+					"HOBO_MCP_LEGACY_SETUP_BLOCKED",
+					"Use hobo ci up --hand-off through the secure owner channel.",
+				);
+			if (ownerUp && help)
+				return ownerSetupRefusal(
+					id,
+					"HOBO_MCP_SETUP_HELP",
+					"Help does not run the setup ceremony.",
+				);
+			if (ownerUp) {
+				const lifecycle = parseLifecycleArgs(familyArgs.slice(1));
+				if (!lifecycle.ok)
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_INPUT_INVALID",
+						"HoBo could not parse the setup options.",
+					);
+				if (!lifecycle.flags.handOff)
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_HANDOFF_REQUIRED",
+						"Run setup with --hand-off through the secure owner channel.",
+					);
+			}
+			const formAvailable =
+				session?.support.formElicitation === true &&
+				session.request !== undefined;
+			let result: Awaited<ReturnType<HoboMcpServer["callTool"]>>;
+			try {
+				result = await server.callTool(
+					params.name,
+					{
+						...(isJsonString(args.cwd) ? { cwd: args.cwd } : undefined),
+						...(isJsonString(args.camp) ? { camp: args.camp } : undefined),
+						...(Array.isArray(args.args)
+							? {
+									args: commandArgs,
+								}
+							: undefined),
+					},
+					auth,
+				);
+			} catch (error) {
+				if (ownerUp && error instanceof OwnerStoreOperationUncertainError)
+					return ownerSetupRefusal(
+						id,
+						`HOBO_${params.name.toUpperCase()}_STORE_OPERATION_UNCERTAIN`,
+						"A store operation may have completed; reconcile it before retrying.",
+					);
+				if (ownerUp && error instanceof OwnerWriteGuardUnavailableError)
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_OWNER_WRITE_GUARD_UNAVAILABLE",
+						"HoBo cannot safely write to the owner store on this filesystem or platform.",
+					);
+				if (ownerUp)
+					return ownerSetupRefusal(
+						id,
+						"HOBO_MCP_SETUP_FAILED",
+						"HoBo could not complete setup.",
+					);
+				throw error;
+			}
+			const safe = ownerUp
+				? ownerSetupResponse(result, formAvailable, params.name === "ci")
+				: undefined;
 			return {
 				jsonrpc: "2.0",
 				id,
@@ -319,10 +642,12 @@ export async function handleMcpMessage(
 					content: [
 						{
 							type: "text",
-							text: JSON.stringify(result.output ?? result.error ?? null),
+							text: JSON.stringify(
+								safe ?? result.output ?? result.error ?? null,
+							),
 						},
 					],
-					isError: !result.ok,
+					isError: safe === undefined ? !result.ok : !safe.ok,
 				},
 			};
 		}
@@ -382,7 +707,10 @@ export async function serveMcpStdio(options: {
 	const asking = new AsyncLocalStorage<Set<string>>();
 	const askedFor = new Map<string, Set<string>>();
 	let next = 0;
-	if (options.session !== undefined)
+	if (options.session !== undefined) {
+		options.session.notify = (method, params) => {
+			write({ jsonrpc: "2.0", method, params });
+		};
 		options.session.request = (method, params) => {
 			next += 1;
 			const id = `hobo-${next}`;
@@ -411,6 +739,7 @@ export async function serveMcpStdio(options: {
 			write({ jsonrpc: "2.0", id, method, params });
 			return answer;
 		};
+	}
 	/** The client cancelled one of its requests: withdraw what it asked for. */
 	const cancelled = (requestId: string) => {
 		for (const id of askedFor.get(requestId) ?? []) {
