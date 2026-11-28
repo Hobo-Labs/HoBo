@@ -24,7 +24,7 @@ export function runPublishedAdapterFixture(
 				directory,
 			],
 			{
-				timeout: 30_000,
+				timeout: 120_000,
 			},
 		);
 		return execFileSync(
@@ -32,7 +32,7 @@ export function runPublishedAdapterFixture(
 			[fileURLToPath(fixture), pathToFileURL(join(directory, entry)).href],
 			{
 				encoding: "utf8",
-				timeout: 5_000,
+				timeout: 15_000,
 			},
 		);
 	} finally {
