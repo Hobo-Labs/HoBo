@@ -76,6 +76,12 @@ runs:
       env:
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: bash "${GITHUB_ACTION_PATH}/hosted-toolchain.sh"
+    - name: Stop when the merge group left the queue
+      if: github.event_name == 'merge_group'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: bash "${GITHUB_ACTION_PATH}/merge-group-live.sh"
     - name: Restore Playwright headless shell (hosted)
       if: inputs.browser == 'true' && runner.environment == 'github-hosted'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9

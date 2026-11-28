@@ -113,6 +113,8 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/route-runner
+            .github/actions/ci-runner-preflight/merge-group-live.mts
+            .github/actions/ci-runner-preflight/merge-group-live.sh
             .github/workflows/hobo-ci.yml
             scripts/ci/route-runner.mts
             scripts/ci/runner-routing.mts
@@ -120,6 +122,11 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/merge-queue-reuse.mts
+      - name: Stop when the merge group left the queue
+        if: github.event_name == 'merge_group'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/actions/ci-runner-preflight/merge-group-live.sh
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ steps.routing-base.outputs.sha }}
