@@ -31,7 +31,7 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workflowDir = join(repoRoot, ".github", "workflows");
 
 const pullRequestOn =
-	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n  push:\n    branches: [main]\n";
+	"on:\n  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]\n  push:\n    branches: [main]\n";
 const routeJobGood =
 	"  route:\n    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 const trunkJob =
@@ -39,7 +39,7 @@ const trunkJob =
 
 const actionsLockOn = `on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   merge_group:
 `;
 const actionsLockJob = (jobIf: string) => `  actions-lock:
@@ -245,6 +245,7 @@ describe("draft pull request CI policy", () => {
 			["pull_request", true, "synchronize", "", false],
 			["pull_request", true, "labeled", "other", false],
 			["pull_request", true, "labeled", "ci:run-draft-checks", false],
+			["pull_request", true, "converted_to_draft", "", false],
 			["pull_request", false, "ready_for_review", "", true],
 			["merge_group", false, "checks_requested", "", true],
 		] as const) {
@@ -311,8 +312,8 @@ describe("draft pull request CI policy", () => {
 
 	it("rejects a pull_request.types list that still listens on labeled", async () => {
 		const withLabel = pullRequestOn.replace(
-			"ready_for_review]",
-			"ready_for_review, labeled]",
+			"converted_to_draft]",
+			"converted_to_draft, labeled]",
 		);
 		const result = await lintFixtureWorkflow(
 			"hobo-ci.yml",

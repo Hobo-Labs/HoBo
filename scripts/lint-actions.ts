@@ -742,6 +742,7 @@ export const REQUIRED_PULL_REQUEST_TYPES = [
 	"synchronize",
 	"reopened",
 	"ready_for_review",
+	"converted_to_draft",
 ] as const;
 
 export const ALLOWLISTED_EXTRA_PULL_REQUEST_TYPES = new Map<
