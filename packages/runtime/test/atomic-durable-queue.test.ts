@@ -461,6 +461,16 @@ describe("atomic durable queue provider", () => {
 		});
 		if (first.status !== "available" || !first.messages[0])
 			throw Error("missing exhausted message");
+		expect(first.nextCursor).toBe("m1");
+		expect(
+			await queue.inspectExhausted({ afterMessageId: first.nextCursor ?? "" }),
+		).toMatchObject({
+			status: "available",
+			revision: first.revision,
+			messages: [{ messageId: "m2" }],
+			more: false,
+			nextCursor: null,
+		});
 		first.messages[0].body[0] = 99;
 		expect(await queue.inspectExhausted()).toMatchObject({
 			status: "available",
@@ -481,6 +491,64 @@ describe("atomic durable queue provider", () => {
 		});
 		backing.corrupt();
 		expect(await queue.inspectExhausted()).toEqual({ status: "unknown" });
+	});
+
+	it("orders cursors numerically and rejects accessors or proxies without invoking them", async () => {
+		const backing = memoryStore();
+		let clock = 1000;
+		const bounds = {
+			...limits,
+			batchSize: 1,
+			deliveryAttempts: 1,
+			retainedMessages: 10,
+			retainedReceipts: 30,
+		};
+		const queue = createAtomicDurableQueue({
+			store: backing.store,
+			limits: bounds,
+			now: () => clock,
+		});
+		for (let n = 1; n <= 10; n++) await queue.enqueue(message(n, `job-${n}`));
+		for (let n = 11; n <= 20; n++)
+			await queue.dequeue({
+				operation: op(n),
+				maxMessages: 1,
+				visibilityTimeoutMs: 10,
+			});
+		clock = 1010;
+		expect(
+			await queue.inspectExhausted({ afterMessageId: "m9" }),
+		).toMatchObject({
+			status: "available",
+			messages: [{ messageId: "m10" }],
+			more: false,
+			nextCursor: null,
+		});
+		expect(await queue.inspectExhausted({ afterMessageId: "m01" })).toEqual({
+			status: "unknown",
+		});
+		let traps = 0;
+		const accessor = Object.defineProperty({}, "afterMessageId", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw Error("getter");
+			},
+		});
+		expect(await queue.inspectExhausted(accessor)).toEqual({
+			status: "unknown",
+		});
+		const proxy = new Proxy(
+			{},
+			{
+				ownKeys() {
+					traps++;
+					throw Error("trap");
+				},
+			},
+		);
+		expect(await queue.inspectExhausted(proxy)).toEqual({ status: "unknown" });
+		expect(traps).toBe(0);
 	});
 
 	it("withholds exhausted payloads if read authorization is revoked before disclosure", async () => {

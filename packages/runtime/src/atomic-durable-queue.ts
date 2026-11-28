@@ -109,12 +109,15 @@ export type AtomicQueueExhaustedSnapshot =
 				readonly deliveryAttempts: number;
 			}[];
 			readonly more: boolean;
+			readonly nextCursor: string | null;
 	  }
 	| { readonly status: "unknown" };
 export interface AtomicDurableQueue extends DurableQueue {
 	compact(): Promise<AtomicQueueCompactionOutcome>;
 	reclaimCompleted(): Promise<AtomicQueueReclamationOutcome>;
-	inspectExhausted(): Promise<AtomicQueueExhaustedSnapshot>;
+	inspectExhausted(options?: {
+		readonly afterMessageId?: string;
+	}): Promise<AtomicQueueExhaustedSnapshot>;
 	confirmExhaustedExport(input: {
 		readonly operation: DurableQueueOperation;
 		readonly messageId: string;
@@ -166,6 +169,10 @@ export function inspectAtomicDurableQueue(
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply */
 const NativePromise = Promise;
 const InspectionBytes = Uint8Array;
+const inspectionRegexExec = RegExp.prototype.exec;
+const inspectionSlice = String.prototype.slice;
+const inspectionNumber = Number;
+const inspectionId = /^m[1-9][0-9]{0,14}$/u;
 const setPrototype = Object.setPrototypeOf;
 const freeze = Object.freeze;
 const isSafe = Number.isSafeInteger;
@@ -444,8 +451,42 @@ export function createAtomicDurableQueue(
 				: result;
 		},
 		reclaimCompleted: () => checkpoint(true),
-		async inspectExhausted() {
+		/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the cursor is copied and checked before the store read. */
+		async inspectExhausted(options) {
 			try {
+				let afterSequence = 0;
+				if (options !== undefined) {
+					if (
+						options === null ||
+						typeof options !== "object" ||
+						identityProxy(options) ||
+						Array.isArray(options)
+					)
+						return outcome({ status: "unknown" as const });
+					const fields = identityOwnKeys(options);
+					if (fields.length > 1) return outcome({ status: "unknown" as const });
+					if (fields.length === 1) {
+						if (fields[0] !== "afterMessageId")
+							return outcome({ status: "unknown" as const });
+						const field = identityDescriptor(options, "afterMessageId");
+						if (
+							!field ||
+							!field.enumerable ||
+							!identityHasOwn(field, "value") ||
+							typeof field.value !== "string" ||
+							field.value.length > limits.nameBytes ||
+							identityApply(inspectionRegexExec, inspectionId, [
+								field.value,
+							]) === null
+						)
+							return outcome({ status: "unknown" as const });
+						afterSequence = inspectionNumber(
+							identityApply(inspectionSlice, field.value, [1]),
+						);
+						if (!isSafe(afterSequence))
+							return outcome({ status: "unknown" as const });
+					}
+				}
 				const loaded = await readState();
 				if (!loaded) return outcome({ status: "unknown" as const });
 				const observedAtMs = now();
@@ -462,6 +503,12 @@ export function createAtomicDurableQueue(
 				for (let index = 0; index < loaded.state.messages.length; index++) {
 					const message = loaded.state.messages[index];
 					if (!message) return outcome({ status: "unknown" as const });
+					if (
+						inspectionNumber(
+							identityApply(inspectionSlice, message.messageId, [1]),
+						) <= afterSequence
+					)
+						continue;
 					if (
 						message.completed ||
 						message.deliveryAttempt < limits.deliveryAttempts ||
@@ -508,11 +555,15 @@ export function createAtomicDurableQueue(
 					observedAtMs,
 					messages,
 					more,
+					nextCursor: more
+						? (messages[messages.length - 1]?.messageId ?? null)
+						: null,
 				});
 			} catch {
 				return outcome({ status: "unknown" as const });
 			}
 		},
+		/* oxlint-enable anti-slop/no-runtime-typeof */
 		confirmExhaustedExport(input) {
 			return begin(() => {
 				const request = parseQueueExportConfirmation(input, limits);

@@ -243,3 +243,7 @@ does not prove the implementation, payload content or later authorization.
 The bounded `QueueExport` model assumes a trusted host confirms a durable sink
 receipt and checks that confirmation uses an unchanged queue revision. It does
 not prove sink delivery, idempotency, the host or the implementation.
+
+The bounded `QueuePagination` model checks ordered message-ID scans and requires
+the caller to restart when the observed revision changes. It abstracts payloads
+and does not prove the implementation or enforce caller behavior.

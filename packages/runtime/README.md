@@ -666,8 +666,10 @@ reason for rejection. The operation does not move data to a dead-letter queue.
 
 A trusted owner can call `inspectExhausted()` to obtain at most `batchSize`
 exhausted messages whose final lease has expired, including copied payloads and
-attributes. `more` indicates another eligible message; process the returned
-messages and inspect again to advance. The returned revision and observation
+attributes. `more` and `nextCursor` indicate another eligible message; pass the
+cursor as `afterMessageId` to inspect the next batch without changing earlier
+messages. Cursors follow monotonic message IDs. Compare revisions across pages
+and restart the scan when concurrent writes require a consistent inventory. The returned revision and observation
 time describe a snapshot, which can become stale immediately. Inspection reads
 the store twice to recheck authorization and revision before disclosure. Hosts must
 revalidate and fence ownership before acting, protect payloads, and use an
