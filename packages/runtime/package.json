@@ -23,6 +23,10 @@
 		"./durable-queue-host": {
 			"types": "./dist/durable-queue-host.d.ts",
 			"default": "./dist/durable-queue-host.js"
+		},
+		"./atomic-durable-queue": {
+			"types": "./dist/atomic-durable-queue.d.ts",
+			"default": "./dist/atomic-durable-queue.js"
 		}
 	},
 	"publishConfig": {
