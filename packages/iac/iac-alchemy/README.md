@@ -1101,9 +1101,10 @@ verification or session operations and rejects declarations that require them.
 Official AWS Emulator tests cover priced, denied-unpriced and explicitly
 authorized-unpriced admission before creating the mapped user pool.
 The notification declaration maps to its own SNS topic; the base mapper does not
-bind sends or subscriptions, so `notify().allow("send")` is rejected. Separately,
-`@hobo/iac-alchemy/aws/notification` provides a scoped SNS publisher for an
-existing topic. Its host supplies the exact topic grant, a synchronous verifier
+bind sends or subscriptions, so `notify().allow("send")` is rejected. `withAwsSnsNotification` and
+`awsSnsNotificationMappers` opt a declaration into a bounded SNS send mapping.
+The `@hobo/iac-alchemy/aws/notification` entrypoint provides a scoped publisher
+for the resulting topic. Its host supplies the exact topic grant, a synchronous verifier
 and AWS transport; it must connect the publisher to application logic. A valid
 submission returns `accepted` only after SNS returns a receipt and the grant is
 still valid. Authorization or capacity rejection means no dispatch for that
