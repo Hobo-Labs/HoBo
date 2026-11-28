@@ -90,6 +90,13 @@ Two rules that keep the licence surface clean:
 
 ## Pull request expectations
 
+Review changes and run suitable local checks while a pull request is a draft;
+do not run GitHub Actions validation on drafts. Mark it ready for review to
+start GitHub Actions. If an applicable check fails, return the pull request to
+draft and fix the same branch before marking it ready again. Queue it only after
+its required checks and applicable release jobs pass; pending, skipped, failed,
+and cancelled jobs are not passes.
+
 Every PR should include:
 
 - Commits signed off with the DCO (`git commit -s`), per [Licensing of contributions](#licensing-of-contributions).

@@ -1,0 +1,89 @@
+name: HoBo CI deps layer recovery
+description: >-
+  Link a mounted deps layer, else materialize the published GHCR hobo-ci-deps
+  image, else install from a warm pnpm store. Fail closed when none are available.
+inputs:
+  token:
+    description: >-
+      Token with packages:read. Composite steps cannot read the caller's
+      token from the env context, so the workflow passes it here.
+    required: true
+  verify-sibling-links:
+    description: Run ensure-ts-autocode-links after a successful layer link
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Link deps layer
+      shell: bash
+      run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+    - name: Check deps layer match
+      id: deps-layer
+      shell: bash
+      run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+    - name: pnpm store
+      if: steps.deps-layer.outputs.match != 'true'
+      uses: $/.github/actions/pnpm-store
+    - name: Materialize published GHCR deps layer
+      id: deps-materialize
+      if: steps.deps-layer.outputs.match != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: |
+        set +e
+        timeout 480 node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
+        status=$?
+        set -e
+        output_file="${GITHUB_OUTPUT:-}"
+        outputs_missing=0
+        if [ -z "$output_file" ] || [ ! -f "$output_file" ] || ! grep -q '^materialized=' "$output_file" || ! grep -q '^source=' "$output_file" || ! grep -q '^install=' "$output_file"; then
+          outputs_missing=1
+        fi
+        if [ "$status" -ne 0 ] && [ "$outputs_missing" -eq 1 ]; then
+          if [ "$status" -eq 124 ]; then
+            echo "::warning title=hobo-ci-deps-materialize-timeout::GHCR deps materialize exceeded 8 minutes"
+          fi
+          if [ -n "$output_file" ]; then
+            install=false
+            if [ "$(node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts --check-warm-store 2>/dev/null || true)" = 'true' ]; then
+              install=true
+            fi
+            printf '%s\n' 'materialized=false' 'source=failed' "install=$install" >> "$output_file" || true
+          fi
+          exit 0
+        fi
+        exit "$status"
+    - name: Link published GHCR deps layer
+      if: steps.deps-materialize.outputs.materialized == 'true'
+      shell: bash
+      run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+    - name: Check published GHCR deps layer
+      id: deps-layer-ghcr
+      if: steps.deps-materialize.outputs.materialized == 'true'
+      shell: bash
+      run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+    - name: Verify deps layer sibling links
+      if: >-
+        inputs.verify-sibling-links == 'true' &&
+        (steps.deps-layer.outputs.match == 'true' || steps.deps-layer-ghcr.outputs.match == 'true')
+      shell: bash
+      run: node --import tsx scripts/ensure-ts-autocode-links.mts
+    - name: Install dependencies
+      if: >-
+        steps.deps-materialize.outputs.install == 'true' &&
+        steps.deps-layer-ghcr.outputs.match != 'true'
+      shell: bash
+      run: >-
+        node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts
+        --frozen-lockfile --config.confirmModulesPurge=false
+    - name: Require a deps layer or a warm pnpm store
+      if: >-
+        steps.deps-layer.outputs.match != 'true' &&
+        steps.deps-layer-ghcr.outputs.match != 'true' &&
+        steps.deps-materialize.outputs.install != 'true'
+      shell: bash
+      run: |
+        echo "::error title=hobo-ci-deps-layer-unavailable::published GHCR deps layer missing and no warm pnpm store"
+        exit 1

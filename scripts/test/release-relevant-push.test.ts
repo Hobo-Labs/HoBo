@@ -223,6 +223,10 @@ describe("as the release workflow runs it", () => {
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|needs\.release-pages-gate\.outputs\.deploy == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
 			"release-oci-build-tag":
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-oci-build-cli":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-oci-build-mcp":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
 			"release-images":
 				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
 			"release-publish":
@@ -277,7 +281,12 @@ describe("as the release workflow runs it", () => {
 			"git describe needs the tags a sparse build omits",
 		).toContain("fetch-depth: 0");
 		expect(checkout).toContain("fetch-tags: true");
-		for (const id of ["release-oci-build-tag", "release-publish"] as const) {
+		for (const id of [
+			"release-oci-build-tag",
+			"release-oci-build-cli",
+			"release-oci-build-mcp",
+			"release-publish",
+		] as const) {
 			expect(job(id)).not.toContain("scripts/ci/fetch-release-turbo-base.mts");
 		}
 	});
@@ -302,6 +311,11 @@ describe("as the release workflow runs it", () => {
 			pages,
 			"Pages writes a public surface, so a run whose route never decided must not publish it",
 		).not.toContain("needs.route.result == 'failure'");
+		const stable = jobIf("release-pages-stable");
+		expect(stable).toContain("needs.route.result == 'success'");
+		expect(stable).toContain("needs.release-pages.outputs.promoted == 'true'");
+		expect(stable).not.toContain("needs.route.result == 'failure'");
+		expect(stable).not.toMatch(/github\.event_name == 'pull_request'/u);
 	});
 
 	it("writes run= for the gate under plain node", () => {
