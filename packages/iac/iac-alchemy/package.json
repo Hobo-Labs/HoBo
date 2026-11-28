@@ -134,6 +134,10 @@
 		"./aws/queue-store": {
 			"types": "./dist/aws-queue-atomic-store.d.ts",
 			"default": "./dist/aws-queue-atomic-store.js"
+		},
+		"./aws/queue-mapper": {
+			"types": "./dist/aws-queue-mapper.d.ts",
+			"default": "./dist/aws-queue-mapper.js"
 		}
 	},
 	"dependencies": {

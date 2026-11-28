@@ -38,6 +38,10 @@ import { defineAwsHttpSource } from "../src/aws-http-source.js";
 import { createAwsDynamoKvStore } from "../src/aws-kv.js";
 import { createAwsQueueAtomicStore } from "../src/aws-queue-atomic-store.js";
 import {
+	awsDynamoDurableQueueMappers,
+	withAwsDynamoDurableQueue,
+} from "../src/aws-queue-mapper.js";
+import {
 	awsDynamoKvBindleMappers,
 	withAwsDynamoKv,
 } from "../src/aws-kv-mapper.js";
@@ -114,6 +118,31 @@ async function mappedResources(
 	if (!table || table.Type !== Table.Type)
 		throw new Error("key-value table mapping missing");
 	return { bucket, queue, topic, table };
+}
+
+async function mappedDurableQueue() {
+	const original = bindle("queue-app", (b) => ({
+		jobs: b.queue().allow("enqueue", "dequeue"),
+	}));
+	const selected = withAwsDynamoDurableQueue(original, { jobs: true });
+	// SAFETY: this registers Alchemy constructors and runs no cloud provider.
+	const mapped = await Effect.runPromise(
+		mapBindleToAlchemy(selected, awsDynamoDurableQueueMappers(), {
+			assessRequirements: () => ({ status: "supported" }),
+		}).pipe(
+			Effect.provideService(StackContext, {
+				name: "shop",
+				stage: "test",
+				resources: {},
+				bindings: {},
+				actions: {},
+			}),
+		) as Effect.Effect<import("../src/bindle.js").AlchemyBindleMapping>,
+	);
+	const table = mapped.primary.jobs;
+	if (!table || table.Type !== Table.Type)
+		throw Error("queue table mapping missing");
+	return { table };
 }
 
 function environment(
@@ -838,6 +867,136 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 		},
 		30_000,
 	);
+	official(
+		"maps and routes a durable queue through an Alchemy table in the official AWS Emulator",
+		async () => {
+			const endpoint = new URL(process.env.HOBO_ALCHEMY_AWS_ENDPOINT ?? "");
+			if (
+				endpoint.protocol !== "https:" ||
+				!["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname)
+			)
+				throw Error("AWS Emulator endpoint must be HTTPS loopback");
+			const caPath = process.env.HOBO_ALCHEMY_AWS_CA;
+			if (!caPath) throw Error("AWS Emulator CA is required");
+			const layer = Layer.mergeAll(
+				environment(endpoint.origin, "kv"),
+				NodeHttpClient.layerUndiciOptions({
+					connect: { ca: await readFile(caPath), servername: "localhost" },
+				}),
+			);
+			const { table: mapped } = await mappedDurableQueue();
+			const table = await reconcileTable(mapped, layer);
+			expect(table.partitionKey).toBe("pk");
+			const grant = {
+				tableName: table.tableName,
+				accountId: "000000000000",
+				partition: "aws",
+				region: "us-east-1",
+				resourceEpoch: `sha256:${"a".repeat(64)}`,
+				grantEpoch: `sha256:${"b".repeat(64)}`,
+				allow: ["get", "set", "delete"] as const,
+			};
+			const options = { grant, verify: () => true, layer };
+			await createAwsDynamoKvStore(options).delete("queue-state");
+			const atomic = createAwsQueueAtomicStore(options);
+			const bounds = {
+				nameBytes: 32,
+				payloadBytes: 64,
+				attributeCount: 2,
+				attributeBytes: 32,
+				batchSize: 2,
+				delayMs: 1000,
+				leaseMs: 100,
+				operationWindowMs: 10000,
+				deliveryAttempts: 2,
+				retainedMessages: 4,
+				retainedReceipts: 20,
+			};
+			let clock = 1000;
+			const now = () => clock;
+			let loseResponse = true;
+			const lossy = {
+				load: atomic.load,
+				async compareAndSwap(revision: number, bytes: Uint8Array) {
+					const result = await atomic.compareAndSwap(revision, bytes);
+					if (loseResponse && result.status === "committed") {
+						loseResponse = false;
+						return { status: "unknown" as const };
+					}
+					return result;
+				},
+			};
+			const hostOptions = {
+				limits: bounds,
+				maxInFlight: 2,
+				timeoutMs: 5000,
+				now,
+				authorize: () => true,
+			};
+			const first = createDurableQueueWitHost(
+				createAtomicDurableQueue({ store: lossy, limits: bounds, now }),
+				hostOptions,
+			);
+			const operation = (n: number) => ({
+				id: `v1.10000.abcdefghijklmn${String(n).padStart(2, "0")}`,
+				expiresAtMs: 10000n,
+			});
+			const request = {
+				operation: operation(1),
+				message: {
+					idempotencyKey: "job",
+					body: new Uint8Array([1, 2]),
+					attributes: [],
+				},
+			};
+			expect(await first.enqueue(request)).toMatchObject({ tag: "unknown" });
+			const reopened = createDurableQueueWitHost(
+				createAtomicDurableQueue({ store: atomic, limits: bounds, now }),
+				hostOptions,
+			);
+			expect(await reopened.enqueue(request)).toEqual({
+				tag: "committed",
+				val: { messageId: "m1", idempotencyKey: "job" },
+			});
+			expect(
+				await reopened.dequeue({
+					operation: operation(2),
+					maxMessages: 1,
+					visibilityTimeoutMs: 10n,
+				}),
+			).toMatchObject({
+				tag: "committed",
+				val: [{ messageId: "m1", leaseId: "l1", body: new Uint8Array([1, 2]) }],
+			});
+			clock = 1010;
+			expect(
+				await reopened.dequeue({
+					operation: operation(3),
+					maxMessages: 1,
+					visibilityTimeoutMs: 10n,
+				}),
+			).toMatchObject({
+				tag: "committed",
+				val: [{ messageId: "m1", leaseId: "l2" }],
+			});
+			expect(
+				await reopened.complete({
+					operation: operation(4),
+					messageId: "m1",
+					leaseId: "l1",
+				}),
+			).toEqual({ tag: "rejected", val: "lease-lost" });
+			expect(
+				await reopened.complete({
+					operation: operation(5),
+					messageId: "m1",
+					leaseId: "l2",
+				}),
+			).toMatchObject({ tag: "committed" });
+		},
+		30000,
+	);
+
 	official(
 		"binds a HoBo HTTP handler to the mapped DynamoDB and S3 resources",
 		async () => {
