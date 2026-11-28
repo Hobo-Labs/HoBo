@@ -11,6 +11,7 @@ import {
 	ApproveDeliveryRun,
 	ApproveFreightForStage,
 	ApproverId,
+	AutoPromotionHeld,
 	BranchName,
 	CampTargetId,
 	CdCampRealizer,
@@ -31,6 +32,7 @@ import {
 	CdVerificationGate,
 	ConfigureCdStage,
 	ConvergenceObservedSignal,
+	DEFAULT_ORIGIN_SLOT,
 	DeliveryConvergenceObserved,
 	DeliveryFlowTarget,
 	DeliveryPullRequestMerged,
@@ -57,6 +59,7 @@ import {
 	InvalidStageConfiguration,
 	NonEmptyReason,
 	NonNegativeCount,
+	OriginSlotId,
 	PositiveCount,
 	PullRequestId,
 	PullRequestResolvedSignal,
@@ -68,6 +71,8 @@ import {
 	RevisionRef,
 	SetFreightAlias,
 	SoakTimeNotElapsed,
+	StageAutoPromotionHoldCleared,
+	StageAutoPromotionHoldSet,
 	StageEnteredVerifying,
 	StageId,
 	StagePromotionCompleted,
@@ -78,6 +83,7 @@ import {
 	StageReverificationStarted,
 	StageVerificationAborted,
 	UniqueStageList,
+	UnknownOriginSlot,
 	WarehouseId,
 	YankFreight,
 } from "../src/domain/index.js";
@@ -1540,5 +1546,771 @@ describe("@hobo/cd/domain Kargo-parity and pull-based CD release model", () => {
 		);
 
 		expect(Exit.isFailure(exit)).toBe(true);
+	});
+
+	it("enforces Kargo auto-promotion holds on manual non-candidate pins and clears only when latest candidate is manually promoted", () => {
+		const clockMs = EpochMs.make(1_700_050_000_000);
+		const stage = CdStage.ref(StageId.make("staging-holds"));
+		const campId = CampTargetId.make("camp-staging-holds");
+		const warehouseId = WarehouseId.make("wh-holds");
+		const flowTarget = DeliveryFlowTarget.make("argo-staging");
+		const olderDigest = FreightDigest.make("sha256:holds-v1");
+		const latestDigest = FreightDigest.make("sha256:holds-v2");
+		const pinRun = CdDeliveryRun.ref(DeliveryRunId.make("run-holds-pin"));
+		const blockedRun = CdDeliveryRun.ref(
+			DeliveryRunId.make("run-holds-blocked"),
+		);
+		const clearRun = CdDeliveryRun.ref(DeliveryRunId.make("run-holds-clear"));
+		const autoRun = CdDeliveryRun.ref(DeliveryRunId.make("run-holds-auto"));
+		const targetRef = NonEmptyReason.make("gitops:staging@main");
+		const summary = NonEmptyReason.make("synced");
+
+		const config = {
+			warehouseId,
+			upstreamStages: UniqueStageList.make([]),
+			availabilityStrategy: "direct" as const,
+			quorumCount: null,
+			requiredSoakMs: NonNegativeCount.make(0),
+			autoPromotion: "newest" as const,
+			deliveryFlow: "gitops-pull" as const,
+			flowTarget,
+			campId,
+			requiresApproval: false,
+			implicitHealthVerification: true,
+			triggerPullSync: false,
+		};
+
+		interface DirectStartedFields {
+			deliveryRunId: DeliveryRunId;
+			freightDigest: FreightDigest;
+			previousFreightDigest: FreightDigest | null;
+			previousRevision: RevisionRef | null;
+			campId: CampTargetId;
+			deliveryFlow: "gitops-pull";
+			flowTarget: DeliveryFlowTarget;
+			requiresApproval: boolean;
+			implicitHealthVerification: boolean;
+			triggerPullSync: boolean;
+			requestedAtMs: EpochMs;
+			trigger?: "auto";
+			isLatestCandidate?: boolean;
+		}
+
+		const driveDirectSuccess = (input: {
+			readonly run: typeof pinRun;
+			readonly digest: FreightDigest;
+			readonly prevDigest: FreightDigest | null;
+			readonly prevRev: RevisionRef | null;
+			readonly rev: RevisionRef;
+			readonly trigger?: "manual" | "auto";
+			readonly isLatestCandidate?: boolean;
+			readonly holdEvent?:
+				| StageAutoPromotionHoldSet
+				| StageAutoPromotionHoldCleared;
+		}) => {
+			const startedFields: DirectStartedFields = {
+				deliveryRunId: input.run.id,
+				freightDigest: input.digest,
+				previousFreightDigest: input.prevDigest,
+				previousRevision: input.prevRev,
+				campId,
+				deliveryFlow: "gitops-pull",
+				flowTarget,
+				requiresApproval: false,
+				implicitHealthVerification: true,
+				triggerPullSync: false,
+				requestedAtMs: clockMs,
+			};
+			if (input.trigger === "auto") startedFields.trigger = "auto";
+			if (input.isLatestCandidate === false) {
+				startedFields.isLatestCandidate = false;
+			}
+			return [
+				Story.then(stage, new StagePromotionStarted(startedFields)),
+			Story.then(
+				input.run,
+				new DeliveryRunStarted({
+					stageId: stage.id,
+					campId,
+					freightDigest: input.digest,
+					previousRevision: input.prevRev,
+					flowKind: "gitops-pull",
+					flowTarget,
+					requiresApproval: false,
+					implicitHealthVerification: true,
+					triggerPullSync: false,
+					requestedAtMs: clockMs,
+				}),
+			),
+			Story.call(CdDeliveryFlow.publishRevision, {
+				deliveryRunId: input.run.id,
+				stageId: stage.id,
+				campId,
+				freightDigest: input.digest,
+				flowKind: "gitops-pull",
+				flowTarget,
+				previousRevision: input.prevRev,
+			}),
+			Story.succeed(CdDeliveryFlow.publishRevision, {
+				outcome: {
+					_tag: "Committed",
+					revision: input.rev,
+					targetRef,
+				},
+			}),
+			Story.then(
+				input.run,
+				new DeliveryRevisionCommitted({ revision: input.rev, targetRef }),
+			),
+			Story.call(CdDeliveryFlow.observeConvergence, {
+				deliveryRunId: input.run.id,
+				stageId: stage.id,
+				campId,
+				flowKind: "gitops-pull",
+				flowTarget,
+				targetRevision: input.rev,
+				triggerSync: false,
+			}),
+			Story.succeed(CdDeliveryFlow.observeConvergence, {
+				observation: {
+					_tag: "Converged",
+					appliedRevision: input.rev,
+					summary,
+				},
+			}),
+			Story.then(
+				input.run,
+				new DeliveryConvergenceObserved({
+					appliedRevision: input.rev,
+					outOfSyncCount: NonNegativeCount.make(0),
+					summary,
+				}),
+				new DeliveryRunVerified({
+					passed: true,
+					implicit: true,
+					summary,
+					verifiedAtMs: clockMs,
+				}),
+				new DeliveryRunCompleted({
+					stageId: stage.id,
+					freightDigest: input.digest,
+					appliedRevision: input.rev,
+					qualifiedAtMs: clockMs,
+					summary,
+				}),
+			),
+			Story.then(
+				CdFreight.ref(input.digest),
+				new FreightQualifiedInStage({
+					stageId: stage.id,
+					deliveryRunId: input.run.id,
+					qualifiedAtMs: clockMs,
+					summary,
+				}),
+			),
+			Story.then(
+				stage,
+				new StageEnteredVerifying({
+					deliveryRunId: input.run.id,
+					freightDigest: input.digest,
+				}),
+				new StagePromotionCompleted({
+					deliveryRunId: input.run.id,
+					freightDigest: input.digest,
+					appliedRevision: input.rev,
+					qualifiedAtMs: clockMs,
+					summary,
+				}),
+				...(input.holdEvent !== undefined ? [input.holdEvent] : []),
+			),
+		];
+		};
+
+		return Effect.runPromise(
+			story(
+				Story.given(
+					CdFreight.ref(olderDigest),
+					new FreightRecorded({
+						warehouseId,
+						alias: FreightAlias.make("holds-v1"),
+						artifacts: [
+							{
+								kind: "oci-image",
+								repository: "ghcr.io/hobo/app",
+								reference: "1.0.0",
+								digest: olderDigest,
+							},
+						],
+						recordedAtMs: clockMs,
+					}),
+				),
+				Story.given(
+					CdFreight.ref(latestDigest),
+					new FreightRecorded({
+						warehouseId,
+						alias: FreightAlias.make("holds-v2"),
+						artifacts: [
+							{
+								kind: "oci-image",
+								repository: "ghcr.io/hobo/app",
+								reference: "2.0.0",
+								digest: latestDigest,
+							},
+						],
+						recordedAtMs: clockMs,
+					}),
+				),
+				Story.given(stage, new CdStageConfigured({ config })),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: pinRun.id,
+						freightDigest: olderDigest,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						trigger: "manual",
+						isLatestCandidate: false,
+					}),
+				),
+				...driveDirectSuccess({
+					run: pinRun,
+					digest: olderDigest,
+					prevDigest: null,
+					prevRev: null,
+					rev: RevisionRef.make("rev-pin-1"),
+					isLatestCandidate: false,
+					holdEvent: new StageAutoPromotionHoldSet({
+						originSlot: DEFAULT_ORIGIN_SLOT,
+						freightDigest: olderDigest,
+						deliveryRunId: pinRun.id,
+					}),
+				}),
+				Story.view(CdStageStatusView, stage, {
+					_tag: "Idle",
+					config,
+					currentFreightDigest: olderDigest,
+					currentVerified: true,
+					lastVerifiedAtMs: clockMs,
+					slots: [
+						{
+							slotId: DEFAULT_ORIGIN_SLOT,
+							currentFreightDigest: olderDigest,
+							autoPromotionHeld: true,
+							heldFreightDigest: olderDigest,
+							lastVerifiedAtMs: clockMs,
+						},
+					],
+				} satisfies CdStageStatusState),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: blockedRun.id,
+						freightDigest: latestDigest,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						trigger: "auto",
+						isLatestCandidate: true,
+					}),
+				),
+				Story.rejected(
+					new AutoPromotionHeld({
+						originSlot: DEFAULT_ORIGIN_SLOT,
+						heldFreightDigest: olderDigest,
+						reason: NonEmptyReason.make("auto-promotion-held-by-manual-pin"),
+					}),
+				),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: clearRun.id,
+						freightDigest: latestDigest,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						trigger: "manual",
+						isLatestCandidate: true,
+					}),
+				),
+				...driveDirectSuccess({
+					run: clearRun,
+					digest: latestDigest,
+					prevDigest: olderDigest,
+					prevRev: RevisionRef.make("rev-pin-1"),
+					rev: RevisionRef.make("rev-clear-2"),
+					holdEvent: new StageAutoPromotionHoldCleared({
+						originSlot: DEFAULT_ORIGIN_SLOT,
+						deliveryRunId: clearRun.id,
+						reason: NonEmptyReason.make("latest-candidate-manually-promoted"),
+					}),
+				}),
+				Story.view(CdStageStatusView, stage, {
+					_tag: "Idle",
+					config,
+					currentFreightDigest: latestDigest,
+					currentVerified: true,
+					lastVerifiedAtMs: clockMs,
+					slots: [
+						{
+							slotId: DEFAULT_ORIGIN_SLOT,
+							currentFreightDigest: latestDigest,
+							autoPromotionHeld: false,
+							heldFreightDigest: null,
+							lastVerifiedAtMs: clockMs,
+						},
+					],
+				} satisfies CdStageStatusState),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: autoRun.id,
+						freightDigest: latestDigest,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						trigger: "auto",
+						isLatestCandidate: true,
+					}),
+				),
+				...driveDirectSuccess({
+					run: autoRun,
+					digest: latestDigest,
+					prevDigest: latestDigest,
+					prevRev: RevisionRef.make("rev-clear-2"),
+					rev: RevisionRef.make("rev-auto-3"),
+					trigger: "auto",
+				}),
+				Story.view(CdStageStatusView, stage, {
+					_tag: "Idle",
+					config,
+					currentFreightDigest: latestDigest,
+					currentVerified: true,
+					lastVerifiedAtMs: clockMs,
+					slots: [
+						{
+							slotId: DEFAULT_ORIGIN_SLOT,
+							currentFreightDigest: latestDigest,
+							autoPromotionHeld: false,
+							heldFreightDigest: null,
+							lastVerifiedAtMs: clockMs,
+						},
+					],
+				} satisfies CdStageStatusState),
+			),
+		);
+	});
+
+	it("tracks named multi-origin Freight slots with independent holds and rejects unknown slots", () => {
+		const clockMs = EpochMs.make(1_700_060_000_000);
+		const stage = CdStage.ref(StageId.make("multi-origin-prod"));
+		const campId = CampTargetId.make("camp-multi-origin");
+		const appSlot = OriginSlotId.make("app");
+		const cfgSlot = OriginSlotId.make("config");
+		const unknownSlot = OriginSlotId.make("ghost");
+		const appWh = WarehouseId.make("wh-app");
+		const cfgWh = WarehouseId.make("wh-config");
+		const flowTarget = DeliveryFlowTarget.make("argo-multi");
+		const appOld = FreightDigest.make("sha256:slot-app-v1");
+		const appNew = FreightDigest.make("sha256:slot-app-v2");
+		const cfgNew = FreightDigest.make("sha256:slot-cfg-v1");
+		const pinAppRun = CdDeliveryRun.ref(DeliveryRunId.make("run-slot-app-pin"));
+		const cfgAutoRun = CdDeliveryRun.ref(
+			DeliveryRunId.make("run-slot-cfg-auto"),
+		);
+		const targetRef = NonEmptyReason.make("gitops:prod@main");
+		const summary = NonEmptyReason.make("synced");
+
+		const config = {
+			warehouseId: appWh,
+			upstreamStages: UniqueStageList.make([]),
+			availabilityStrategy: "direct" as const,
+			quorumCount: null,
+			requiredSoakMs: NonNegativeCount.make(0),
+			autoPromotion: "newest" as const,
+			deliveryFlow: "gitops-pull" as const,
+			flowTarget,
+			campId,
+			requiresApproval: false,
+			implicitHealthVerification: true,
+			triggerPullSync: false,
+			originSlots: [
+				{
+					slotId: appSlot,
+					warehouseId: appWh,
+					upstreamStages: UniqueStageList.make([]),
+					availabilityStrategy: "direct" as const,
+					quorumCount: null,
+					requiredSoakMs: NonNegativeCount.make(0),
+					autoPromotion: "newest" as const,
+				},
+				{
+					slotId: cfgSlot,
+					warehouseId: cfgWh,
+					upstreamStages: UniqueStageList.make([]),
+					availabilityStrategy: "direct" as const,
+					quorumCount: null,
+					requiredSoakMs: NonNegativeCount.make(0),
+					autoPromotion: "newest" as const,
+				},
+			],
+		};
+
+		return Effect.runPromise(
+			story(
+				Story.given(
+					CdFreight.ref(appOld),
+					new FreightRecorded({
+						warehouseId: appWh,
+						alias: FreightAlias.make("app-v1"),
+						artifacts: [
+							{
+								kind: "oci-image",
+								repository: "ghcr.io/hobo/app",
+								reference: "1.0.0",
+								digest: appOld,
+							},
+						],
+						recordedAtMs: clockMs,
+					}),
+				),
+				Story.given(
+					CdFreight.ref(cfgNew),
+					new FreightRecorded({
+						warehouseId: cfgWh,
+						alias: FreightAlias.make("cfg-v1"),
+						artifacts: [
+							{
+								kind: "bindle-config",
+								repository: "gitops/config",
+								reference: "1.0.0",
+								digest: cfgNew,
+							},
+						],
+						recordedAtMs: clockMs,
+					}),
+				),
+				Story.when(stage, new ConfigureCdStage({ config })),
+				Story.then(stage, new CdStageConfigured({ config })),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: DeliveryRunId.make("run-slot-unknown"),
+						freightDigest: appOld,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						originSlot: unknownSlot,
+					}),
+				),
+				Story.rejected(new UnknownOriginSlot({ originSlot: unknownSlot })),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: pinAppRun.id,
+						freightDigest: appOld,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						originSlot: appSlot,
+						trigger: "manual",
+						isLatestCandidate: false,
+					}),
+				),
+				Story.then(
+					stage,
+					new StagePromotionStarted({
+						deliveryRunId: pinAppRun.id,
+						freightDigest: appOld,
+						previousFreightDigest: null,
+						previousRevision: null,
+						campId,
+						deliveryFlow: "gitops-pull",
+						flowTarget,
+						requiresApproval: false,
+						implicitHealthVerification: true,
+						triggerPullSync: false,
+						requestedAtMs: clockMs,
+						originSlot: appSlot,
+						isLatestCandidate: false,
+					}),
+				),
+				Story.then(
+					pinAppRun,
+					new DeliveryRunStarted({
+						stageId: stage.id,
+						campId,
+						freightDigest: appOld,
+						previousRevision: null,
+						flowKind: "gitops-pull",
+						flowTarget,
+						requiresApproval: false,
+						implicitHealthVerification: true,
+						triggerPullSync: false,
+						requestedAtMs: clockMs,
+					}),
+				),
+				Story.call(CdDeliveryFlow.publishRevision, {
+					deliveryRunId: pinAppRun.id,
+					stageId: stage.id,
+					campId,
+					freightDigest: appOld,
+					flowKind: "gitops-pull",
+					flowTarget,
+					previousRevision: null,
+				}),
+				Story.succeed(CdDeliveryFlow.publishRevision, {
+					outcome: {
+						_tag: "Committed",
+						revision: RevisionRef.make("rev-slot-app-1"),
+						targetRef,
+					},
+				}),
+				Story.then(
+					pinAppRun,
+					new DeliveryRevisionCommitted({
+						revision: RevisionRef.make("rev-slot-app-1"),
+						targetRef,
+					}),
+				),
+				Story.call(CdDeliveryFlow.observeConvergence, {
+					deliveryRunId: pinAppRun.id,
+					stageId: stage.id,
+					campId,
+					flowKind: "gitops-pull",
+					flowTarget,
+					targetRevision: RevisionRef.make("rev-slot-app-1"),
+					triggerSync: false,
+				}),
+				Story.succeed(CdDeliveryFlow.observeConvergence, {
+					observation: {
+						_tag: "Converged",
+						appliedRevision: RevisionRef.make("rev-slot-app-1"),
+						summary,
+					},
+				}),
+				Story.then(
+					pinAppRun,
+					new DeliveryConvergenceObserved({
+						appliedRevision: RevisionRef.make("rev-slot-app-1"),
+						outOfSyncCount: NonNegativeCount.make(0),
+						summary,
+					}),
+					new DeliveryRunVerified({
+						passed: true,
+						implicit: true,
+						summary,
+						verifiedAtMs: clockMs,
+					}),
+					new DeliveryRunCompleted({
+						stageId: stage.id,
+						freightDigest: appOld,
+						appliedRevision: RevisionRef.make("rev-slot-app-1"),
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					CdFreight.ref(appOld),
+					new FreightQualifiedInStage({
+						stageId: stage.id,
+						deliveryRunId: pinAppRun.id,
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					stage,
+					new StageEnteredVerifying({
+						deliveryRunId: pinAppRun.id,
+						freightDigest: appOld,
+					}),
+					new StagePromotionCompleted({
+						deliveryRunId: pinAppRun.id,
+						freightDigest: appOld,
+						appliedRevision: RevisionRef.make("rev-slot-app-1"),
+						qualifiedAtMs: clockMs,
+						summary,
+						originSlot: appSlot,
+					}),
+					new StageAutoPromotionHoldSet({
+						originSlot: appSlot,
+						freightDigest: appOld,
+						deliveryRunId: pinAppRun.id,
+					}),
+				),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: DeliveryRunId.make("run-slot-app-auto-blocked"),
+						freightDigest: appNew,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						originSlot: appSlot,
+						trigger: "auto",
+					}),
+				),
+				Story.rejected(
+					new AutoPromotionHeld({
+						originSlot: appSlot,
+						heldFreightDigest: appOld,
+						reason: NonEmptyReason.make("auto-promotion-held-by-manual-pin"),
+					}),
+				),
+				Story.when(
+					stage,
+					new RequestStagePromotion({
+						deliveryRunId: cfgAutoRun.id,
+						freightDigest: cfgNew,
+						nowMs: clockMs,
+						upstreamQualifications: [],
+						manualApprovalExpiresAtMs: null,
+						originSlot: cfgSlot,
+						trigger: "auto",
+					}),
+				),
+				Story.then(
+					stage,
+					new StagePromotionStarted({
+						deliveryRunId: cfgAutoRun.id,
+						freightDigest: cfgNew,
+						previousFreightDigest: appOld,
+						previousRevision: RevisionRef.make("rev-slot-app-1"),
+						campId,
+						deliveryFlow: "gitops-pull",
+						flowTarget,
+						requiresApproval: false,
+						implicitHealthVerification: true,
+						triggerPullSync: false,
+						requestedAtMs: clockMs,
+						originSlot: cfgSlot,
+						trigger: "auto",
+					}),
+				),
+				Story.then(
+					cfgAutoRun,
+					new DeliveryRunStarted({
+						stageId: stage.id,
+						campId,
+						freightDigest: cfgNew,
+						previousRevision: RevisionRef.make("rev-slot-app-1"),
+						flowKind: "gitops-pull",
+						flowTarget,
+						requiresApproval: false,
+						implicitHealthVerification: true,
+						triggerPullSync: false,
+						requestedAtMs: clockMs,
+					}),
+				),
+				Story.call(CdDeliveryFlow.publishRevision, {
+					deliveryRunId: cfgAutoRun.id,
+					stageId: stage.id,
+					campId,
+					freightDigest: cfgNew,
+					flowKind: "gitops-pull",
+					flowTarget,
+					previousRevision: RevisionRef.make("rev-slot-app-1"),
+				}),
+				Story.succeed(CdDeliveryFlow.publishRevision, {
+					outcome: {
+						_tag: "Committed",
+						revision: RevisionRef.make("rev-slot-cfg-1"),
+						targetRef,
+					},
+				}),
+				Story.then(
+					cfgAutoRun,
+					new DeliveryRevisionCommitted({
+						revision: RevisionRef.make("rev-slot-cfg-1"),
+						targetRef,
+					}),
+				),
+				Story.call(CdDeliveryFlow.observeConvergence, {
+					deliveryRunId: cfgAutoRun.id,
+					stageId: stage.id,
+					campId,
+					flowKind: "gitops-pull",
+					flowTarget,
+					targetRevision: RevisionRef.make("rev-slot-cfg-1"),
+					triggerSync: false,
+				}),
+				Story.succeed(CdDeliveryFlow.observeConvergence, {
+					observation: {
+						_tag: "Converged",
+						appliedRevision: RevisionRef.make("rev-slot-cfg-1"),
+						summary,
+					},
+				}),
+				Story.then(
+					cfgAutoRun,
+					new DeliveryConvergenceObserved({
+						appliedRevision: RevisionRef.make("rev-slot-cfg-1"),
+						outOfSyncCount: NonNegativeCount.make(0),
+						summary,
+					}),
+					new DeliveryRunVerified({
+						passed: true,
+						implicit: true,
+						summary,
+						verifiedAtMs: clockMs,
+					}),
+					new DeliveryRunCompleted({
+						stageId: stage.id,
+						freightDigest: cfgNew,
+						appliedRevision: RevisionRef.make("rev-slot-cfg-1"),
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					CdFreight.ref(cfgNew),
+					new FreightQualifiedInStage({
+						stageId: stage.id,
+						deliveryRunId: cfgAutoRun.id,
+						qualifiedAtMs: clockMs,
+						summary,
+					}),
+				),
+				Story.then(
+					stage,
+					new StageEnteredVerifying({
+						deliveryRunId: cfgAutoRun.id,
+						freightDigest: cfgNew,
+					}),
+					new StagePromotionCompleted({
+						deliveryRunId: cfgAutoRun.id,
+						freightDigest: cfgNew,
+						appliedRevision: RevisionRef.make("rev-slot-cfg-1"),
+						qualifiedAtMs: clockMs,
+						summary,
+						originSlot: cfgSlot,
+					}),
+				),
+				Story.view(CdStageStatusView, stage, {
+					_tag: "Idle",
+					config,
+					currentFreightDigest: cfgNew,
+					currentVerified: true,
+					lastVerifiedAtMs: clockMs,
+					slots: [
+						{
+							slotId: appSlot,
+							currentFreightDigest: appOld,
+							autoPromotionHeld: true,
+							heldFreightDigest: appOld,
+							lastVerifiedAtMs: clockMs,
+						},
+						{
+							slotId: cfgSlot,
+							currentFreightDigest: cfgNew,
+							autoPromotionHeld: false,
+							heldFreightDigest: null,
+							lastVerifiedAtMs: clockMs,
+						},
+					],
+				} satisfies CdStageStatusState),
+			),
+		);
 	});
 });

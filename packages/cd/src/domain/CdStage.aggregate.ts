@@ -4,6 +4,7 @@ import {
 	AutoPromotionPolicy,
 	AvailabilityStrategy,
 	CampTargetId,
+	DEFAULT_ORIGIN_SLOT,
 	DeliveryFlowKind,
 	DeliveryFlowTarget,
 	DeliveryRunId,
@@ -11,7 +12,9 @@ import {
 	FreightDigest,
 	NonEmptyReason,
 	NonNegativeCount,
+	OriginSlotId,
 	PositiveCount,
+	PromotionTrigger,
 	RevisionRef,
 	StageId,
 	StagePhase,
@@ -26,6 +29,26 @@ export const UpstreamQualificationEvidence = Schema.Struct({
 export type UpstreamQualificationEvidence =
 	typeof UpstreamQualificationEvidence.Type;
 
+export const OriginSlotConfig = Schema.Struct({
+	slotId: OriginSlotId,
+	warehouseId: Schema.NullOr(WarehouseId),
+	upstreamStages: UniqueStageList,
+	availabilityStrategy: AvailabilityStrategy,
+	quorumCount: Schema.NullOr(PositiveCount),
+	requiredSoakMs: NonNegativeCount,
+	autoPromotion: AutoPromotionPolicy,
+});
+export type OriginSlotConfig = typeof OriginSlotConfig.Type;
+
+export const OriginSlotStatus = Schema.Struct({
+	slotId: OriginSlotId,
+	currentFreightDigest: Schema.NullOr(FreightDigest),
+	autoPromotionHeld: Schema.Boolean,
+	heldFreightDigest: Schema.NullOr(FreightDigest),
+	lastVerifiedAtMs: Schema.NullOr(EpochMs),
+});
+export type OriginSlotStatus = typeof OriginSlotStatus.Type;
+
 export const CdStageConfig = Schema.Struct({
 	warehouseId: Schema.NullOr(WarehouseId),
 	upstreamStages: UniqueStageList,
@@ -39,6 +62,7 @@ export const CdStageConfig = Schema.Struct({
 	requiresApproval: Schema.Boolean,
 	implicitHealthVerification: Schema.Boolean,
 	triggerPullSync: Schema.Boolean,
+	originSlots: Schema.optional(Schema.Array(OriginSlotConfig)),
 });
 export type CdStageConfig = typeof CdStageConfig.Type;
 
@@ -46,6 +70,9 @@ export const QueuedStagePromotion = Schema.Struct({
 	deliveryRunId: DeliveryRunId,
 	freightDigest: FreightDigest,
 	requestedAtMs: EpochMs,
+	originSlot: Schema.optional(OriginSlotId),
+	trigger: Schema.optional(PromotionTrigger),
+	isLatestCandidate: Schema.optional(Schema.Boolean),
 });
 export type QueuedStagePromotion = typeof QueuedStagePromotion.Type;
 
@@ -60,6 +87,16 @@ export class InvalidStageConfiguration extends Domain.Rejection(
 		reason: NonEmptyReason,
 	},
 ) {}
+
+export class UnknownOriginSlot extends Domain.Rejection("UnknownOriginSlot", {
+	originSlot: OriginSlotId,
+}) {}
+
+export class AutoPromotionHeld extends Domain.Rejection("AutoPromotionHeld", {
+	originSlot: OriginSlotId,
+	heldFreightDigest: Schema.NullOr(FreightDigest),
+	reason: NonEmptyReason,
+}) {}
 
 export class FreightNotEligibleForStage extends Domain.Rejection(
 	"FreightNotEligibleForStage",
@@ -113,6 +150,9 @@ export class StagePromotionStarted extends Domain.Event(
 		implicitHealthVerification: Schema.Boolean,
 		triggerPullSync: Schema.Boolean,
 		requestedAtMs: EpochMs,
+		originSlot: Schema.optional(OriginSlotId),
+		trigger: Schema.optional(PromotionTrigger),
+		isLatestCandidate: Schema.optional(Schema.Boolean),
 	},
 ) {}
 
@@ -120,6 +160,9 @@ export class StagePromotionQueued extends Domain.Event("StagePromotionQueued", {
 	deliveryRunId: DeliveryRunId,
 	freightDigest: FreightDigest,
 	requestedAtMs: EpochMs,
+	originSlot: Schema.optional(OriginSlotId),
+	trigger: Schema.optional(PromotionTrigger),
+	isLatestCandidate: Schema.optional(Schema.Boolean),
 }) {}
 
 export class StagePromotionSuperseded extends Domain.Event(
@@ -148,6 +191,25 @@ export class StagePromotionCompleted extends Domain.Event(
 		appliedRevision: Schema.NullOr(RevisionRef),
 		qualifiedAtMs: EpochMs,
 		summary: NonEmptyReason,
+		originSlot: Schema.optional(OriginSlotId),
+	},
+) {}
+
+export class StageAutoPromotionHoldSet extends Domain.Event(
+	"StageAutoPromotionHoldSet",
+	{
+		originSlot: OriginSlotId,
+		freightDigest: FreightDigest,
+		deliveryRunId: DeliveryRunId,
+	},
+) {}
+
+export class StageAutoPromotionHoldCleared extends Domain.Event(
+	"StageAutoPromotionHoldCleared",
+	{
+		originSlot: OriginSlotId,
+		deliveryRunId: Schema.NullOr(DeliveryRunId),
+		reason: NonEmptyReason,
 	},
 ) {}
 
@@ -184,12 +246,12 @@ export class ConfigureCdStage extends Domain.Command(
 		input: {
 			config: CdStageConfig,
 		},
-		events: [CdStageConfigured],
+		events: [CdStageConfigured, StageAutoPromotionHoldCleared],
 		rejects: [InvalidStageConfiguration],
 	},
 	{
 		description:
-			"Configure a CD Stage node with lineage strategy, soak duration, auto-promotion policy, and pluggable delivery flow.",
+			"Configure a CD Stage node with lineage strategy, multi-origin slots, soak duration, auto-promotion policy, and pluggable delivery flow.",
 	},
 ) {}
 
@@ -203,6 +265,9 @@ export class RequestStagePromotion extends Domain.Command(
 			nowMs: EpochMs,
 			upstreamQualifications: Schema.Array(UpstreamQualificationEvidence),
 			manualApprovalExpiresAtMs: Schema.NullOr(EpochMs),
+			originSlot: Schema.optional(OriginSlotId),
+			trigger: Schema.optional(PromotionTrigger),
+			isLatestCandidate: Schema.optional(Schema.Boolean),
 		},
 		events: [
 			StagePromotionStarted,
@@ -211,13 +276,15 @@ export class RequestStagePromotion extends Domain.Command(
 		],
 		rejects: [
 			StageNotConfigured,
+			UnknownOriginSlot,
+			AutoPromotionHeld,
 			FreightNotEligibleForStage,
 			SoakTimeNotElapsed,
 		],
 	},
 	{
 		description:
-			"Admit eligible Freight to a Stage under lineage, soak, or manual approval, queueing or superseding when the Stage is active.",
+			"Admit eligible Freight to a Stage origin slot under lineage, soak, auto-promotion hold, or manual approval, queueing or superseding when active.",
 	},
 ) {}
 
@@ -247,12 +314,17 @@ export class CompleteStagePromotion extends Domain.Command(
 			qualifiedAtMs: EpochMs,
 			summary: NonEmptyReason,
 		},
-		events: [StagePromotionCompleted, StagePromotionStarted],
+		events: [
+			StagePromotionCompleted,
+			StageAutoPromotionHoldSet,
+			StageAutoPromotionHoldCleared,
+			StagePromotionStarted,
+		],
 		rejects: [StageNotConfigured, StageRunMismatch],
 	},
 	{
 		description:
-			"Mark the active Stage promotion complete and automatically start queued Freight if pending.",
+			"Mark the active Stage promotion complete, update Kargo auto-promotion holds for the origin slot, and start queued Freight if pending.",
 	},
 ) {}
 
@@ -269,7 +341,7 @@ export class FailStagePromotion extends Domain.Command(
 	},
 	{
 		description:
-			"Record failure of the active Stage promotion and advance queued Freight if pending.",
+			"Record failure of the active Stage promotion without altering auto-promotion holds and advance queued Freight if pending.",
 	},
 ) {}
 
@@ -314,25 +386,34 @@ export const CdStageState = Schema.Union([
 		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 	}),
 	Schema.TaggedStruct("Promoting", {
 		config: CdStageConfig,
 		activeRunId: DeliveryRunId,
 		activeFreightDigest: FreightDigest,
+		activeOriginSlot: OriginSlotId,
+		activeTrigger: PromotionTrigger,
+		activeIsLatestCandidate: Schema.Boolean,
 		currentFreightDigest: Schema.NullOr(FreightDigest),
 		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 		pending: Schema.NullOr(QueuedStagePromotion),
 	}),
 	Schema.TaggedStruct("Verifying", {
 		config: CdStageConfig,
 		activeRunId: DeliveryRunId,
 		activeFreightDigest: FreightDigest,
+		activeOriginSlot: OriginSlotId,
+		activeTrigger: PromotionTrigger,
+		activeIsLatestCandidate: Schema.Boolean,
 		currentFreightDigest: Schema.NullOr(FreightDigest),
 		currentRevision: Schema.NullOr(RevisionRef),
 		currentVerified: Schema.Boolean,
 		lastVerifiedAtMs: Schema.NullOr(EpochMs),
+		slots: Schema.Array(OriginSlotStatus),
 		pending: Schema.NullOr(QueuedStagePromotion),
 	}),
 ]);
@@ -351,32 +432,147 @@ function stagePhaseOf(state: CdStageState): StagePhase {
 	}
 }
 
-function validateStageConfig(config: CdStageConfig): NonEmptyReason | null {
-	if (config.availabilityStrategy === "direct") {
-		if (config.warehouseId === null) {
+function defaultSlotConfigFrom(config: CdStageConfig): OriginSlotConfig {
+	return {
+		slotId: DEFAULT_ORIGIN_SLOT,
+		warehouseId: config.warehouseId,
+		upstreamStages: config.upstreamStages,
+		availabilityStrategy: config.availabilityStrategy,
+		quorumCount: config.quorumCount,
+		requiredSoakMs: config.requiredSoakMs,
+		autoPromotion: config.autoPromotion,
+	};
+}
+
+export function effectiveOriginSlots(
+	config: CdStageConfig,
+): readonly OriginSlotConfig[] {
+	if (config.originSlots !== undefined && config.originSlots.length > 0) {
+		return config.originSlots;
+	}
+	return [defaultSlotConfigFrom(config)];
+}
+
+function resolveSlotConfig(
+	config: CdStageConfig,
+	originSlot: OriginSlotId,
+): OriginSlotConfig | null {
+	for (const slot of effectiveOriginSlots(config)) {
+		if (slot.slotId === originSlot) return slot;
+	}
+	return null;
+}
+
+function findSlotStatus(
+	slots: readonly OriginSlotStatus[],
+	originSlot: OriginSlotId,
+): OriginSlotStatus | undefined {
+	return slots.find((slot) => slot.slotId === originSlot);
+}
+
+function syncSlotsForConfig(
+	config: CdStageConfig,
+	existing: readonly OriginSlotStatus[],
+): OriginSlotStatus[] {
+	const byId = new Map<OriginSlotId, OriginSlotStatus>();
+	for (const slot of existing) {
+		byId.set(slot.slotId, slot);
+	}
+	return effectiveOriginSlots(config).map((slotConfig) => {
+		const prev = byId.get(slotConfig.slotId);
+		if (prev === undefined) {
+			return {
+				slotId: slotConfig.slotId,
+				currentFreightDigest: null,
+				autoPromotionHeld: false,
+				heldFreightDigest: null,
+				lastVerifiedAtMs: null,
+			};
+		}
+		if (slotConfig.autoPromotion === "manual" && prev.autoPromotionHeld) {
+			return {
+				...prev,
+				autoPromotionHeld: false,
+				heldFreightDigest: null,
+			};
+		}
+		return prev;
+	});
+}
+
+function updateSlotStatus(
+	slots: readonly OriginSlotStatus[],
+	originSlot: OriginSlotId,
+	update: (current: OriginSlotStatus) => OriginSlotStatus,
+): OriginSlotStatus[] {
+	let matched = false;
+	const next = slots.map((slot) => {
+		if (slot.slotId !== originSlot) return slot;
+		matched = true;
+		return update(slot);
+	});
+	if (matched) return next;
+	return [
+		...next,
+		update({
+			slotId: originSlot,
+			currentFreightDigest: null,
+			autoPromotionHeld: false,
+			heldFreightDigest: null,
+			lastVerifiedAtMs: null,
+		}),
+	];
+}
+
+function validateSlotStrategy(slot: {
+	readonly warehouseId: WarehouseId | null;
+	readonly upstreamStages: readonly StageId[];
+	readonly availabilityStrategy: AvailabilityStrategy;
+	readonly quorumCount: PositiveCount | null;
+}): NonEmptyReason | null {
+	if (slot.availabilityStrategy === "direct") {
+		if (slot.warehouseId === null) {
 			return NonEmptyReason.make("direct-stage-requires-warehouse-id");
 		}
-		if (config.quorumCount !== null) {
+		if (slot.quorumCount !== null) {
 			return NonEmptyReason.make("direct-stage-forbids-quorum-count");
 		}
 		return null;
 	}
-	if (config.upstreamStages.length === 0) {
+	if (slot.upstreamStages.length === 0) {
 		return NonEmptyReason.make(
 			"upstream-availability-requires-upstream-stages",
 		);
 	}
-	if (config.availabilityStrategy === "quorum") {
-		if (config.quorumCount === null) {
+	if (slot.availabilityStrategy === "quorum") {
+		if (slot.quorumCount === null) {
 			return NonEmptyReason.make("quorum-strategy-requires-quorum-count");
 		}
-		if (config.quorumCount > config.upstreamStages.length) {
+		if (slot.quorumCount > slot.upstreamStages.length) {
 			return NonEmptyReason.make("quorum-count-exceeds-upstream-stage-count");
 		}
 		return null;
 	}
-	if (config.quorumCount !== null) {
+	if (slot.quorumCount !== null) {
 		return NonEmptyReason.make("quorum-count-only-valid-for-quorum-strategy");
+	}
+	return null;
+}
+
+function validateStageConfig(config: CdStageConfig): NonEmptyReason | null {
+	const baseReason = validateSlotStrategy(config);
+	if (baseReason !== null) return baseReason;
+	if (config.originSlots === undefined || config.originSlots.length === 0) {
+		return null;
+	}
+	const seen = new Set<OriginSlotId>();
+	for (const slot of config.originSlots) {
+		if (seen.has(slot.slotId)) {
+			return NonEmptyReason.make(`duplicate-origin-slot:${slot.slotId}`);
+		}
+		seen.add(slot.slotId);
+		const slotReason = validateSlotStrategy(slot);
+		if (slotReason !== null) return slotReason;
 	}
 	return null;
 }
@@ -387,7 +583,7 @@ type EligibilityCheck =
 	| { readonly _tag: "Ineligible"; readonly reason: NonEmptyReason };
 
 function evaluateEligibility(
-	config: CdStageConfig,
+	slot: OriginSlotConfig,
 	nowMs: EpochMs,
 	upstreamQualifications: readonly UpstreamQualificationEvidence[],
 	manualApprovalExpiresAtMs: EpochMs | null,
@@ -395,15 +591,15 @@ function evaluateEligibility(
 	if (manualApprovalExpiresAtMs !== null && manualApprovalExpiresAtMs > nowMs) {
 		return { _tag: "Eligible" };
 	}
-	if (config.availabilityStrategy === "direct") {
+	if (slot.availabilityStrategy === "direct") {
 		return { _tag: "Eligible" };
 	}
 
 	const earliestByUpstream = new Map<StageId, number>();
-	const allowed = new Set<StageId>(config.upstreamStages);
+	const allowed = new Set<StageId>(slot.upstreamStages);
 	for (const entry of upstreamQualifications) {
 		if (!allowed.has(entry.stageId)) continue;
-		const readyAt = entry.qualifiedAtMs + config.requiredSoakMs;
+		const readyAt = entry.qualifiedAtMs + slot.requiredSoakMs;
 		const existing = earliestByUpstream.get(entry.stageId);
 		if (existing === undefined || readyAt < existing) {
 			earliestByUpstream.set(entry.stageId, readyAt);
@@ -411,11 +607,11 @@ function evaluateEligibility(
 	}
 
 	const requiredCount =
-		config.availabilityStrategy === "one-of"
+		slot.availabilityStrategy === "one-of"
 			? 1
-			: config.availabilityStrategy === "all"
-				? config.upstreamStages.length
-				: (config.quorumCount ?? config.upstreamStages.length);
+			: slot.availabilityStrategy === "all"
+				? slot.upstreamStages.length
+				: (slot.quorumCount ?? slot.upstreamStages.length);
 
 	if (earliestByUpstream.size < requiredCount) {
 		return {
@@ -445,6 +641,41 @@ function evaluateEligibility(
 	return { _tag: "Eligible" };
 }
 
+interface StagePromotionStartedFields {
+	deliveryRunId: DeliveryRunId;
+	freightDigest: FreightDigest;
+	previousFreightDigest: FreightDigest | null;
+	previousRevision: RevisionRef | null;
+	campId: CampTargetId;
+	deliveryFlow: DeliveryFlowKind;
+	flowTarget: DeliveryFlowTarget;
+	requiresApproval: boolean;
+	implicitHealthVerification: boolean;
+	triggerPullSync: boolean;
+	requestedAtMs: EpochMs;
+	originSlot?: OriginSlotId;
+	trigger?: PromotionTrigger;
+	isLatestCandidate?: boolean;
+}
+
+interface StagePromotionQueuedFields {
+	deliveryRunId: DeliveryRunId;
+	freightDigest: FreightDigest;
+	requestedAtMs: EpochMs;
+	originSlot?: OriginSlotId;
+	trigger?: PromotionTrigger;
+	isLatestCandidate?: boolean;
+}
+
+interface StagePromotionCompletedFields {
+	deliveryRunId: DeliveryRunId;
+	freightDigest: FreightDigest;
+	appliedRevision: RevisionRef | null;
+	qualifiedAtMs: EpochMs;
+	summary: NonEmptyReason;
+	originSlot?: OriginSlotId;
+}
+
 function buildPromotionStartEvent(
 	config: CdStageConfig,
 	deliveryRunId: DeliveryRunId,
@@ -452,8 +683,11 @@ function buildPromotionStartEvent(
 	previousFreightDigest: FreightDigest | null,
 	previousRevision: RevisionRef | null,
 	requestedAtMs: EpochMs,
+	originSlot: OriginSlotId,
+	trigger: PromotionTrigger,
+	isLatestCandidate: boolean,
 ): StagePromotionStarted {
-	return new StagePromotionStarted({
+	const fields: StagePromotionStartedFields = {
 		deliveryRunId,
 		freightDigest,
 		previousFreightDigest,
@@ -465,7 +699,11 @@ function buildPromotionStartEvent(
 		implicitHealthVerification: config.implicitHealthVerification,
 		triggerPullSync: config.triggerPullSync,
 		requestedAtMs,
-	});
+	};
+	if (originSlot !== DEFAULT_ORIGIN_SLOT) fields.originSlot = originSlot;
+	if (trigger !== "manual") fields.trigger = trigger;
+	if (!isLatestCandidate) fields.isLatestCandidate = isLatestCandidate;
+	return new StagePromotionStarted(fields);
 }
 
 export class CdStage extends Domain.Aggregate("CdStage", {
@@ -482,19 +720,65 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 		AbortStageVerification,
 	],
 	decide: {
-		ConfigureCdStage: (_state, cmd) => {
+		ConfigureCdStage: (state, cmd) => {
 			const errorReason = validateStageConfig(cmd.config);
 			if (errorReason !== null) {
 				return new InvalidStageConfiguration({ reason: errorReason });
 			}
-			return [new CdStageConfigured({ config: cmd.config })];
+			const events: Array<CdStageConfigured | StageAutoPromotionHoldCleared> = [
+				new CdStageConfigured({ config: cmd.config }),
+			];
+			if (state._tag !== "Unconfigured") {
+				const nextConfigs = new Map<OriginSlotId, OriginSlotConfig>();
+				for (const slotConfig of effectiveOriginSlots(cmd.config)) {
+					nextConfigs.set(slotConfig.slotId, slotConfig);
+				}
+				for (const prevSlot of state.slots) {
+					if (!prevSlot.autoPromotionHeld) continue;
+					const nextConfig = nextConfigs.get(prevSlot.slotId);
+					if (nextConfig === undefined || nextConfig.autoPromotion === "manual") {
+						events.push(
+							new StageAutoPromotionHoldCleared({
+								originSlot: prevSlot.slotId,
+								deliveryRunId: null,
+								reason: NonEmptyReason.make("auto-promotion-disabled"),
+							}),
+						);
+					}
+				}
+			}
+			return events;
 		},
 		RequestStagePromotion: (state, cmd) => {
 			if (state._tag === "Unconfigured") {
 				return new StageNotConfigured({});
 			}
+			const originSlot = cmd.originSlot ?? DEFAULT_ORIGIN_SLOT;
+			const trigger: PromotionTrigger = cmd.trigger ?? "manual";
+			const isLatestCandidate = cmd.isLatestCandidate ?? true;
+			const slotConfig = resolveSlotConfig(state.config, originSlot);
+			if (slotConfig === null) {
+				return new UnknownOriginSlot({ originSlot });
+			}
+			if (trigger === "auto") {
+				if (slotConfig.autoPromotion === "manual") {
+					return new AutoPromotionHeld({
+						originSlot,
+						heldFreightDigest: null,
+						reason: NonEmptyReason.make("auto-promotion-disabled-for-slot"),
+					});
+				}
+				const slotStatus = findSlotStatus(state.slots, originSlot);
+				if (slotStatus?.autoPromotionHeld) {
+					return new AutoPromotionHeld({
+						originSlot,
+						heldFreightDigest: slotStatus.heldFreightDigest,
+						reason: NonEmptyReason.make("auto-promotion-held-by-manual-pin"),
+					});
+				}
+			}
 			const check = evaluateEligibility(
-				state.config,
+				slotConfig,
 				cmd.nowMs,
 				cmd.upstreamQualifications,
 				cmd.manualApprovalExpiresAtMs,
@@ -513,22 +797,36 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 				});
 			}
 			if (state._tag === "Idle") {
+				const slotCurrent =
+					findSlotStatus(state.slots, originSlot)?.currentFreightDigest ??
+					state.currentFreightDigest;
 				return [
 					buildPromotionStartEvent(
 						state.config,
 						cmd.deliveryRunId,
 						cmd.freightDigest,
-						state.currentFreightDigest,
+						slotCurrent,
 						state.currentRevision,
 						cmd.nowMs,
+						originSlot,
+						trigger,
+						isLatestCandidate,
 					),
 				];
 			}
-			const queued = new StagePromotionQueued({
+			const queuedFields: StagePromotionQueuedFields = {
 				deliveryRunId: cmd.deliveryRunId,
 				freightDigest: cmd.freightDigest,
 				requestedAtMs: cmd.nowMs,
-			});
+			};
+			if (originSlot !== DEFAULT_ORIGIN_SLOT) {
+				queuedFields.originSlot = originSlot;
+			}
+			if (trigger !== "manual") queuedFields.trigger = trigger;
+			if (!isLatestCandidate) {
+				queuedFields.isLatestCandidate = isLatestCandidate;
+			}
+			const queued = new StagePromotionQueued(queuedFields);
 			if (state.pending !== null) {
 				return [
 					new StagePromotionSuperseded({
@@ -583,17 +881,56 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 					phase: stagePhaseOf(state),
 				});
 			}
-			const completed = new StagePromotionCompleted({
+			const completedFields: StagePromotionCompletedFields = {
 				deliveryRunId: state.activeRunId,
 				freightDigest: state.activeFreightDigest,
 				appliedRevision: cmd.appliedRevision,
 				qualifiedAtMs: cmd.qualifiedAtMs,
 				summary: cmd.summary,
-			});
+			};
+			if (state.activeOriginSlot !== DEFAULT_ORIGIN_SLOT) {
+				completedFields.originSlot = state.activeOriginSlot;
+			}
+			const events: Array<
+				| StagePromotionCompleted
+				| StageAutoPromotionHoldSet
+				| StageAutoPromotionHoldCleared
+				| StagePromotionStarted
+			> = [new StagePromotionCompleted(completedFields)];
+			const slotConfig = resolveSlotConfig(
+				state.config,
+				state.activeOriginSlot,
+			);
+			const slotStatus = findSlotStatus(state.slots, state.activeOriginSlot);
+			if (
+				state.activeTrigger === "manual" &&
+				!state.activeIsLatestCandidate &&
+				slotConfig !== null &&
+				slotConfig.autoPromotion !== "manual"
+			) {
+				events.push(
+					new StageAutoPromotionHoldSet({
+						originSlot: state.activeOriginSlot,
+						freightDigest: state.activeFreightDigest,
+						deliveryRunId: state.activeRunId,
+					}),
+				);
+			} else if (
+				state.activeTrigger === "manual" &&
+				state.activeIsLatestCandidate &&
+				slotStatus?.autoPromotionHeld
+			) {
+				events.push(
+					new StageAutoPromotionHoldCleared({
+						originSlot: state.activeOriginSlot,
+						deliveryRunId: state.activeRunId,
+						reason: NonEmptyReason.make("latest-candidate-manually-promoted"),
+					}),
+				);
+			}
 			const nextRevision = cmd.appliedRevision ?? state.currentRevision;
 			if (state.pending !== null) {
-				return [
-					completed,
+				events.push(
 					buildPromotionStartEvent(
 						state.config,
 						state.pending.deliveryRunId,
@@ -601,10 +938,13 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.activeFreightDigest,
 						nextRevision,
 						state.pending.requestedAtMs,
+						state.pending.originSlot ?? DEFAULT_ORIGIN_SLOT,
+						state.pending.trigger ?? "manual",
+						state.pending.isLatestCandidate ?? true,
 					),
-				];
+				);
 			}
-			return [completed];
+			return events;
 		},
 		FailStagePromotion: (state, cmd) => {
 			if (state._tag === "Unconfigured") {
@@ -638,6 +978,9 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.currentFreightDigest,
 						state.currentRevision,
 						state.pending.requestedAtMs,
+						state.pending.originSlot ?? DEFAULT_ORIGIN_SLOT,
+						state.pending.trigger ?? "manual",
+						state.pending.isLatestCandidate ?? true,
 					),
 				];
 			}
@@ -688,6 +1031,9 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						state.currentFreightDigest,
 						state.currentRevision,
 						state.pending.requestedAtMs,
+						state.pending.originSlot ?? DEFAULT_ORIGIN_SLOT,
+						state.pending.trigger ?? "manual",
+						state.pending.isLatestCandidate ?? true,
 					),
 				];
 			}
@@ -704,10 +1050,12 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						currentRevision: null,
 						currentVerified: false,
 						lastVerifiedAtMs: null,
+						slots: syncSlotsForConfig(event.config, []),
 					}
 				: {
 						...state,
 						config: event.config,
+						slots: syncSlotsForConfig(event.config, state.slots),
 					},
 		StagePromotionStarted: (state, event) =>
 			state._tag === "Unconfigured"
@@ -717,10 +1065,14 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						config: state.config,
 						activeRunId: event.deliveryRunId,
 						activeFreightDigest: event.freightDigest,
+						activeOriginSlot: event.originSlot ?? DEFAULT_ORIGIN_SLOT,
+						activeTrigger: event.trigger ?? "manual",
+						activeIsLatestCandidate: event.isLatestCandidate ?? true,
 						currentFreightDigest: state.currentFreightDigest,
 						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: null,
 					},
 		StagePromotionQueued: (state, event) =>
@@ -731,6 +1083,9 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 							deliveryRunId: event.deliveryRunId,
 							freightDigest: event.freightDigest,
 							requestedAtMs: event.requestedAtMs,
+							originSlot: event.originSlot ?? DEFAULT_ORIGIN_SLOT,
+							trigger: event.trigger ?? "manual",
+							isLatestCandidate: event.isLatestCandidate ?? true,
 						},
 					}
 				: state,
@@ -742,10 +1097,14 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						config: state.config,
 						activeRunId: state.activeRunId,
 						activeFreightDigest: state.activeFreightDigest,
+						activeOriginSlot: state.activeOriginSlot,
+						activeTrigger: state.activeTrigger,
+						activeIsLatestCandidate: state.activeIsLatestCandidate,
 						currentFreightDigest: state.currentFreightDigest,
 						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: state.pending,
 					}
 				: state,
@@ -758,8 +1117,39 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						currentRevision: event.appliedRevision ?? state.currentRevision,
 						currentVerified: true,
 						lastVerifiedAtMs: event.qualifiedAtMs,
+						slots: updateSlotStatus(
+							state.slots,
+							event.originSlot ?? state.activeOriginSlot,
+							(slot) => ({
+								...slot,
+								currentFreightDigest: event.freightDigest,
+								lastVerifiedAtMs: event.qualifiedAtMs,
+							}),
+						),
 					}
 				: state,
+		StageAutoPromotionHoldSet: (state, event) =>
+			state._tag === "Unconfigured"
+				? state
+				: {
+						...state,
+						slots: updateSlotStatus(state.slots, event.originSlot, (slot) => ({
+							...slot,
+							autoPromotionHeld: true,
+							heldFreightDigest: event.freightDigest,
+						})),
+					},
+		StageAutoPromotionHoldCleared: (state, event) =>
+			state._tag === "Unconfigured"
+				? state
+				: {
+						...state,
+						slots: updateSlotStatus(state.slots, event.originSlot, (slot) => ({
+							...slot,
+							autoPromotionHeld: false,
+							heldFreightDigest: null,
+						})),
+					},
 		StagePromotionFailed: (state) =>
 			state._tag === "Promoting" || state._tag === "Verifying"
 				? {
@@ -769,6 +1159,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 					}
 				: state,
 		StageReverificationStarted: (state, event) =>
@@ -778,10 +1169,14 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						config: state.config,
 						activeRunId: event.deliveryRunId,
 						activeFreightDigest: event.freightDigest,
+						activeOriginSlot: DEFAULT_ORIGIN_SLOT,
+						activeTrigger: "manual" as const,
+						activeIsLatestCandidate: true,
 						currentFreightDigest: state.currentFreightDigest,
 						currentRevision: state.currentRevision,
 						currentVerified: state.currentVerified,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 						pending: null,
 					}
 				: state,
@@ -794,6 +1189,7 @@ export class CdStage extends Domain.Aggregate("CdStage", {
 						currentRevision: state.currentRevision,
 						currentVerified: false,
 						lastVerifiedAtMs: state.lastVerifiedAtMs,
+						slots: state.slots,
 					}
 				: state,
 	},
