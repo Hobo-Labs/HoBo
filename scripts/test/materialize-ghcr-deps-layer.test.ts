@@ -59,6 +59,7 @@ const OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json";
 const OCI_INDEX = "application/vnd.oci.image.index.v1+json";
 const GZIP_LAYER = "application/vnd.oci.image.layer.v1.tar+gzip";
 const ZSTD_LAYER = "application/vnd.oci.image.layer.v1.tar+zstd";
+const TAR_LAYER = "application/vnd.oci.image.layer.v1.tar";
 
 function sha256(bytes: Buffer): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -155,6 +156,8 @@ async function startRegistry(input: {
 	}[];
 	manifestStatus?: number;
 	tokenStatus?: number;
+	cutOffManifest?: boolean;
+	refuseBlobs?: boolean;
 }): Promise<Registry> {
 	const hits: string[] = [];
 	const authorizations: string[] = [];
@@ -202,6 +205,14 @@ async function startRegistry(input: {
 			});
 			response.end(body);
 		};
+		const cutOff = (body: Buffer, type: string): void => {
+			response.writeHead(200, {
+				"content-type": type,
+				"content-length": String(body.length),
+				connection: "close",
+			});
+			response.end(body.subarray(0, Math.floor(body.length / 2)));
+		};
 		if (url.pathname === "/token") {
 			const expected = `Basic ${Buffer.from(`ci-actor:${input.token}`).toString("base64")}`;
 			if ((input.tokenStatus ?? 200) !== 200 || authorization !== expected) {
@@ -228,7 +239,8 @@ async function startRegistry(input: {
 				return;
 			}
 			const type = input.indexPlatforms ? OCI_INDEX : OCI_MANIFEST;
-			send(200, manifest, type);
+			if (input.cutOffManifest) cutOff(manifest, type);
+			else send(200, manifest, type);
 			return;
 		}
 		if (url.pathname.startsWith(`/v2/${repositoryPath}/manifests/`)) {
@@ -244,6 +256,10 @@ async function startRegistry(input: {
 			return;
 		}
 		if (url.pathname.startsWith(`/v2/${repositoryPath}/blobs/`)) {
+			if (input.refuseBlobs) {
+				request.socket.destroy();
+				return;
+			}
 			const digest = decodeURIComponent(url.pathname.split("/blobs/")[1] ?? "");
 			const body = blobs.get(digest);
 			if (!body) {
@@ -328,6 +344,16 @@ function writePayloadTree(root: string, marker: string): void {
 
 function dockerCalls() {
 	return { login: 0, pull: 0, manifest: 0, copy: 0 };
+}
+
+function dockerReportingMiss(): DepsDocker {
+	return {
+		localImage: () => false,
+		remoteManifest: () => "miss",
+		login: () => undefined,
+		pull: () => undefined,
+		copyPayload: () => undefined,
+	};
 }
 
 describe("deps image refs and recovery", () => {
@@ -1176,32 +1202,282 @@ describe("docker materialize", () => {
 	});
 
 	it("keeps a docker manifest miss a miss when the registry cannot be read", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-docker-miss-unreadable-"));
 		const token = randomBytes(12).toString("hex");
 		let fetched = 0;
+		try {
+			const payload = join(root, "payload");
+			mkdirSync(payload);
+			writeFileSync(join(payload, "stale"), "stale\n");
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: payload,
+				token,
+				docker: dockerReportingMiss(),
+				fetchImpl: async () => {
+					fetched += 1;
+					throw new Error(`registry fetch ${token}`);
+				},
+			});
+			assert.equal(result.ok, false);
+			if (!result.ok) {
+				assert.equal(result.kind, "miss");
+				assert.equal(result.detail.includes(token), false);
+			}
+			assert.equal(fetched, 1);
+			assert.equal(readFileSync(join(payload, "stale"), "utf8"), "stale\n");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps a docker manifest miss a miss when the registry stops mid-manifest", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-docker-cut-"));
+		const token = randomBytes(18).toString("hex");
+		const bearer = randomBytes(18).toString("hex");
+		const payload = join(root, "payload");
+		mkdirSync(payload);
+		writeFileSync(join(payload, "stale"), "stale\n");
+		let registry: Registry | undefined;
+		try {
+			registry = await startRegistry({
+				token,
+				bearer,
+				key,
+				layers: [{ mediaType: GZIP_LAYER, body: Buffer.from("unused layer") }],
+				cutOffManifest: true,
+			});
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: payload,
+				actor: "ci-actor",
+				token,
+				registryBase: registry.base,
+				fetchImpl: localFetch(registry.base),
+				docker: dockerReportingMiss(),
+			});
+			assert.equal(result.ok, false);
+			if (!result.ok) {
+				assert.equal(result.kind, "miss");
+				assert.equal(result.detail.includes(token), false);
+			}
+			assert.equal(readFileSync(join(payload, "stale"), "utf8"), "stale\n");
+			assert.equal(
+				registry.hits.some((hit) => hit.includes("/blobs/")),
+				false,
+			);
+		} finally {
+			await registry?.close();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails a registry rejection after a docker manifest miss", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-docker-fail-"));
+		const token = randomBytes(18).toString("hex");
+		const bearer = randomBytes(18).toString("hex");
+		const tree = join(root, "tree");
+		mkdirSync(join(tree, "opt", "hobo-deps"), { recursive: true });
+		writeFileSync(
+			join(tree, "opt", "hobo-deps", ".hobo-ci-deps-key"),
+			`${key}\n`,
+		);
+		const body = gnuTar(tree, ["opt"], true);
+		const escape = join(root, "escape");
+		mkdirSync(join(escape, "opt", "hobo-deps"), { recursive: true });
+		writeFileSync(join(escape, "opt", "hobo-deps", "keep.txt"), "keep\n");
+		const escaped = gnuTar(escape, ["opt/hobo-deps/keep.txt"], false, [
+			"--absolute-names",
+			"--transform",
+			"s,^opt/hobo-deps/keep.txt,opt/hobo-deps/foo/../../tmp/pwned,",
+		]);
+		const wrong = join(root, "wrong");
+		mkdirSync(join(wrong, "opt", "hobo-deps"), { recursive: true });
+		writeFileSync(
+			join(wrong, "opt", "hobo-deps", ".hobo-ci-deps-key"),
+			`${otherKey}\n`,
+		);
+		const uncapped = 8 * 1024 * 1024;
+		const attempts: {
+			name: string;
+			registry: Parameters<typeof startRegistry>[0];
+			maxLayerBytes: number;
+			detail: RegExp;
+		}[] = [
+			{
+				name: "token-rejection",
+				registry: { token, bearer, key, tokenStatus: 401 },
+				maxLayerBytes: uncapped,
+				detail: /registry token 401/,
+			},
+			{
+				name: "digest-mismatch",
+				registry: {
+					token,
+					bearer,
+					key,
+					layers: [
+						{
+							mediaType: GZIP_LAYER,
+							body,
+							digest: sha256(Buffer.concat([body, Buffer.from("x")])),
+						},
+					],
+				},
+				maxLayerBytes: uncapped,
+				detail: /digest/,
+			},
+			{
+				name: "byte-cap",
+				registry: {
+					token,
+					bearer,
+					key,
+					layers: [{ mediaType: GZIP_LAYER, body, size: body.length + 10 }],
+				},
+				maxLayerBytes: body.length,
+				detail: /byte cap/,
+			},
+			{
+				name: "tar-escape",
+				registry: {
+					token,
+					bearer,
+					key,
+					layers: [{ mediaType: TAR_LAYER, body: escaped }],
+				},
+				maxLayerBytes: uncapped,
+				detail: /escapes/,
+			},
+			{
+				name: "payload-key",
+				registry: {
+					token,
+					bearer,
+					key,
+					layers: [
+						{ mediaType: GZIP_LAYER, body: gnuTar(wrong, ["opt"], true) },
+					],
+				},
+				maxLayerBytes: uncapped,
+				detail: /payload key/,
+			},
+		];
+		try {
+			for (const attempt of attempts) {
+				const registry = await startRegistry(attempt.registry);
+				try {
+					const payload = join(root, attempt.name);
+					mkdirSync(payload);
+					writeFileSync(join(payload, "stale"), "stale\n");
+					const result = await materializePublishedDepsLayer({
+						repository,
+						key,
+						payloadDir: payload,
+						actor: "ci-actor",
+						token,
+						registryBase: registry.base,
+						fetchImpl: localFetch(registry.base),
+						maxLayerBytes: attempt.maxLayerBytes,
+						docker: dockerReportingMiss(),
+					});
+					assert.equal(result.ok, false, attempt.name);
+					if (!result.ok) {
+						assert.equal(result.kind, "failed", attempt.name);
+						assert.match(result.detail, attempt.detail);
+						assert.equal(result.detail.includes(token), false, attempt.name);
+					}
+					assert.equal(existsSync(payload), false, attempt.name);
+				} finally {
+					await registry.close();
+				}
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails a transport failure after a docker manifest miss once extraction has begun", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-docker-blob-refused-"));
+		const token = randomBytes(18).toString("hex");
+		const bearer = randomBytes(18).toString("hex");
+		const tree = join(root, "tree");
+		mkdirSync(join(tree, "opt", "hobo-deps"), { recursive: true });
+		writeFileSync(
+			join(tree, "opt", "hobo-deps", ".hobo-ci-deps-key"),
+			`${key}\n`,
+		);
+		const payload = join(root, "payload");
+		mkdirSync(payload);
+		writeFileSync(join(payload, "stale"), "stale\n");
+		let registry: Registry | undefined;
+		try {
+			registry = await startRegistry({
+				token,
+				bearer,
+				key,
+				layers: [{ mediaType: GZIP_LAYER, body: gnuTar(tree, ["opt"], true) }],
+				refuseBlobs: true,
+			});
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: payload,
+				actor: "ci-actor",
+				token,
+				registryBase: registry.base,
+				fetchImpl: localFetch(registry.base),
+				docker: dockerReportingMiss(),
+			});
+			assert.equal(result.ok, false);
+			if (!result.ok) {
+				assert.equal(result.kind, "failed");
+				assert.doesNotMatch(result.detail, /manifest missing/);
+				assert.equal(result.detail.includes(token), false);
+			}
+			assert.equal(
+				registry.hits.some((hit) => hit.includes("/blobs/")),
+				true,
+			);
+			assert.equal(existsSync(payload), false);
+		} finally {
+			await registry?.close();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails an unreadable registry when docker did not report a miss", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-deps-unreadable-"));
+		const token = randomBytes(12).toString("hex");
 		const docker: DepsDocker = {
 			localImage: () => false,
-			remoteManifest: () => "miss",
-			login: () => {},
-			pull: () => {},
-			copyPayload: () => {},
+			remoteManifest: () => "unavailable",
+			login: () => undefined,
+			pull: () => undefined,
+			copyPayload: () => undefined,
 		};
-		const result = await materializePublishedDepsLayer({
-			repository,
-			key,
-			payloadDir: join(tmpdir(), "hobo-docker-miss-unreadable"),
-			token,
-			docker,
-			fetchImpl: async () => {
-				fetched += 1;
-				throw new Error(`registry fetch ${token}`);
-			},
-		});
-		assert.equal(result.ok, false);
-		if (!result.ok) {
-			assert.equal(result.kind, "miss");
-			assert.equal(result.detail.includes(token), false);
+		try {
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: join(root, "payload"),
+				token,
+				docker,
+				fetchImpl: async () => {
+					throw new Error(`registry fetch ${token}`);
+				},
+			});
+			assert.equal(result.ok, false);
+			if (!result.ok) {
+				assert.equal(result.kind, "failed");
+				assert.match(result.detail, /\[redacted\]/);
+				assert.equal(result.detail.includes(token), false);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
 		}
-		assert.equal(fetched, 1);
 	});
 
 	it("materializes from the registry when docker reports a miss the registry does not", async () => {

@@ -182,8 +182,12 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `HOBO_TURBO_CACHE_KEEP_DAYS=0` to that tree's builds. On a deps-layer miss it pulls the published
   `ghcr.io/<repository>/hobo-ci-deps:<checkout-key>` image (`packages: read`) and materializes
   `/opt/hobo-deps`, then links and checks again. A `docker manifest inspect` miss is checked again
-  against the registry with the job token, since a runner's Docker can miss an image GHCR serves;
-  only a registry miss, or an unreadable registry after Docker's miss, counts as missing. Materialize refuses tar members whose ancestor chain
+  against the registry with the job token, since a runner's Docker can miss an image GHCR serves.
+  Only a registry miss, or a registry that cannot be read before `/opt/hobo-deps` is touched, counts as
+  missing after Docker's miss, and neither removes the payload an earlier link step may point at. Any
+  other registry answer (a refused token, a digest or key mismatch, an oversized or escaping layer), or
+  a connection that fails once extraction has begun, is a failure that removes the partial payload.
+  Materialize refuses tar members whose ancestor chain
   inside `/opt/hobo-deps` contains a symlink, so extraction cannot write or delete outside the payload.
   If key or repository resolution fails before a pull, a warm pnpm store still allows install;
   otherwise the job fails as `hobo-ci-deps-layer-unavailable`. It does not build a deps image. `pnpm install` runs
