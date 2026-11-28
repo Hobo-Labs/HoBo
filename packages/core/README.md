@@ -14,6 +14,15 @@ intent with explicit `full | partial | none` realization and capability notes.
 
 The asynchronous `DurableMessaging` port exposes finite limits and makes committed, rejected, unknown, and expired outcomes explicit. Implementations live outside core; the accompanying finite-state tests exercise bounded scenarios and do not prove an implementation correct.
 
+`DurableQueue` is the provider-neutral asynchronous byte-and-attribute queue
+contract. Its limits parser accepts bounded provider limits and copies them
+without invoking accessors or proxy traps. Zero delay or zero attributes are
+explicit supported limits; the host must enforce the selected limits and scope
+on each operation. Operation identities use the same expiry-bound format as
+durable messaging. Unknown or expired outcomes require reconciliation. This
+port declares no provider implementation. The local JSON `Queue` API does not
+implement the component queue contract.
+
 `Messaging.ack` and `Messaging.nack` are asynchronous and must be awaited. Live
 adapters report a transport failure or deadline as `MESSAGING_SETTLEMENT_UNKNOWN`:
 the broker may have applied the operation. The adapter refuses another

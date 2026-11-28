@@ -14,6 +14,9 @@ strings. Operation IDs use their separately bounded format.
 Its limits report bounds on message size, attributes, delay, leases, batches,
 operation windows and retained messages and receipts. The host must advertise
 only semantics it actually implements, including replay and lease fencing.
+A zero delay limit permits immediate enqueue only; zero attribute count and byte
+limits mean that message attributes are unavailable. Positive attribute count
+and byte limits must be supplied together.
 Operation IDs use `v1.<expires-at-ms>.<nonce>`, where the nonce contains 16 to
 64 ASCII letters, digits, underscores or hyphens. The expiry is a nonnegative
 safe integer matching the encoded timestamp and must be within the host's
