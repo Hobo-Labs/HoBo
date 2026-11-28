@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Credentials from "@alchemy.run/aws/Credentials";
+import { Table, TableProvider } from "@alchemy.run/aws/DynamoDB";
 import * as Endpoint from "@alchemy.run/aws/Endpoint";
 import { AWSEnvironment } from "@alchemy.run/aws/Environment";
 import { Providers } from "@alchemy.run/aws/Providers";
@@ -44,6 +45,10 @@ import {
 	workload,
 } from "../../../pricing/test/fixtures.js";
 import { awsBindleMappers } from "../src/aws.js";
+import {
+	awsDynamoDurableQueueMappers,
+	withAwsDynamoDurableQueue,
+} from "../src/aws-queue-mapper.js";
 import { mapBindleToAlchemy } from "../src/bindle.js";
 import {
 	alchemyTarget,
@@ -89,6 +94,7 @@ function fixture(
 	withPricing: boolean,
 	allowUnpriced = false,
 	official = false,
+	resource: "bucket" | "queue" = "bucket",
 ) {
 	const server = createServer(awsPlugin, { baseUrl: "http://localhost:4566" });
 	const credentials = {
@@ -96,6 +102,7 @@ function fixture(
 		secretAccessKey: Redacted.make("local"),
 	};
 	let effects = 0;
+	const mutationTargets: string[] = [];
 	let liabilityRequests = 0;
 	const exposuresAtEffects: { reservedMicros: number; unbounded: number }[] =
 		[];
@@ -125,7 +132,12 @@ function fixture(
 			HttpClient.HttpClient,
 			HttpClient.tapRequest((req) =>
 				Effect.sync(() => {
-					if (req.method !== "GET" && req.method !== "HEAD") {
+					if (
+						req.method !== "GET" &&
+						req.method !== "HEAD" &&
+						req.headers["x-amz-target"] !== "DynamoDB_20120810.DescribeTable"
+					) {
+						mutationTargets.push(req.headers["x-amz-target"] ?? "");
 						recordEffect();
 					}
 				}),
@@ -166,20 +178,37 @@ function fixture(
 		),
 		fetchLayers,
 	);
+	const definition =
+		resource === "queue"
+			? mapBindleToAlchemy(
+					withAwsDynamoDurableQueue(
+						bindle("shop", (b) => ({
+							objects: b.queue().allow("enqueue", "dequeue"),
+						})),
+						{ objects: true },
+					),
+					awsDynamoDurableQueueMappers(),
+					{ assessRequirements: () => ({ status: "supported" }) },
+				)
+			: mapBindleToAlchemy(
+					bindle("shop", (b) => ({ objects: b.bucket() })),
+					awsBindleMappers(),
+					{ assessRequirements: () => ({ status: "supported" }) },
+				);
 	const stack = Stack(
 		"Demo",
 		{
-			providers: Layer.effect(Providers, Provider.collection([Bucket])).pipe(
+			providers: Layer.effect(
+				Providers,
+				Provider.collection([Bucket, Table]),
+			).pipe(
 				Layer.provideMerge(BucketProvider()),
+				Layer.provideMerge(TableProvider()),
 				Layer.provideMerge(awsLayers),
 			),
 			state: inMemoryState(),
 		},
-		mapBindleToAlchemy(
-			bindle("shop", (b) => ({ objects: b.bucket() })),
-			awsBindleMappers(),
-			{ assessRequirements: () => ({ status: "supported" }) },
-		).pipe(Effect.map(() => ({}))),
+		definition.pipe(Effect.map(() => ({}))),
 	);
 
 	const authorityOptions: Parameters<
@@ -317,7 +346,7 @@ function fixture(
 			resources: [
 				{
 					resourceId: "objects",
-					resourceType: Bucket.Type,
+					resourceType: resource === "queue" ? Table.Type : Bucket.Type,
 					providerId: "sandbox",
 					providerAccountRef: "account-a",
 					productId: "sandbox",
@@ -353,6 +382,7 @@ function fixture(
 		reopenAuthority: () =>
 			createSqliteBudgetAdmissionAuthority(authorityOptions),
 		effects: () => effects,
+		mutationTargets: () => mutationTargets,
 		exposuresAtEffects: () => exposuresAtEffects,
 		liabilityRequests: () => liabilityRequests,
 		server,
@@ -416,6 +446,92 @@ describe("budget routing for an Alchemy AWS bucket", () => {
 						),
 				).toBe(true);
 				expect(f.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"admits a priced mapped queue before provisioning its DynamoDB table",
+		async () => {
+			const f = fixture(true, false, true, "queue");
+			try {
+				const selected = await pricedSelection(f);
+				expect(f.effects()).toBe(0);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+					selected,
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "allowed", reservation: "held" },
+				});
+				expect(f.exposuresAtEffects()).not.toHaveLength(0);
+				expect(f.mutationTargets()).toContain("DynamoDB_20120810.CreateTable");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) =>
+								entry.reservedMicros === 1_500_000 && entry.unbounded === 0,
+						),
+				).toBe(true);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"blocks an unpriced mapped queue before any AWS Emulator mutation",
+		async () => {
+			const f = fixture(false, false, true, "queue");
+			try {
+				const assessment = await f.provider.assessPricing(program);
+				expect(assessment).toMatchObject({
+					pricing: { state: { case: "unavailable" } },
+					budget: { evaluation: "not-evaluated", reservation: "not-created" },
+				});
+				await expect(f.provider.apply(program)).rejects.toMatchObject({
+					code: "PRICING_MODEL_UNAVAILABLE",
+				});
+				expect(f.effects()).toBe(0);
+				expect(f.authority.read(NOW).unboundedExposureCount).toBe(0);
+			} finally {
+				f.authority.close();
+				f.routeAuthority.close();
+			}
+		},
+		30_000,
+	);
+	official(
+		"records unbounded exposure before an explicitly authorized unpriced queue apply",
+		async () => {
+			const f = fixture(false, true, true, "queue");
+			try {
+				await f.provider.assessPricing(program);
+				const result = await f.provider.applyWithAdmission(
+					program,
+					"request-1",
+				);
+				expect(result.admission).toMatchObject({
+					status: "admitted",
+					budget: { evaluation: "bypassed", reservation: "held" },
+				});
+				expect(f.exposuresAtEffects()).not.toHaveLength(0);
+				expect(f.mutationTargets()).toContain("DynamoDB_20120810.CreateTable");
+				expect(
+					f
+						.exposuresAtEffects()
+						.every(
+							(entry) => entry.reservedMicros === 0 && entry.unbounded === 1,
+						),
+				).toBe(true);
+				expect(f.liabilityRequests()).toBe(0);
 			} finally {
 				f.authority.close();
 				f.routeAuthority.close();

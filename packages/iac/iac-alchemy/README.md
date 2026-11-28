@@ -865,7 +865,7 @@ it does not prove those assumptions or the implementation.
 JSON queue actor in one Rivet program. The host must attest the registry, source,
 transport, pool and isolation domain. Admission and response authorization are
 separate decisions; an uncertain queue operation requires reconciliation. This
-does not implement the synchronous HoBo WIT queue or Bindle queue dependencies.
+does not implement the HoBo WIT queue or Bindle queue dependencies.
 The bounded `model/RivetHttpQueue.tla` checks one HTTP request and one enqueue
 under its stated host authority, fencing and draining assumptions; it does not
 prove those assumptions, the implementation or the provider.
@@ -1203,7 +1203,7 @@ segment and 256-KiB record bounds. Financial preview must cover that table or us
 an explicitly authorized unpriced path. A supplied model must account for
 the expected table storage, reads and writes; individual queue calls do not run
 budget admission or enforce the estimate. This is a DynamoDB queue, with no SQS
-integration or dead-lettering. An AWS HTTP application can declare the queue as
+integration or automatic dead-lettering. An AWS HTTP application can declare the queue as
 a dependency and access it with `awsHttpBindings(context).queue("jobs")`.
 Compose `awsHttpBindleMappers` with `awsDynamoDurableQueueMappers` and configure
 `defineAwsHttpSource` to resolve the mapped table name to a queue constructed
@@ -1231,6 +1231,12 @@ Dead-letter confirmation is an owner operation. The host must provide a durable,
 idempotent destination and verify its receipt; an unknown destination or queue
 outcome requires reconciliation. Price the destination and the additional queue
 reads and writes when supplying the financial model.
+
+Official AWS Emulator tests exercise queue deployment through financial
+admission: a supplied model reserves budget before table creation, missing
+pricing blocks creation unless an unpriced policy explicitly authorizes it, and
+an authorized unpriced deployment records unbounded exposure. This admission
+applies to deployment, not individual queue calls.
 
 Owner inspection supports snapshot-bound pagination for advancing past blocked
 exhausted messages. A changed queue returns `changed` and requires a restart.
