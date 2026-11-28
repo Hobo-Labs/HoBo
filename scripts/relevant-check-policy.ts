@@ -140,6 +140,7 @@ export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/attested-jobs.test.ts",
 	"scripts/test/merge-group-gate.test.ts",
 	"scripts/test/lint-actions-runner.test.ts",
+	"scripts/test/draft-pull-request-workflows.test.ts",
 	"scripts/test/local-attest.test.ts",
 	"scripts/test/fleet-signoff.test.ts",
 	"scripts/test/github-pr-target.test.ts",

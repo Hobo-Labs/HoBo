@@ -17,7 +17,7 @@ tags: [hobo, automations]
 - **Loop mode:** disabled (`LOOP=false`)
 - **Issue cap:** one (`MAX_ISSUES_PER_RUN=1`)
 - **Auto-merge:** disabled (`AUTO_MERGE=false`)
-- **Pull requests:** open as draft, mark ready for review only after verification gates pass
+- **Pull requests:** open as draft, complete local verification, then mark ready for review to run GitHub Actions
 - **Reporting:** Linear, pull request comments/body, and related repo docs
 
 ## Agent-native guardrails ([BR-011](../archive/requirements/requirements.md), [Plan 06](../design/ai-native-agent-auth.md#plan-06))
@@ -43,7 +43,7 @@ Executable mapping proof: [`src/draft/technical-proofs/issue-worker-guardrail-ma
 ROLE
 You are an autonomous implementation worker for the HoBo platform.
 
-Each run claims exactly ONE eligible Linear issue from the HoBo team, implements it end-to-end on its own branch/worktree using a BDD outer loop + TDD inner loop, opens a DRAFT pull request, keeps Linear in sync, addresses feedback only for the issue/PR owned by that run or when explicitly invoked against that PR, and marks the PR ready for review only when verification gates pass.
+Each run claims exactly ONE eligible Linear issue from the HoBo team, implements it end-to-end on its own branch/worktree using a BDD outer loop + TDD inner loop, opens a DRAFT pull request, keeps Linear in sync, addresses feedback only for the issue/PR owned by that run or when explicitly invoked against that PR, and marks the PR ready for review after local verification so GitHub Actions can run.
 
 Optimize for parallelism. Many copies of this automation may run concurrently, so follow the claim protocol exactly and only ever touch the single issue/PR you own.
 
@@ -145,7 +145,7 @@ STEP 7 — OPEN DRAFT PR AND SYNC LINEAR
 5. Add the PR link to Linear and post a concise summary comment with test evidence.
 
 STEP 8 — READY FOR REVIEW
-Only mark the PR ready for review after verification gates pass, Acceptance bullets are proven, Adversarial cases are covered, no known implementation blockers remain, the PR body is complete, and Linear is synced.
+Only mark the PR ready for review after local verification passes, Acceptance bullets are proven, Adversarial cases are covered, no known implementation blockers remain, the PR body is complete, and Linear is synced. GitHub Actions validates the ready PR; do not run it on a draft.
 
 Then mark the PR ready for review, move the Linear issue to "In Review", and comment in Linear with final evidence.
 
@@ -153,7 +153,7 @@ STEP 9 — ADDRESS FEEDBACK ONLY WHEN OWNED OR TARGETED
 1. Do not scan all existing PRs before claiming new work.
 2. If the current run owns a PR/issue and receives requested changes, unresolved review comments, failing checks, or Linear/PR feedback, fix only that PR/issue.
 3. If explicitly invoked against an existing PR, work only on that PR and its linked issue.
-4. Push fixes, reply/resolve comments where appropriate, re-run verification gates, and mark ready for review when eligible.
+4. If a gate fails, return the PR to draft. Push fixes to the same branch, reply/resolve comments where appropriate, run local verification, and mark it ready for review to rerun GitHub Actions.
 
 STEP 10 — STOP
 Because LOOP=false and MAX_ISSUES_PER_RUN=1, stop after one newly claimed issue implementation or one targeted owned-PR feedback pass.

@@ -4,7 +4,16 @@ import { spawnSync } from "node:child_process";
  * Resolve a digest-pinned hobo-ci-worker image for release OCI builds.
  * Prefers ghcr.io/hobo-ci-worker:${ciRunnerImageVersion}; avoids build.sh on release.
  */
-import { appendFileSync, readFileSync } from "node:fs";
+import {
+	appendFileSync,
+	closeSync,
+	mkdtempSync,
+	openSync,
+	readFileSync,
+	readSync,
+	rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ciRunnerImageVersion } from "../lib/ci-runner-contract.mts";
 
@@ -90,12 +99,16 @@ function ghcrAuthToken(): string {
 	);
 }
 
-export function dockerLoginGhcr(actor: string, token: string): boolean {
+export function dockerLoginGhcr(
+	actor: string,
+	token: string,
+	timeoutMs?: number,
+): boolean {
 	if (!token) return false;
 	const login = spawnSync(
 		"docker",
 		["login", "ghcr.io", "-u", actor, "--password-stdin"],
-		{ input: token, stdio: ["pipe", "inherit", "inherit"] },
+		{ input: token, stdio: ["pipe", "inherit", "inherit"], timeout: timeoutMs },
 	);
 	return login.status === 0;
 }
@@ -105,6 +118,79 @@ export function remoteWorkerTag(repo: string, version: string): string {
 }
 
 export const DEFAULT_WORKER_PULL_BUDGET_SEC = 540;
+
+export const WORKER_PULL_EXTRACT_BUDGET_SEC = 150;
+
+function pullLogHasFetchedLayers(logPath: string): boolean {
+	let fd: number;
+	try {
+		fd = openSync(logPath, "r");
+	} catch {
+		return false;
+	}
+	const buf = Buffer.alloc(64 * 1024);
+	let carry = "";
+	try {
+		while (true) {
+			const n = readSync(fd, buf, 0, buf.length, null);
+			if (n <= 0) break;
+			const window = carry + buf.toString("utf8", 0, n);
+			if (
+				window.includes("Download complete") ||
+				window.includes("Pull complete")
+			) {
+				return true;
+			}
+			carry = window.slice(-"Download complete".length);
+		}
+		return false;
+	} finally {
+		closeSync(fd);
+	}
+}
+
+type TimedDockerPull = Readonly<{
+	status: number | null;
+	downloaded: boolean;
+}>;
+
+function runTimedDockerPull(
+	remote: string,
+	budgetSec: number,
+): TimedDockerPull {
+	const dir = mkdtempSync(join(tmpdir(), "hobo-worker-pull-"));
+	const logPath = join(dir, "pull.log");
+	try {
+		const status = spawnSync(
+			"bash",
+			[
+				"-c",
+				'set -o pipefail; timeout "$1" docker pull "$2" 2>&1 | tee "$3"',
+				"bash",
+				String(budgetSec),
+				remote,
+				logPath,
+			],
+			{ cwd: root, stdio: "inherit" },
+		).status;
+		return {
+			status,
+			downloaded: status === 124 && pullLogHasFetchedLayers(logPath),
+		};
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+function resumeLeftoverWorkerLayers(remote: string): boolean {
+	const pinned = /@sha256:[a-f0-9]{64}$/u.test(remote);
+	if (pinned && dockerImagePresent(remote)) return true;
+	console.log(
+		`GHCR pull killed at the shared budget (timeout 124); resuming leftover layers for ${WORKER_PULL_EXTRACT_BUDGET_SEC}s`,
+	);
+	const pull = runTimedDockerPull(remote, WORKER_PULL_EXTRACT_BUDGET_SEC);
+	return pull.status === 0 || (pinned && dockerImagePresent(remote));
+}
 
 export function workerPullBudgetSec(
 	raw: string | undefined = process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC,
@@ -181,15 +267,11 @@ export function pullWorkerFromGhcr(
 	for (let i = 1; i <= attempts; i++) {
 		const remainingMs = deadline - now();
 		if (remainingMs <= 0) break;
-		const result = spawnSync(
-			"timeout",
-			[String(Math.ceil(remainingMs / 1000)), "docker", "pull", remote],
-			{
-				cwd: root,
-				stdio: "inherit",
-			},
-		);
-		if (result.status === 0) return true;
+		const pull = runTimedDockerPull(remote, Math.ceil(remainingMs / 1000));
+		if (pull.status === 0) return true;
+		if (pull.status === 124 && pull.downloaded) {
+			return resumeLeftoverWorkerLayers(remote);
+		}
 		if (i < attempts) {
 			const backoffCap = Math.min(30, 5 * 2 ** (i - 1));
 			const backoff = Math.floor(random() * (backoffCap + 1));
@@ -209,17 +291,79 @@ export function pullWorkerFromGhcr(
 	return false;
 }
 
-function workerManifestReachable(remote: string, token: string): boolean {
-	if (!token) return false;
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function workerManifestLineIsMissing(line: string, remote: string): boolean {
+	if (line === "") return false;
+	const ref = escapeRegExp(remote);
+	if (new RegExp(`^no such manifest:\\s*${ref}\\s*$`, "iu").test(line)) {
+		return true;
+	}
+	if (/^manifest unknown\b/iu.test(line)) return true;
+	if (/^Error response from daemon: manifest unknown\b/iu.test(line)) {
+		return true;
+	}
+	if (
+		new RegExp(
+			`^(?:Error response from daemon: )?manifest for ${ref} not found: manifest unknown\\b`,
+			"iu",
+		).test(line)
+	) {
+		return true;
+	}
+	if (
+		new RegExp(
+			`^(?:Error response from daemon: )?failed to resolve reference "${ref}": ${ref}: not found\\b`,
+			"iu",
+		).test(line)
+	) {
+		return true;
+	}
+	return (
+		/\bMANIFEST_UNKNOWN\b/u.test(line) &&
+		!/\b(?:DENIED|UNAUTHORIZED)\b/iu.test(line)
+	);
+}
+
+export function classifyWorkerManifestInspect(
+	status: number | null,
+	stderr: string,
+	remote: string,
+): "present" | "missing" | "unknown" {
+	if (status === 0) return "present";
+	if (status !== 1 || remote.trim() === "") return "unknown";
+	return stderr
+		.split(/\r?\n/u)
+		.some((line) => workerManifestLineIsMissing(line.trim(), remote))
+		? "missing"
+		: "unknown";
+}
+
+function workerManifestStatus(
+	remote: string,
+	token: string,
+	budgetSec = 45,
+): "present" | "missing" | "unknown" {
+	if (!token || budgetSec <= 0) return "unknown";
 	// GHCR's registry API refuses the raw GITHUB_TOKEN as a bearer, so a curl probe
 	// read "absent" for a tag `docker pull` fetched two seconds later (run
 	// 43043419831). Ask the Docker CLI, which holds the login made just before.
 	const result = spawnSync(
 		"timeout",
-		["45", "docker", "manifest", "inspect", remote],
-		{ stdio: "ignore" },
+		[String(budgetSec), "docker", "manifest", "inspect", remote],
+		{ encoding: "utf8", stdio: ["ignore", "ignore", "pipe"] },
 	);
-	return result.status === 0;
+	return classifyWorkerManifestInspect(
+		result.status,
+		result.stderr ?? "",
+		remote,
+	);
+}
+
+function workerManifestReachable(remote: string, token: string): boolean {
+	return workerManifestStatus(remote, token) === "present";
 }
 
 export function ghcrWorkerManifestReachable(
@@ -231,20 +375,111 @@ export function ghcrWorkerManifestReachable(
 }
 
 const WORKER_PUBLISH_PROBE_BUDGET_SEC = 120;
+const PUBLISHED_WORKER_PULL_BUDGET_SEC = DEFAULT_WORKER_PULL_BUDGET_SEC;
+const WORKER_DIGEST_CONFIRM_MIN_SEC = 1;
+
+type WorkerPublicationProbe =
+	| "pullable"
+	| "published"
+	| "missing"
+	| "manifest-unavailable"
+	| "pull-failed"
+	| "login-failed"
+	| "budget-exhausted";
+
+function probeWorkerPull(
+	remote: string,
+	budgetSec: number,
+): "pullable" | "missing" | "unknown" {
+	const result = spawnSync(
+		"timeout",
+		[String(budgetSec), "docker", "pull", remote],
+		{ cwd: root, encoding: "utf8", stdio: ["ignore", "inherit", "pipe"] },
+	);
+	if (result.status === 0) return "pullable";
+	return classifyWorkerManifestInspect(
+		result.status,
+		result.stderr ?? "",
+		remote,
+	) === "missing"
+		? "missing"
+		: "unknown";
+}
+
+function workerManifestBackoffSec(attempt: number): number {
+	return Math.min(15, 5 * 2 ** Math.max(0, attempt - 1));
+}
+
+export function probeWorkerPublicationManifest(
+	remote: string,
+	token: string,
+	options?: Readonly<{
+		budgetSec?: number;
+		now?: () => number;
+	}>,
+): "present" | "missing" | "unknown" {
+	const budgetSec = options?.budgetSec ?? WORKER_PUBLISH_PROBE_BUDGET_SEC;
+	const now = options?.now ?? Date.now;
+	const deadline = now() + budgetSec * 1000;
+	let attempt = 0;
+	let status: "present" | "missing" | "unknown" = "unknown";
+	while (now() < deadline) {
+		attempt += 1;
+		const remainingSec = Math.max(0, Math.floor((deadline - now()) / 1000));
+		if (remainingSec <= 0) break;
+		status = workerManifestStatus(remote, token, Math.min(45, remainingSec));
+		if (status === "present" || status === "missing") return status;
+		const afterProbeSec = Math.max(0, Math.floor((deadline - now()) / 1000));
+		if (afterProbeSec <= 1 || attempt >= 6) break;
+		const delay = Math.min(
+			workerManifestBackoffSec(attempt),
+			afterProbeSec - 1,
+		);
+		if (delay > 0) spawnSync("sleep", [String(delay)], { stdio: "ignore" });
+	}
+	return status;
+}
+
+function probeWorkerPublication(
+	repo: string,
+	version: string,
+	token: string,
+	options?: Readonly<{ deadline?: number; now?: () => number }>,
+): WorkerPublicationProbe {
+	const now = options?.now ?? Date.now;
+	const deadline =
+		options?.deadline ?? now() + WORKER_PUBLISH_PROBE_BUDGET_SEC * 1000;
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	const loginMs = Math.floor(deadline - now());
+	if (loginMs <= 0) return "budget-exhausted";
+	if (!dockerLoginGhcr(actor, token, loginMs)) return "login-failed";
+	const remote = remoteWorkerTag(repo, version);
+	const remainingSec = () => Math.max(0, Math.floor((deadline - now()) / 1000));
+	const manifestBudget = Math.min(45, remainingSec());
+	if (manifestBudget <= 0) return "budget-exhausted";
+	const manifestStatus = probeWorkerPublicationManifest(remote, token, {
+		budgetSec: manifestBudget,
+		now,
+	});
+	const pullBudget = options
+		? remainingSec()
+		: manifestStatus === "present"
+			? PUBLISHED_WORKER_PULL_BUDGET_SEC
+			: remainingSec();
+	if (pullBudget <= 0) return "budget-exhausted";
+	const pullStatus = probeWorkerPull(remote, pullBudget);
+	if (pullStatus === "pullable") return "pullable";
+	if (manifestStatus === "missing" && pullStatus === "missing")
+		return "missing";
+	return manifestStatus === "unknown" ? "manifest-unavailable" : "pull-failed";
+}
 
 export function ghcrWorkerPullable(
 	repo: string,
 	version: string,
 	token: string,
 ): boolean {
-	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
-	if (!dockerLoginGhcr(actor, token)) return false;
-	const remote = remoteWorkerTag(repo, version);
-	if (!workerManifestReachable(remote, token)) return false;
-	return pullWorkerFromGhcr(remote, {
-		attempts: 1,
-		budgetSec: WORKER_PUBLISH_PROBE_BUDGET_SEC,
-	});
+	return probeWorkerPublication(repo, version, token) === "pullable";
 }
 
 export function digestFromVerboseManifest(stdout: string): string | null {
@@ -350,16 +585,29 @@ export function resolveWorkerDigestRefWhenPullable(
 	const random = options?.random ?? Math.random;
 	const deadline = now() + budgetSec * 1000;
 	let lastError = "worker image not yet pullable";
+	let lastLoginFailure = false;
 	let attempt = 0;
 	while (now() < deadline) {
 		attempt += 1;
-		if (ghcrWorkerPullable(repo, version, token)) {
+		const probe = probeWorkerPublication(repo, version, token, {
+			deadline,
+			now,
+		});
+		if (probe === "pullable") {
+			lastLoginFailure = false;
 			try {
 				const imageRef = resolveWorkerDigestRefFromPulledImage(repo, version);
+				const digestBudgetSec = Math.min(
+					WORKER_PUBLISH_PROBE_BUDGET_SEC,
+					Math.max(
+						WORKER_DIGEST_CONFIRM_MIN_SEC,
+						Math.floor((deadline - now()) / 1000),
+					),
+				);
 				if (
 					pullWorkerFromGhcr(imageRef, {
 						attempts: 1,
-						budgetSec: WORKER_PUBLISH_PROBE_BUDGET_SEC,
+						budgetSec: digestBudgetSec,
 						now,
 						random,
 					})
@@ -370,7 +618,11 @@ export function resolveWorkerDigestRefWhenPullable(
 			} catch (error) {
 				lastError = error instanceof Error ? error.message : String(error);
 			}
+		} else if (probe === "login-failed") {
+			lastLoginFailure = true;
+			lastError = "GHCR login failed while resolving the worker digest";
 		} else {
+			lastLoginFailure = false;
 			lastError = `${remoteWorkerTag(repo, version)} not pullable yet`;
 		}
 		const remainingSec = Math.floor((deadline - now()) / 1000);
@@ -381,21 +633,72 @@ export function resolveWorkerDigestRefWhenPullable(
 		);
 		spawnSync("sleep", [String(sleepFor)], { stdio: "ignore" });
 	}
+	if (lastLoginFailure) {
+		throw new Error("GHCR login failed while resolving the worker digest");
+	}
 	throw new Error(
 		`timed out after ${budgetSec}s waiting for pullable worker image ${version}: ${lastError}`,
 	);
 }
 
-export function materializeCiWorkerImageOnly(): string | null {
+export type WorkerMaterializeFailure =
+	| Readonly<{
+			kind: "pull_failed";
+			remote: string;
+			budgetSec: number;
+	  }>
+	| Readonly<{
+			kind: "manifest_unavailable";
+			remote: string;
+			budgetSec: number;
+	  }>
+	| Readonly<{
+			kind: "login_failed";
+	  }>;
+
+export type WorkerMaterializeResult =
+	| Readonly<{ ok: true; image: string }>
+	| Readonly<{ ok: false; failure: WorkerMaterializeFailure | null }>;
+
+function preferWorkerMaterializeFailure(
+	current: WorkerMaterializeFailure | null,
+	next: WorkerMaterializeFailure,
+): WorkerMaterializeFailure {
+	if (current?.kind === "pull_failed") return current;
+	if (next.kind === "pull_failed" || current === null) return next;
+	return current;
+}
+
+function tagWorkerImage(remote: string, candidate: string): void {
+	run("docker", ["tag", remote, candidate]);
+	run("docker", ["tag", remote, "hobo-ci-worker:local"]);
+}
+
+export function materializeCiWorkerImageResult(): WorkerMaterializeResult {
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
-	if (dockerImagePresent(candidate)) {
+	const repo = process.env.GITHUB_REPOSITORY?.trim();
+	const requestedRef = process.env.HOBO_CI_WORKER_IMAGE_REF;
+	if (requestedRef !== undefined && !repo)
+		throw new Error(
+			"GITHUB_REPOSITORY is required with HOBO_CI_WORKER_IMAGE_REF",
+		);
+	const suppliedDigest =
+		requestedRef !== undefined && repo
+			? resolveWorkerRemoteRef(repo, version)
+			: null;
+	if (!suppliedDigest && dockerImagePresent(candidate)) {
 		run("docker", ["tag", candidate, "hobo-ci-worker:local"]);
 		console.log(`using pinned worker ${candidate}`);
-		return candidate;
+		return { ok: true, image: candidate };
 	}
 
-	const repo = process.env.GITHUB_REPOSITORY?.trim();
+	if (suppliedDigest && dockerImagePresent(suppliedDigest)) {
+		tagWorkerImage(suppliedDigest, candidate);
+		console.log(`using local worker digest ${suppliedDigest}`);
+		return { ok: true, image: candidate };
+	}
+
 	const event = process.env.GITHUB_EVENT_NAME ?? "";
 	const token = ghcrAuthToken();
 	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
@@ -413,37 +716,75 @@ export function materializeCiWorkerImageOnly(): string | null {
 			process.env.HOBO_CI_WORKER_IMAGE_REF === undefined
 		)
 			sources.push(pullRequestWorkerTag(repo, pullRequest, version));
-		dockerLoginGhcr(actor, token);
+		if (!dockerLoginGhcr(actor, token))
+			return { ok: false, failure: { kind: "login_failed" } };
+		let failure: WorkerMaterializeFailure | null = null;
 		for (const remote of sources) {
-			if (!workerManifestReachable(remote, token)) {
-				console.log(`GHCR manifest absent for ${remote}`);
-				continue;
-			}
-			console.log(`GHCR manifest present for ${remote}`);
-			if (pullWorkerFromGhcr(remote)) {
-				run("docker", ["tag", remote, candidate]);
-				run("docker", ["tag", remote, "hobo-ci-worker:local"]);
+			const manifestReachable = workerManifestReachable(remote, token);
+			console.log(
+				`GHCR manifest ${manifestReachable ? "present" : "absent or unreadable"} for ${remote}`,
+			);
+			const shortenForNextSource = !manifestReachable && sources.length > 1;
+			const budgetSec = shortenForNextSource
+				? Math.min(workerPullBudgetSec(), 45)
+				: workerPullBudgetSec();
+			if (
+				pullWorkerFromGhcr(
+					remote,
+					shortenForNextSource ? { attempts: 1, budgetSec } : undefined,
+				)
+			) {
+				tagWorkerImage(remote, candidate);
 				console.log(`pulled worker ${remote}`);
-				return candidate;
+				return { ok: true, image: candidate };
 			}
 			console.error(`GHCR pull failed for ${remote}`);
+			failure = preferWorkerMaterializeFailure(failure, {
+				kind: manifestReachable ? "pull_failed" : "manifest_unavailable",
+				remote,
+				budgetSec,
+			});
 		}
+		return { ok: false, failure };
 	}
-	return null;
+	return { ok: false, failure: null };
+}
+
+export function materializeCiWorkerImageOnly(): string | null {
+	const result = materializeCiWorkerImageResult();
+	return result.ok ? result.image : null;
 }
 
 export function ensureCiWorkerImage(): string {
-	const materialized = materializeCiWorkerImageOnly();
-	if (materialized) {
-		return materialized;
-	}
+	const materialized = materializeCiWorkerImageResult();
+	if (materialized.ok) return materialized.image;
 
 	const version = ciRunnerImageVersion(root);
 	const candidate = `hobo-ci-worker:${version}`;
 
-	if (releaseWorkerEnsurePath()) {
+	if (
+		releaseWorkerEnsurePath() ||
+		process.env.HOBO_CI_WORKER_IMAGE_REF !== undefined
+	) {
+		const { failure } = materialized;
+		const reason = releaseWorkerEnsurePath()
+			? `release path requires published ghcr.io worker ${version}`
+			: "supplied worker digest requires a matching published image";
+		if (failure?.kind === "login_failed") {
+			throw new Error(`GHCR login failed; ${reason}; refusing build.sh`);
+		}
+		if (failure?.kind === "pull_failed") {
+			throw new Error(
+				`GHCR manifest present for ${failure.remote} but pull failed (budgetSec=${failure.budgetSec}); ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
+			);
+		}
+		if (failure?.kind === "manifest_unavailable") {
+			throw new Error(
+				`GHCR manifest absent or unreadable for ${failure.remote} and pull failed (budgetSec=${failure.budgetSec}); ${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
+			);
+		}
 		throw new Error(
-			`release path requires published ghcr.io worker ${version}; refusing build.sh (avoids playwright CDN rebuild)`,
+			`${reason}; refusing build.sh (avoids playwright CDN rebuild)`,
 		);
 	}
 
@@ -482,6 +823,35 @@ export interface CiWorkerImagePresence {
 	readonly host: boolean;
 	/** False when GHCR said no, and also when the check could not run (no token, login failed). */
 	readonly ghcr: boolean;
+	readonly ghcrProbe: WorkerPublicationProbe;
+}
+
+function probePublishedWorkerManifest(
+	repo: string,
+	version: string,
+	token: string,
+	options?: Readonly<{ now?: () => number }>,
+): WorkerPublicationProbe {
+	const now = options?.now ?? Date.now;
+	const deadline = now() + WORKER_PUBLISH_PROBE_BUDGET_SEC * 1000;
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	const loginMs = Math.floor(deadline - now());
+	if (loginMs <= 0) return "budget-exhausted";
+	if (!dockerLoginGhcr(actor, token, loginMs)) return "login-failed";
+	const remainingSec = () => Math.max(0, Math.floor((deadline - now()) / 1000));
+	if (remainingSec() <= 0) return "budget-exhausted";
+	const remote = remoteWorkerTag(repo, version);
+	const status = probeWorkerPublicationManifest(remote, token, {
+		budgetSec: Math.min(45, remainingSec()),
+		now,
+	});
+	if (status === "present") return "published";
+	const pullBudget = remainingSec();
+	if (pullBudget <= 0) return "budget-exhausted";
+	const pullStatus = probeWorkerPull(remote, pullBudget);
+	if (pullStatus === "pullable") return "pullable";
+	if (status === "missing" && pullStatus === "missing") return "missing";
+	return status === "unknown" ? "manifest-unavailable" : "pull-failed";
 }
 
 /**
@@ -490,19 +860,37 @@ export interface CiWorkerImagePresence {
  * because a main push whose CI run was dropped never built or published the
  * image its commits needed (finding 113).
  */
-export function ciWorkerImagePublished(): CiWorkerImagePresence {
+export function ciWorkerImagePublished(options?: {
+	now?: () => number;
+}): CiWorkerImagePresence {
 	const version = ciRunnerImageVersion(root);
 	const host = dockerImagePresent(`hobo-ci-worker:${version}`);
 	const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
 	const token = ghcrAuthToken();
-	let ghcr = false;
-	if (repo && token) {
-		ghcr = ghcrWorkerPullable(repo, version, token);
-	}
-	return { version, host, ghcr };
+	const ghcrProbe =
+		repo && token
+			? probePublishedWorkerManifest(
+					repo,
+					version,
+					token,
+					options?.now === undefined ? undefined : { now: options.now },
+				)
+			: "login-failed";
+	return {
+		version,
+		host,
+		ghcr: ghcrProbe === "pullable" || ghcrProbe === "published",
+		ghcrProbe,
+	};
 }
 
 function main(): void {
+	if (process.argv.includes("--published-digest")) {
+		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+		const version = ciRunnerImageVersion(root);
+		console.log(resolveWorkerDigestRef(repo, version));
+		return;
+	}
 	if (process.argv.includes("--resolve-digest")) {
 		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
 		const version = ciRunnerImageVersion(root);
@@ -516,6 +904,16 @@ function main(): void {
 	}
 	if (process.argv.includes("--published-status")) {
 		const status = ciWorkerImagePublished();
+		if (
+			status.ghcrProbe === "pull-failed" ||
+			status.ghcrProbe === "login-failed" ||
+			status.ghcrProbe === "manifest-unavailable" ||
+			status.ghcrProbe === "budget-exhausted"
+		) {
+			throw new Error(
+				`worker image publication check inconclusive (${status.ghcrProbe}); refusing to rebuild`,
+			);
+		}
 		console.log(
 			`worker ${status.version}: host=${status.host} ghcr=${status.ghcr}`,
 		);

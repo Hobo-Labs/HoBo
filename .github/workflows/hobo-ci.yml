@@ -56,7 +56,8 @@ concurrency:
 jobs:
   route:
     name: Route runners
-    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read
@@ -107,6 +108,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          clean: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -134,11 +136,25 @@ jobs:
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
             scripts/ci/pr-fabric-reuse.mts
+      - id: trusted-route
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=".ci-trusted/scripts/ci/route-runner.mts"
+          if [[ ! -f "$file" ]]; then
+            echo "::error::The trusted route-runner file is missing ($file)"
+            exit 1
+          fi
+          if grep -F -q -- 'workflowFile(env) !== "hobo-ci.yml"' "$file"; then
+            echo "merge_group=fleet" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge_group=auto" >> "$GITHUB_OUTPUT"
+          fi
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ (inputs.route || 'auto') }}
+          route: ${{ inputs.route || (github.event_name == 'merge_group' && steps.trusted-route.outputs.merge_group) || 'auto' }}
       - name: Record the tree this run tests
         id: tested
         if: github.event_name == 'pull_request'
@@ -161,6 +177,19 @@ jobs:
           path: ${{ runner.temp }}/pr-fabric-tested.json
           retention-days: 30
           overwrite: true
+      - name: Leave a full worktree for the next job on this runner
+        if: always() && github.event_name == 'merge_group'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          rm -rf .ci-trusted
+          git sparse-checkout disable || true
+          git config --local --unset-all core.sparseCheckout || true
+          git config --local --unset-all core.sparseCheckoutCone || true
+          rm -f .git/info/sparse-checkout
+          git ls-files -t -z | sed -z -n 's/^S //p' | git update-index --no-skip-worktree -z --stdin
+          git checkout -f HEAD -- .
 
   ci-runner-image:
     name: CI runner image (mise oci)
@@ -406,10 +435,10 @@ jobs:
     name: Agent plugin provenance
     needs: route
     if: >-
-      ${{ !cancelled() && needs.route.result == 'success' &&
+      !cancelled() && needs.route.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch') }}
+      github.event_name == 'workflow_dispatch')
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -982,7 +1011,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
-    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'agent37' || (needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1303,10 +1332,8 @@ jobs:
     # each job succeeded, or the route job succeeded, reported a verified signed
     # local run covering that job, and the job was skipped for it.
     needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
-    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
-    # GitHub-hosted: it runs no repository code, and on the fleet a superseded
-    # run's gate held the next run until a runner was free.
-    runs-on: ubuntu-24.04
+    if: ${{ always() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1733,7 +1760,6 @@ jobs:
         pnpm-workspace.yaml
         turbo.json
         tsconfig.base.json
-        .env.example
         .gitattributes
         .gitignore
         .betterleaks.toml
@@ -2021,6 +2047,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      packages: read
     concurrency:
       group: ${{ github.workflow }}-main-build-cache
       cancel-in-progress: false
@@ -2048,18 +2075,39 @@ jobs:
           main-build: "true"
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
       - name: Check deps layer match
         id: deps-layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: pnpm store
+        if: steps.deps-layer.outputs.match != 'true'
+        uses: $/.github/actions/pnpm-store
+      - name: Materialize published GHCR deps layer
+        id: deps-materialize
+        if: steps.deps-layer.outputs.match != 'true'
+        timeout-minutes: 8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/materialize-ghcr-deps-layer.mts
+      - name: Link published GHCR deps layer
+        if: steps.deps-materialize.outputs.materialized == 'true'
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check published GHCR deps layer
+        id: deps-layer-ghcr
+        if: steps.deps-materialize.outputs.materialized == 'true'
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
       - name: Verify deps layer sibling links
-        if: steps.deps-layer.outputs.match == 'true'
+        if: steps.deps-layer.outputs.match == 'true' || steps.deps-layer-ghcr.outputs.match == 'true'
         run: node --import tsx scripts/ensure-ts-autocode-links.mts
       - name: Install dependencies
-        if: steps.deps-layer.outputs.match != 'true'
+        if: steps.deps-materialize.outputs.install == 'true' && steps.deps-layer-ghcr.outputs.match != 'true'
         run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Require a deps layer or a warm pnpm store
+        if: steps.deps-layer.outputs.match != 'true' && steps.deps-layer-ghcr.outputs.match != 'true' && steps.deps-materialize.outputs.install != 'true'
+        run: |
+          echo "::error title=hobo-ci-deps-layer-unavailable::published GHCR deps layer missing and no warm pnpm store"
+          exit 1
       - name: Build every package
         timeout-minutes: 15
         run: pnpm exec turbo run build --continue --output-logs=errors-only --concurrency=100%

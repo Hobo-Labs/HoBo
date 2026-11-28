@@ -5,12 +5,17 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadReleaseHoboPullRequestPathFilters } from "../lib/release-hobo-path-filters.mts";
+import {
+	loadReleaseHoboPullRequestPathFilters,
+	loadReleasePagesPathFilters,
+	parseReleasePagesPathFilters,
+} from "../lib/release-hobo-path-filters.mts";
 import {
 	COMPARE_FILE_LIMIT,
 	decidePagesDeploy,
@@ -19,10 +24,11 @@ import {
 	type PagesComparison,
 	type PagesSource,
 	parseDeployedSha,
+	requirePagesDeployedHead,
 } from "../lib/release-pages-stale.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const filters = loadReleaseHoboPullRequestPathFilters(root);
+const filters = loadReleasePagesPathFilters(root);
 const deployed = "93d367d9a7f58bfd2a442ea5b607cf633ffc09f2";
 const head = "b13f2846000000000000000000000000000000aa";
 
@@ -58,6 +64,41 @@ describe("parseDeployedSha", () => {
 	});
 });
 
+describe("requirePagesDeployedHead", () => {
+	it("accepts the exact source recorded by the candidate", async () => {
+		await expect(
+			requirePagesDeployedHead({ head, source: source(`deploy: ${head}`) }),
+		).resolves.toBeUndefined();
+	});
+
+	it("rejects a superseded or unverifiable candidate", async () => {
+		for (const message of [
+			undefined,
+			"Initial commit",
+			`deploy: ${deployed}`,
+			`deploy: ${head.slice(0, 9)}`,
+		]) {
+			await expect(
+				requirePagesDeployedHead({ head, source: source(message) }),
+			).rejects.toThrow(/pages.*source/iu);
+		}
+	});
+
+	it("propagates a failure to read the deployed source", async () => {
+		await expect(
+			requirePagesDeployedHead({
+				head,
+				source: {
+					deployedMessage: async () => {
+						throw new Error("API unavailable");
+					},
+					compare: async () => undefined,
+				},
+			}),
+		).rejects.toThrow("API unavailable");
+	});
+});
+
 describe("decidePagesDeploy", () => {
 	it("publishes a site change no run deployed, however many commits ago it merged", async () => {
 		// The #1790 case: its deploy failed, and the commits after it did not
@@ -80,10 +121,36 @@ describe("decidePagesDeploy", () => {
 			filters,
 			source: source(
 				`deploy: ${deployed}`,
-				ahead(["packages/ci/test/journal.test.ts", "docs/ci/performance.md"]),
+				ahead(["README.md", ".editorconfig"]),
 			),
 		});
 		expect(decision).toMatchObject({ deploy: false, deployedSha: deployed });
+	});
+
+	it.each([
+		"media/src/pages/index.astro",
+		"docs/ci/performance.md",
+		"packages/core/src/index.ts",
+		"examples/browser-runtime/wit/world.wit",
+		"site/src/pages/index.astro",
+		"version.json",
+	])("publishes changes in the Pages build inputs: %s", async (path) => {
+		const decision = await decidePagesDeploy({
+			head,
+			filters,
+			source: source(`deploy: ${deployed}`, ahead([path])),
+		});
+		expect(decision.deploy).toBe(true);
+	});
+
+	it("deploys conservatively if the Pages checkout inputs cannot be parsed", async () => {
+		const unknownFilters = parseReleasePagesPathFilters("env:\n");
+		const decision = await decidePagesDeploy({
+			head,
+			filters: unknownFilters,
+			source: source(`deploy: ${deployed}`, ahead(["unclassified/file"])),
+		});
+		expect(decision.deploy).toBe(true);
 	});
 
 	it("publishes when the changed-file list was cut off", async () => {
@@ -290,6 +357,40 @@ describe("check-release-pages-stale CLI", () => {
 		expect(result.status).toBe(2);
 		expect(result.stderr).toContain("usage:");
 	});
+
+	it("fails a stable promotion when the published source changed or cannot be read", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-pages-stable-cli-"));
+		try {
+			const mock = join(dir, "mock-fetch.mjs");
+			writeFileSync(
+				mock,
+				`globalThis.fetch = async () => new Response(JSON.stringify({commit:{commit:{message:process.env.HOBO_TEST_PAGES_MESSAGE}}}), {status:Number(process.env.HOBO_TEST_PAGES_STATUS)});\n`,
+			);
+			for (const [message, status, expected] of [
+				[`deploy: ${head}`, "200", 0],
+				[`deploy: ${deployed}`, "200", 1],
+				["", "404", 1],
+			] as const) {
+				const result = spawnSync(
+					process.execPath,
+					["--import", mock, cli, "--head", head, "--require-deployed-head"],
+					{
+						encoding: "utf8",
+						env: {
+							...process.env,
+							GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+							GITHUB_TOKEN: "test",
+							HOBO_TEST_PAGES_MESSAGE: message,
+							HOBO_TEST_PAGES_STATUS: status,
+						},
+					},
+				);
+				expect(result.status, result.stderr).toBe(expected);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("release-hobo pages jobs", () => {
@@ -420,8 +521,8 @@ describe("release-hobo pages jobs", () => {
 		const tag = job("release-tag");
 		expect(tag).toContain("!cancelled() &&");
 		expect(tag).not.toContain("always()");
-		expect(tag).toMatch(
-			/needs: \[[^\]]*release-pages-gate, release-pages\b[^\]]*\]/,
+		expect(tag).toContain(
+			"needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-pages-stable, release-hobo-cli]",
 		);
 		// A failed gate skips the publish; that skip must not read as "nothing to do".
 		expect(tag).toContain(
@@ -431,6 +532,29 @@ describe("release-hobo pages jobs", () => {
 		expect(tag).toContain(
 			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result)`,
 		);
+		expect(tag).toContain(
+			`contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages-stable.result)`,
+		);
+	});
+
+	it("promotes pages-stable from the Freight home the candidate job recorded", () => {
+		const pages = job("release-pages");
+		expect(pages).toContain("promoted: ${{ steps.promote.outputs.promoted }}");
+		expect(pages).toContain('echo "promoted=true" >> "$GITHUB_OUTPUT"');
+		expect(pages).toContain("name: hobo-release-freight-pages");
+		expect(pages).toContain("if: steps.promote.outputs.promoted == 'true'");
+		const stable = job("release-pages-stable");
+		expect(stable).toContain("needs.release-pages.outputs.promoted == 'true'");
+		expect(stable).toContain("name: hobo-release-freight-pages");
+		expect(stable).toContain("deploy-site.mts --stable-only");
+		expect(stable).not.toContain("--candidate-only");
+		expect(stable).toContain("--require-deployed-head");
+		expect(stable.indexOf("--require-deployed-head")).toBeLessThan(
+			stable.indexOf("deploy-site.mts --stable-only"),
+		);
+		expect(stable).toContain("group: hobo-release-pages");
+		expect(stable).toContain("Link deps layer or install");
+		expect(stable).not.toContain("ci-deps-recovery");
 	});
 
 	it("records the commit it built, not the branch tip the event fired on", () => {
@@ -439,7 +563,7 @@ describe("release-hobo pages jobs", () => {
 		// commit checked out and built here.
 		const pages = job("release-pages");
 		const step = pages.slice(
-			pages.indexOf("Record, promote and publish the Pages site"),
+			pages.indexOf("Record and promote the Pages candidate"),
 		);
 		expect(step).toContain(
 			"HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}",
@@ -468,7 +592,11 @@ describe("release-hobo pages jobs", () => {
 	});
 
 	it("lists its own script and library among the release paths", () => {
-		expect(filters).toContain("scripts/lib/release-pages-stale.mts");
-		expect(filters).toContain("scripts/test/release-pages-stale.test.ts");
+		expect(loadReleaseHoboPullRequestPathFilters(root)).toContain(
+			"scripts/lib/release-pages-stale.mts",
+		);
+		expect(loadReleaseHoboPullRequestPathFilters(root)).toContain(
+			"scripts/test/release-pages-stale.test.ts",
+		);
 	});
 });

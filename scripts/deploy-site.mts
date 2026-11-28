@@ -43,6 +43,7 @@ import {
 	qualifyReleaseCandidate,
 	RELEASE_PROMOTION_TIMEOUT,
 	type ReleaseCdSeams,
+	type ReleasePagesWall,
 	releaseChannelVerdict,
 	releaseSource,
 	siteTree,
@@ -138,14 +139,17 @@ function build(): void {
 	}
 }
 
-export async function qualifySiteRelease(input: {
+type SiteReleaseInput = {
 	readonly dist: string;
 	readonly home: string;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	readonly seams?: ReleaseCdSeams;
-}): Promise<void> {
+	readonly wall?: ReleasePagesWall;
+};
+
+async function recordSiteCandidate(input: SiteReleaseInput): Promise<void> {
 	const env = input.env ?? process.env;
-	const wall = startReleasePagesWall(env);
+	const wall = input.wall ?? startReleasePagesWall(env);
 	const tree = siteTree(input.dist);
 	if (tree.files.length === 0)
 		throw new Error(`${input.dist} holds no files to publish`);
@@ -169,12 +173,90 @@ export async function qualifySiteRelease(input: {
 		},
 		...(input.seams ? { seams: input.seams } : undefined),
 	});
+}
+
+async function promoteRecordedSiteStable(input: {
+	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly seams?: ReleaseCdSeams;
+	readonly wall?: ReleasePagesWall;
+}): Promise<void> {
+	const env = input.env ?? process.env;
+	const wall = input.wall ?? startReleasePagesWall(env);
 	if (!(await promoteReleaseStable(input.home, env, input.seams, wall))) {
 		const stable = releaseChannelVerdict(input.home, "pages", "stable");
 		throw new Error(
 			`release Freight pages blocked at hobo-release/pages-stable${stable ? `: ${stable.codes.join(", ")}` : ""}`,
 		);
 	}
+}
+
+export async function qualifySiteCandidate(
+	input: SiteReleaseInput,
+): Promise<void> {
+	await recordSiteCandidate(input);
+}
+
+export async function promoteSiteStable(input: {
+	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly seams?: ReleaseCdSeams;
+}): Promise<void> {
+	await promoteRecordedSiteStable(input);
+}
+
+export async function qualifySiteRelease(input: {
+	readonly dist: string;
+	readonly home: string;
+	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly seams?: ReleaseCdSeams;
+}): Promise<void> {
+	const env = input.env ?? process.env;
+	const wall = startReleasePagesWall(env);
+	await recordSiteCandidate({ ...input, env, wall });
+	await promoteRecordedSiteStable({
+		home: input.home,
+		env,
+		...(input.seams ? { seams: input.seams } : undefined),
+		wall,
+	});
+}
+
+export type DeploySiteArgs =
+	| { readonly mode: "build" }
+	| {
+			readonly mode: "freight";
+			readonly dist: string;
+			readonly candidateOnly: boolean;
+	  }
+	| { readonly mode: "stable" };
+
+export function parseDeploySiteArgs(argv: readonly string[]): DeploySiteArgs {
+	const candidateOnly = argv.includes("--candidate-only");
+	const stableOnly = argv.includes("--stable-only");
+	if (candidateOnly && stableOnly) {
+		throw new Error("--candidate-only and --stable-only cannot be combined");
+	}
+	const at = argv.indexOf("--release-freight");
+	if (stableOnly) {
+		if (at !== -1) {
+			throw new Error(
+				"--stable-only promotes the recorded Freight; it does not take --release-freight",
+			);
+		}
+		return { mode: "stable" };
+	}
+	if (candidateOnly && at === -1) {
+		throw new Error("--candidate-only requires --release-freight <dir>");
+	}
+	if (at !== -1) {
+		const dist = argv[at + 1];
+		if (!dist || dist.startsWith("--")) {
+			throw new Error("--release-freight needs the built site directory");
+		}
+		return { mode: "freight", dist, candidateOnly };
+	}
+	return { mode: "build" };
 }
 
 function releaseCdHome(): string {
@@ -258,12 +340,16 @@ async function publish(sha: string): Promise<void> {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
 	try {
-		const at = process.argv.indexOf("--release-freight");
-		if (at !== -1) {
-			const dist = process.argv[at + 1];
-			if (!dist)
-				throw new Error("--release-freight needs the built site directory");
-			await qualifySiteRelease({ dist: resolve(dist), home: releaseCdHome() });
+		const args = parseDeploySiteArgs(process.argv.slice(2));
+		if (args.mode === "stable") {
+			await promoteSiteStable({ home: releaseCdHome() });
+		} else if (args.mode === "freight") {
+			const dist = resolve(args.dist);
+			if (args.candidateOnly) {
+				await qualifySiteCandidate({ dist, home: releaseCdHome() });
+			} else {
+				await qualifySiteRelease({ dist, home: releaseCdHome() });
+			}
 		} else {
 			const sha = assertClean();
 			build();

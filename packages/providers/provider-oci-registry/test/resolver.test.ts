@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
 	OCI_REGISTRY_IMAGE_PRODUCT_ID,
 	type OciRegistryCredential,
+	OciRegistryRefusal,
 	type OciRegistryResolverOptions,
 	ociRegistryResolverRegistry,
 	type ResolverMetricPoint,
@@ -350,6 +351,331 @@ describe("converge: copy from a source registry", () => {
 		).toBe(true);
 	});
 
+	it("resumes a blob upload after a recoverable registry range response", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let rejected = false;
+		let statusRead = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				!rejected &&
+				req.method === "PATCH" &&
+				req.headers["content-range"] === "1000-1999"
+			) {
+				rejected = true;
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (
+				rejected &&
+				!statusRead &&
+				req.method === "GET" &&
+				req.url.includes("/blobs/uploads/")
+			) {
+				statusRead = true;
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-999" },
+					body: "",
+				};
+			}
+			return w.transport(req);
+		};
+		const result = await resolverOf({ chunkBytes: 1000 }).reconcile(
+			request(fixture),
+			transport,
+		);
+		expect(statusRead).toBe(true);
+		expect(result.outputs.ready).toBe(true);
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(true);
+	});
+
+	it("continues after the registry reports the rejected chunk already received", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let rejected = false;
+		let statusRead = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				!rejected &&
+				req.method === "PATCH" &&
+				req.headers["content-range"] === "1000-1999"
+			) {
+				rejected = true;
+				await w.transport(req);
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (
+				rejected &&
+				!statusRead &&
+				req.method === "GET" &&
+				req.url.includes("/blobs/uploads/")
+			) {
+				statusRead = true;
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-1999" },
+					body: "",
+				};
+			}
+			return w.transport(req);
+		};
+		const result = await resolverOf({ chunkBytes: 1000 }).reconcile(
+			request(fixture),
+			transport,
+		);
+		expect(statusRead).toBe(true);
+		expect(result.outputs.ready).toBe(true);
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(true);
+	});
+
+	it("rejects malformed or impossible upload offsets after a range response", async () => {
+		for (const range of [
+			"",
+			"1-999",
+			"0-2499",
+			"0-999999",
+			"0-9007199254740992",
+		]) {
+			const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+			const w = world();
+			seedImage(w, SOURCE, "ci/app", fixture);
+			let rejected = false;
+			const transport: HttpTransport = async (req) => {
+				if (
+					!rejected &&
+					req.method === "PATCH" &&
+					req.headers["content-range"] === "1000-1999"
+				) {
+					rejected = true;
+					return { status: 416, headers: {}, body: "" };
+				}
+				if (
+					rejected &&
+					req.method === "GET" &&
+					req.url.includes("/blobs/uploads/")
+				)
+					return {
+						status: 204,
+						headers: { location: req.url, range },
+						body: "",
+					};
+				return w.transport(req);
+			};
+			await expect(
+				resolverOf({ chunkBytes: 1000 }).reconcile(request(fixture), transport),
+			).rejects.toThrow(/invalid Range/u);
+			expect(
+				w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+			).toBe(false);
+		}
+	});
+
+	it("falls back to a fresh monolithic upload when range recovery is exhausted", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 1500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let lookups = 0;
+		let monolithic = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				req.method === "PATCH" &&
+				req.headers["content-range"] === "1000-1499"
+			)
+				return { status: 416, headers: {}, body: "" };
+			if (req.method === "GET" && req.url.includes("/blobs/uploads/")) {
+				lookups++;
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-999" },
+					body: "",
+				};
+			}
+			if (
+				req.method === "PUT" &&
+				req.url.includes("/blobs/uploads/") &&
+				req.headers["content-length"] !== "0"
+			) {
+				monolithic = true;
+			}
+			return w.transport(req);
+		};
+		const result = await resolverOf({ chunkBytes: 1000 }).reconcile(
+			request(fixture),
+			transport,
+		);
+		expect(result.outputs.ready).toBe(true);
+		expect(lookups).toBe(3);
+		expect(monolithic).toBe(true);
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(true);
+	});
+
+	it("restarts a large upload without sending the whole blob in one request", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 3500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let rejectedSession: string | undefined;
+		let oversized = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				req.method === "PATCH" &&
+				(rejectedSession === undefined || req.url === rejectedSession)
+			) {
+				rejectedSession = req.url;
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (req.method === "GET" && req.url === rejectedSession)
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-0" },
+					body: "",
+				};
+			if (
+				req.method === "PUT" &&
+				req.url.includes("/blobs/uploads/") &&
+				Number(req.headers["content-length"]) > 2000
+			) {
+				oversized = true;
+				return { status: 413, headers: {}, body: "" };
+			}
+			return w.transport(req);
+		};
+		const result = await resolverOf({ chunkBytes: 1000 }).reconcile(
+			request(fixture),
+			transport,
+		);
+		expect(rejectedSession).toBeDefined();
+		expect(oversized).toBe(false);
+		expect(result.outputs.ready).toBe(true);
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(true);
+	});
+
+	it("stops when the fresh chunked upload also has a range conflict", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 3500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let patches = 0;
+		let lookups = 0;
+		let restarts = 0;
+		const transport: HttpTransport = async (req) => {
+			if (req.method === "PATCH") {
+				patches++;
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (req.method === "GET" && req.url.includes("/blobs/uploads/")) {
+				lookups++;
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-0" },
+					body: "",
+				};
+			}
+			if (
+				patches > 0 &&
+				req.method === "POST" &&
+				req.url.includes("/blobs/uploads/")
+			)
+				restarts++;
+			return w.transport(req);
+		};
+		await expect(
+			resolverOf({ chunkBytes: 1000 }).reconcile(request(fixture), transport),
+		).rejects.toThrow(/HTTP 416/u);
+		expect({ patches, lookups, restarts }).toEqual({
+			patches: 5,
+			lookups: 3,
+			restarts: 1,
+		});
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(false);
+	});
+
+	it("does not publish a blob when a reported offset skips bytes", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let rejected = false;
+		let statusRead = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				!rejected &&
+				req.method === "PATCH" &&
+				req.headers["content-range"] === "1000-1999"
+			) {
+				rejected = true;
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (
+				rejected &&
+				!statusRead &&
+				req.method === "GET" &&
+				req.url.includes("/blobs/uploads/")
+			) {
+				statusRead = true;
+				return {
+					status: 204,
+					headers: { location: req.url, range: "0-1499" },
+					body: "",
+				};
+			}
+			return w.transport(req);
+		};
+		await expect(
+			resolverOf({ chunkBytes: 1000 }).reconcile(request(fixture), transport),
+		).rejects.toThrow();
+		expect(statusRead).toBe(true);
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(false);
+	});
+
+	it("refuses an upload status location outside the registry", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = world();
+		seedImage(w, SOURCE, "ci/app", fixture);
+		let rejected = false;
+		const transport: HttpTransport = async (req) => {
+			if (
+				!rejected &&
+				req.method === "PATCH" &&
+				req.headers["content-range"] === "1000-1999"
+			) {
+				rejected = true;
+				return { status: 416, headers: {}, body: "" };
+			}
+			if (
+				rejected &&
+				req.method === "GET" &&
+				req.url.includes("/blobs/uploads/")
+			)
+				return {
+					status: 204,
+					headers: {
+						location: "https://other.test/v2/team/app/blobs/uploads/x",
+						range: "0-999",
+					},
+					body: "",
+				};
+			return w.transport(req);
+		};
+		await expect(
+			resolverOf({ chunkBytes: 1000 }).reconcile(request(fixture), transport),
+		).rejects.toThrow();
+		expect(
+			w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? ""),
+		).toBe(false);
+	});
+
 	it("copies an index: every child manifest and its blobs before the index itself", async () => {
 		const amd = image({ platform: "amd64", binary: true });
 		const arm = image({ platform: "arm64", binary: true });
@@ -628,6 +954,25 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 			expect(error.code).toBe("RESOLVER_PROVIDER_REJECTED");
 			expect(error.message).toMatch(pattern);
 			expect(error.message).not.toContain(secret);
+			expect(error).toBeInstanceOf(OciRegistryRefusal);
+			if (!(error instanceof OciRegistryRefusal))
+				throw new Error("expected oci refusal");
+			const pathRefusal =
+				name === "another repository" ||
+				name === "dot segments" ||
+				name === "an encoded slash in the session id";
+			expect(error.reason).toBe(
+				pathRefusal ? "oci-upload-path" : "oci-upload-foreign-host",
+			);
+			expect(error.scopePayload).toBe(
+				pathRefusal ? "blob-upload-path" : "foreign-host",
+			);
+			expect(error.scopePayload).not.toContain("/");
+			expect(error.scopePayload).not.toContain("?");
+			expect(error.scopePayload).not.toContain("@");
+			expect(error.scopePayload).not.toContain("_state");
+			expect(error.message).not.toContain("_state");
+			expect(error.message).not.toContain("blobs/uploads");
 			for (const call of w.calls) {
 				const hostname = new URL(call.url).hostname;
 				expect(hostname).not.toBe(FOREIGN);
@@ -635,6 +980,20 @@ describe("upload session Location (GHCR and foreign hosts)", () => {
 					expect(credentialHosts.has(hostname)).toBe(true);
 			}
 		});
+
+	it("does not retain an untrusted upload host in the refusal", async () => {
+		const host = `${randomUUID().replaceAll("-", "")}.example.test`;
+		const fixture = image({ platform: "amd64", binary: true });
+		const w = locationWorld({ kind: "foreign", host }, [{ host }]);
+		const error = await rejection(
+			resolverFor(fixture).reconcile(storeRequest(fixture), w.transport),
+		);
+		expect(error).toMatchObject({
+			reason: "oci-upload-foreign-host",
+			scopePayload: "foreign-host",
+		});
+		expect(JSON.stringify(error)).not.toContain(host);
+	});
 });
 
 describe("converge: body encoding honesty", () => {

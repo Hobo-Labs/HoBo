@@ -175,6 +175,7 @@ unindexed new finding files as notices.
 - [Finding 167: PR batches diverted to a cold trunk pool](./findings/0167-pr-batches-diverted-to-a-cold-trunk-pool.md)
 - [Finding 168: a lockfile change rebuilt every package](./findings/0168-a-lockfile-change-rebuilt-every-package.md)
 - [Finding 169: state-machine verification ran on every change](./findings/0169-state-machine-verification-ran-on-every-change.md)
+- [Finding 171: release rebuilt tested images and waited on runner capacity](./findings/0171-release-rebuilt-tested-images-and-waited-on-runner-capacity.md)
 <!-- findings-index:end -->
 
 ## Data

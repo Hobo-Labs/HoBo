@@ -2,6 +2,7 @@ name: HoBo Pricing CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
@@ -75,6 +76,7 @@ env:
 jobs:
   route:
     name: Route runners
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
     # it is choosing against. The fleet while it takes jobs, an enrolled local
     # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
@@ -126,11 +128,22 @@ jobs:
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          submodules: recursive
           clean: false
+          fetch-depth: 1
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-repo-checkout
+        with:
+          bootstrap-composite-actions: "false"
+          submodules: recursive
           fetch-depth: 0
+          marker: |
+            scripts/ci-runner-preflight.mts
+            .mise/locks/turbo/2.11.10/aube-lock.yaml
+            .mise/locks/turbo/2.11.10/package.json
       - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
@@ -179,11 +192,39 @@ jobs:
         with:
           mode: save
 
+  aws-emulator:
+    name: Alchemy AWS simulator and budget routing
+    needs: route
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          persist-credentials: false
+          clean: false
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Fetch pinned ts-autocode
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build simulator test dependencies
+        run: |
+          pnpm exec turbo run build \
+            --filter=@hobo/iac-alchemy \
+            --filter=@hobo/pricing \
+            --filter=@hobo/broker \
+            --filter=@hobo/dispatcher \
+            --filter=@hobo/bindles \
+            --concurrency=1
+      - name: Exercise mapped resources and budget routing in AWS emulators
+        run: pnpm --filter @hobo/iac-alchemy run test:aws-emulator
+
   pricing-models:
     name: Check bounded IaC budget, routing, grant and pricing models
     needs: route
     runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -209,7 +250,11 @@ jobs:
           JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=2
         run: |
           node --experimental-strip-types scripts/check-iac-models.ts
+          node --experimental-strip-types packages/iac/iac-alchemy/model/check-aws-vite.mts
           node --experimental-strip-types scripts/check-durable-topic-model.ts
+          node --experimental-strip-types packages/runtime/model/check-topic-policy.mts
+          node --experimental-strip-types packages/runtime/model/check-topic-provisioning.mts
+          node --experimental-strip-types packages/extension-alchemy-rivet/model/check-bindle-topic-mapping.mts
           node --experimental-strip-types packages/core/model/check-messaging-settlement.mts
           node --experimental-strip-types packages/core/model/check-messaging-exhaustion.mts
           node --experimental-strip-types packages/iac/iac-alchemy/model/check-rivet-queue.mts

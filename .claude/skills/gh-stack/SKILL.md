@@ -34,8 +34,8 @@ main (trunk)
 Bottom = closest to trunk. `up` moves away from trunk; `down` toward it.
 
 In HoBo, layers organize commits and checkins; the stack lands as **one unit**. Open one PR for
-the top layer against `main` (ready for review, not a draft), review its combined diff once,
-and land it with a merge commit. Lower layers are then merged automatically because their
+the top layer against `main`, review and validate its combined diff locally while it is a draft,
+then mark it ready for GitHub Actions and land it with a merge commit only after checks pass. Lower layers are then merged automatically because their
 commits are in `main`. Do not open a PR per layer.
 
 ## Non-interactive rules (never hang)

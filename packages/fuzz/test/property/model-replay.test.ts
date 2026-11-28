@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { dockerAvailable, schemathesisAvailable } from "../../src/env.js";
-import { ALL_VERBS, ControlModel } from "../../src/model.js";
+import { ALL_VERBS, ControlModel, type Verb } from "../../src/model.js";
 
 const TENANT = "t1";
 
@@ -252,34 +252,102 @@ describe("apply idempotency", () => {
 	});
 });
 
-describe("verb vocabulary asymmetry", () => {
-	it("stores an out-of-vocabulary verb live but drops it on replay", () => {
-		// Pinning an asymmetry rather than changing it. `addCapability` stores
-		// whatever verb list it is handed — the `Verb` union is compile-time
-		// only, with no runtime check — while `parseVerbs` on the replay path
-		// filters to `ALL_VERBS`. So a verb outside the vocabulary makes the
-		// model diverge from *itself*, which is the one thing the replay
-		// property cannot tolerate.
-		//
-		// A TypeScript caller cannot reach this, which is why it is documented
-		// rather than fixed: adding a runtime filter to `addCapability` would
-		// change what the fuzz harness observes under generated commands, and
-		// that is a call for whoever owns the harness. If the command generator
-		// ever widens beyond `ALL_VERBS`, this test is the one that explains
-		// the resulting false positive.
+describe("capability vocabulary", () => {
+	it("rejects invalid verbs without changing state or recording an event", () => {
 		const model = new ControlModel();
-		// SAFETY: this test deliberately supplies an out-of-vocabulary verb.
-		model.addCapability(TENANT, "c1", ["read", "admin"] as never);
-		expect(model.fingerprint()).toContain("admin");
-		expect(model.replay()).not.toContain("admin");
-		expect(model.replay()).not.toBe(model.fingerprint());
+		const invalid = JSON.parse('["read","admin"]');
+		const before = model.serialize();
+		expect(() => model.addCapability(TENANT, "c1", invalid)).toThrow(
+			"invalid capability verb",
+		);
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual([]);
+		expect(model.replay()).toBe(model.fingerprint());
 	});
 
-	it("stays consistent for every verb in the vocabulary", () => {
+	it("does not retain the caller's mutable verb array", () => {
+		const model = new ControlModel();
+		const verbs: Verb[] = ["read"];
+		model.addCapability(TENANT, "c1", verbs);
+		verbs.push("write");
+		expect(model.capabilities.get("c1")?.verbs).toEqual(["read"]);
+		expect(model.replay()).toBe(model.fingerprint());
+	});
+
+	it("rejects invalid verbs before a cross-tenant refusal changes history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read"]);
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		expect(() =>
+			model.addCapability("other", "c1", JSON.parse('["admin"]')),
+		).toThrow("invalid capability verb");
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual(events);
+	});
+
+	it("rejects invalid attenuation without changing state or history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read", "write"]);
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		for (const [tenant, capability] of [
+			[TENANT, "c1"],
+			["other", "c1"],
+			[TENANT, "missing"],
+		] as const) {
+			expect(() =>
+				model.attenuate(tenant, capability, JSON.parse('["read", "admin"]')),
+			).toThrow("invalid capability verb");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(events);
+		}
+	});
+
+	it("rejects sparse verb arrays without changing state or history", () => {
+		const model = new ControlModel();
+		const verbs: Verb[] = [];
+		verbs.length = 2;
+		verbs[1] = "read";
+		const before = model.serialize();
+		expect(() => model.addCapability(TENANT, "c1", verbs)).toThrow(
+			"invalid capability verb",
+		);
+		expect(() => model.attenuate(TENANT, "missing", verbs)).toThrow(
+			"invalid capability verb",
+		);
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual([]);
+	});
+
+	it("rejects capability events that omit their verb list", () => {
+		for (const kind of ["capability.added", "capability.attenuated"] as const) {
+			const model = new ControlModel();
+			model.addCapability(TENANT, "c1", ["read"]);
+			if (kind === "capability.attenuated") model.attenuate(TENANT, "c1", []);
+			const index = model.events.findIndex((event) => event.kind === kind);
+			const event = model.events[index];
+			if (!event) throw new Error("missing capability event");
+			model.events[index] = { ...event, payload: { capabilityId: "c1" } };
+			expect(() => model.replay()).toThrow("missing capability verbs");
+		}
+	});
+
+	it("rejects invalid verbs in recorded history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read"]);
+		const event = model.events[0];
+		if (!event) throw new Error("missing capability event");
+		model.events[0] = {
+			...event,
+			payload: { ...event.payload, verbs: "read,admin" },
+		};
+		expect(() => model.replay()).toThrow("invalid capability verb");
+	});
+
+	it("round-trips every valid verb", () => {
 		const model = new ControlModel();
 		model.addCapability(TENANT, "c1", [...ALL_VERBS]);
-		// The whole declared vocabulary round-trips, so the asymmetry above is
-		// confined to values the type system already forbids.
 		expect(model.replay()).toBe(model.fingerprint());
 	});
 });

@@ -116,6 +116,8 @@
 		"esbuild": "^0.25.0",
 		"tar-stream": "3.1.7",
 		"tsx": "4.22.4",
+		"typescript": "^5.9.3",
+		"typescript-patterns": "npm:typescript@6.0.3",
 		"zod": "^4.1.13"
 	},
 	"devDependencies": {
@@ -128,9 +130,13 @@
 		"@hobo/provider-agent37": "workspace:*",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
+		"@modelcontextprotocol/client": "2.4.0",
+		"@modelcontextprotocol/ext-apps": "2.0.4",
+		"@types/jsdom": "21.1.7",
 		"@types/pg": "8.15.5",
 		"@types/tar-stream": "3.1.5",
 		"fast-check": "^4.3.0",
+		"jsdom": "26.1.0",
 		"pg": "8.22.0",
 		"undici": "7.29.0"
 	},
