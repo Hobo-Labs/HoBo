@@ -1052,6 +1052,8 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				value: { idempotencyKey: "app-job" },
 			});
 			expect(retained).toBeDefined();
+			expect(retained).not.toHaveProperty("redriveExhausted");
+			expect(retained).not.toHaveProperty("reclaimCompleted");
 			expect(
 				await retained?.enqueue({
 					operation: { id: "v1.10000.abcdefghijklmn07", expiresAtMs: 10000 },
@@ -1091,6 +1093,52 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 					},
 				}),
 			).toMatchObject({ status: "committed", value: { messageId: "m3" } });
+			const appDelivery = {
+				operation: { id: "v1.20000.abcdefghijklmn09", expiresAtMs: 20000 },
+				maxMessages: 1,
+				visibilityTimeoutMs: 10,
+			};
+			expect(await afterReclamation.dequeue(appDelivery)).toMatchObject({
+				status: "committed",
+				value: [{ messageId: "m2", deliveryAttempt: 1 }],
+			});
+			clock = 10010;
+			expect(
+				await afterReclamation.dequeue({
+					...appDelivery,
+					operation: { id: "v1.20000.abcdefghijklmn10", expiresAtMs: 20000 },
+				}),
+			).toMatchObject({
+				status: "committed",
+				value: [{ messageId: "m2", deliveryAttempt: 2 }],
+			});
+			clock = 20000;
+			const redrive = {
+				operation: { id: "v1.30000.abcdefghijklmn11", expiresAtMs: 30000 },
+				messageId: "m2",
+			};
+			expect(await afterReclamation.redriveExhausted(redrive)).toMatchObject({
+				status: "committed",
+				value: { messageId: "m2" },
+			});
+			const afterRedrive = createAtomicDurableQueue({
+				store: atomic,
+				limits: bounds,
+				now,
+			});
+			expect(await afterRedrive.redriveExhausted(redrive)).toMatchObject({
+				status: "committed",
+				value: { messageId: "m2" },
+			});
+			expect(
+				await afterRedrive.dequeue({
+					...appDelivery,
+					operation: { id: "v1.30000.abcdefghijklmn12", expiresAtMs: 30000 },
+				}),
+			).toMatchObject({
+				status: "committed",
+				value: [{ messageId: "m2", deliveryAttempt: 1 }],
+			});
 		},
 		30000,
 	);

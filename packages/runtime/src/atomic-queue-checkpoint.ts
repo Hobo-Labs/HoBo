@@ -117,7 +117,10 @@ export function resultVector(receipt: AtomicQueueReceipt): unknown[] {
 		if (!("body" in value)) return invalid();
 		return vector(["x", deliveryVector(value)]);
 	}
-	if (receipt.request.kind === "enqueue") {
+	if (
+		receipt.request.kind === "enqueue" ||
+		receipt.request.kind === "redrive"
+	) {
 		if (!("idempotencyKey" in value) || "body" in value) return invalid();
 		return vector(["e", value.messageId, value.idempotencyKey]);
 	}
@@ -145,7 +148,11 @@ function decodeResult(
 	let response: object;
 	if (raw[0] === "r" && raw.length === 2)
 		response = { status: "rejected", code: raw[1] };
-	else if (raw[0] === "e" && raw.length === 3 && request.kind === "enqueue")
+	else if (
+		raw[0] === "e" &&
+		raw.length === 3 &&
+		(request.kind === "enqueue" || request.kind === "redrive")
+	)
 		response = {
 			status: "committed",
 			value: { messageId: raw[1], idempotencyKey: raw[2] },
@@ -169,24 +176,29 @@ function decodeResult(
 		response = { status: "committed", value: deliveries };
 	} else return invalid();
 	const expected =
-		request.kind === "enqueue"
+		request.kind === "redrive"
 			? {
 					kind: "enqueue" as const,
-					idempotencyKey: request.input.message.idempotencyKey,
+					idempotencyKey: typeof raw[2] === "string" ? raw[2] : "",
 				}
-			: request.kind === "dequeue"
-				? { kind: "dequeue" as const, maxMessages: request.input.maxMessages }
-				: request.kind === "extendLease"
-					? {
-							kind: "extension" as const,
-							messageId: request.input.messageId,
-							leaseId: request.input.leaseId,
-						}
-					: {
-							kind: "settlement" as const,
-							messageId: request.input.messageId,
-							leaseId: request.input.leaseId,
-						};
+			: request.kind === "enqueue"
+				? {
+						kind: "enqueue" as const,
+						idempotencyKey: request.input.message.idempotencyKey,
+					}
+				: request.kind === "dequeue"
+					? { kind: "dequeue" as const, maxMessages: request.input.maxMessages }
+					: request.kind === "extendLease"
+						? {
+								kind: "extension" as const,
+								messageId: request.input.messageId,
+								leaseId: request.input.leaseId,
+							}
+						: {
+								kind: "settlement" as const,
+								messageId: request.input.messageId,
+								leaseId: request.input.leaseId,
+							};
 	const result = parseQueueProviderOutcome(
 		response,
 		request.input.operation,
@@ -252,6 +264,18 @@ function validateReceipt(
 ): void {
 	if (result.status === "rejected") return;
 	const value = result.value;
+	if (request.kind === "redrive") {
+		if (
+			!("messageId" in value) ||
+			!("idempotencyKey" in value) ||
+			"body" in value ||
+			value.messageId !== request.input.messageId
+		)
+			invalid();
+		const message = matchMessage(value.messageId, messages);
+		if (value.idempotencyKey !== message.idempotencyKey) invalid();
+		return;
+	}
 	if (request.kind === "enqueue") {
 		if (
 			!("messageId" in value) ||

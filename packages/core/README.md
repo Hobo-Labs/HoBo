@@ -230,3 +230,8 @@ stateDiagram-v2
 The bounded `QueueReclamation` model checks that completed-message reclamation
 preserves live receipt references and never reuses a message identity. Reclamation
 requires an unchanged store revision; the model abstracts payloads and storage.
+
+The bounded `QueueRedrive` model checks one-effect replay, live-lease and
+receipt fencing, and stale compare-and-swap. Mutations independently test the
+lease, receipt and revision guards. It abstracts provider storage and
+does not prove the queue implementation or external host authorization.
