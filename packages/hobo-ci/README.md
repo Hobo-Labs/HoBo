@@ -68,8 +68,11 @@ in memory only. Nothing is stored in the agent's session or environment.
 When HoBo provisions its own Infisical access, it checks the project the
 locator names and uses it only if it is a Secrets Management project. Otherwise
 it uses the organization's only Secrets Management project, or the one named
-`hobo`, or creates `hobo`; several projects with none named `hobo` refuse with
-`HOBO_<FAMILY>_INFISICAL_PROJECT_AMBIGUOUS`, naming them. The environment is
+`hobo`, or creates `hobo`. When several projects have none named `hobo`, an
+owner channel that shows forms (the HoBo MCP server) asks the owner to pick one
+by name; without that form, or when the owner declines or two projects share a
+name, the run refuses with `HOBO_<FAMILY>_INFISICAL_PROJECT_AMBIGUOUS`, naming
+them. The environment is
 `INFISICAL_ENVIRONMENT` (default `prod`) when the project has it, else the
 first of `production`, `prod`, `staging` and `dev`, else a `prod` environment
 HoBo creates. The resolved project and environment are written back to the

@@ -373,6 +373,18 @@ export async function provisionInfisicalAccess(
 				),
 			);
 			project = candidates.length === 1 ? candidates[0] : named[0];
+			if (project === undefined && candidates.length > 1) {
+				const names = candidates.map((candidate) => candidate.name);
+				const picked =
+					new Set(names).size === names.length
+						? await options.owner?.choose?.({
+								title: "Infisical project",
+								message: `Your Infisical organization has several Secrets Management projects and none is named ${HOBO_PROJECT}. Choose the one HoBo should keep this ${options.family.toUpperCase()} project's secrets in.`,
+								options: names,
+							})
+						: undefined;
+				project = candidates.find((candidate) => candidate.name === picked);
+			}
 			if (project === undefined && candidates.length > 1)
 				return refused(
 					"PROJECT_AMBIGUOUS",

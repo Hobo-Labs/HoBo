@@ -243,6 +243,34 @@ describe("every elicitation/create form HoBo sends conforms to MCP 2025-11-25", 
 		expectConformant(sent);
 	});
 
+	it("asks the owner to choose among named options in a conformant form", async () => {
+		const sent: JsonObject[] = [];
+		const owner = createMcpOwnerChannel({
+			form: async (params) => {
+				sent.push(params);
+				return { action: "accept", content: { choice: "payments" } };
+			},
+		});
+		const request = {
+			title: "Infisical project",
+			message: "Choose the project HoBo should use.",
+			options: ["billing", "payments"],
+		};
+		expect(await owner.choose?.(request)).toBe("payments");
+		expectConformant(sent);
+		expect(
+			await createMcpOwnerChannel({
+				form: async () => ({ action: "decline" }),
+			}).choose?.(request),
+		).toBeNull();
+		expect(
+			await createMcpOwnerChannel({
+				form: async () => ({ action: "accept", content: { choice: "other" } }),
+			}).choose?.(request),
+		).toBeNull();
+		expect(await createMcpOwnerChannel({}).choose?.(request)).toBeUndefined();
+	});
+
 	it("captures each owner value in a conformant form, with and without its link", async () => {
 		const sent: JsonObject[] = [];
 		const owner = createMcpOwnerChannel();

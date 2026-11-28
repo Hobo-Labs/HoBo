@@ -31,6 +31,11 @@ const Accepted = z.object({
 	content: z.object({ done: z.literal(true) }).loose(),
 });
 
+const Chosen = z.object({
+	action: z.literal("accept"),
+	content: z.object({ choice: z.string() }).loose(),
+});
+
 /**
  * The owner channel of a ceremony run through the HoBo MCP server (an agent
  * on a remote dev box). The server lives across the agent's tool calls, so a
@@ -124,6 +129,24 @@ export function createMcpOwnerChannel(
 			});
 			if (answer === undefined) return undefined;
 			return Accepted.safeParse(await answer).success;
+		},
+		async choose({ message, title, options: choices }) {
+			const answer = options.form?.({
+				mode: "form",
+				message,
+				requestedSchema: {
+					type: "object",
+					properties: {
+						choice: { type: "string", title, enum: [...choices] },
+					},
+					required: ["choice"],
+				},
+			});
+			if (answer === undefined) return undefined;
+			const chosen = Chosen.safeParse(await answer);
+			return chosen.success && choices.includes(chosen.data.content.choice)
+				? chosen.data.content.choice
+				: null;
 		},
 		// Steps that wait on the owner run here, off the request path, for as
 		// long as this server lives; when one ends, the prompt it showed is

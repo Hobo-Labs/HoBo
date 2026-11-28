@@ -18,6 +18,11 @@ export interface OwnerChannel {
 	}): Promise<string | undefined>;
 	/** Whether a value the owner handed over is waiting, without taking it. */
 	holds(name: string): boolean;
+	choose?(request: {
+		readonly message: string;
+		readonly title: string;
+		readonly options: readonly string[];
+	}): Promise<string | null | undefined>;
 	/**
 	 * Show the owner a link now, while the run waits on what they do there (a
 	 * device code to approve). Through the HoBo MCP server: the host's own
