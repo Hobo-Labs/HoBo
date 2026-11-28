@@ -153,7 +153,8 @@ All state comes from one catch-up projection over these events:
 is rebuilt from the journal on start, so
 replay equals live (I8). New promotion and fan-out requests persist their
 manual or automatic mode in event metadata; older requests use the documented
-pipeline-generated idempotency keys to identify automatic work. Promotion
+pipeline-generated idempotency keys, or `failover:<id>:promote` and
+`failover:<id>:purge`, to identify automatic work. Promotion
 bodies, which WP6 owns, are decoded as `PromotionRecord`.
 
 ## Metrics

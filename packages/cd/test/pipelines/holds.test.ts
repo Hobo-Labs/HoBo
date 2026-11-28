@@ -18,6 +18,55 @@ import { PIPELINE_METRIC, pipelineKey } from "../../src/pipelines/index.js";
 import { camp, fid, HOUR, MINUTE, T0 } from "./fakes.js";
 import { harness, node, pipeline } from "./harness.js";
 
+async function seedManualFanout(
+	h: ReturnType<typeof harness>,
+	fanoutId: string,
+	freightId: string,
+): Promise<void> {
+	await h.store.seed(
+		CD_STREAMS.fanout(fanoutId),
+		CD_EVENTS.FanoutStarted,
+		startedBody({
+			fanoutId,
+			pipeline: "shop",
+			node: "dev",
+			freightId,
+			decision: create(PlacementDecisionRecordSchema),
+			fanout: create(FanoutRecordSchema),
+			departure: DepartureAction.UNSPECIFIED,
+			windows: [],
+			idempotencyKey: fanoutId,
+			departing: [],
+			atMs: T0,
+		}),
+		undefined,
+		{ promotionRequestMode: "manual" },
+	);
+}
+
+async function seedFanoutCompleted(
+	h: ReturnType<typeof harness>,
+	fanoutId: string,
+	freightId: string,
+): Promise<void> {
+	await h.store.seed(
+		CD_STREAMS.fanout(fanoutId),
+		CD_EVENTS.FanoutCompleted,
+		statusBody({
+			atMs: T0,
+			campIds: [],
+			reasons: [],
+			status: create(FanoutStatusRecordSchema, {
+				fanoutId,
+				pipeline: "shop",
+				node: "dev",
+				freightId,
+				state: FanoutState.COMPLETED,
+			}),
+		}),
+	);
+}
+
 describe("auto-promotion holds", () => {
 	it("does not retain a manual hold after its promotion has already completed", async () => {
 		const h = harness();
@@ -107,6 +156,48 @@ describe("auto-promotion holds", () => {
 		await replayed.tick(h.ctx);
 		expect(await replayed.autoPromotionHolds()).toEqual([]);
 		expect(h.promotions.requests.map((r) => r.freightId)).toContain("f2");
+	});
+
+	it("recognizes pre-upgrade failover requests as automatic during replay", async () => {
+		for (const idempotencyKey of [
+			"failover:fo-1:promote",
+			"failover:fo-1:purge",
+		]) {
+			const h = harness();
+			await h.source("images");
+			await h.controller.apply(
+				pipeline("shop", [
+					node("dev", {
+						campIds: ["dev-1"],
+						fromSources: ["images"],
+						autoPromotion: AutoPromotion.NEWEST,
+					}),
+				]),
+				h.ctx,
+			);
+			h.ledger.add("f1", T0 - 2 * HOUR);
+			h.ledger.add("f2", T0 - HOUR);
+			await h.store.seed(
+				CD_STREAMS.promotion(`legacy-${idempotencyKey}`),
+				CD_EVENTS.EnvPromoteRequested,
+				toJson(
+					PromotionRecordSchema,
+					create(PromotionRecordSchema, {
+						promotionId: `legacy-${idempotencyKey}`,
+						freightId: "f1",
+						targetCampIds: ["dev-1"],
+						pipeline: "shop",
+						node: "dev",
+						state: PromotionState.QUEUED,
+						idempotencyKey,
+					}),
+				),
+			);
+			const replayed = h.build();
+			await replayed.tick(h.ctx);
+			expect(await replayed.autoPromotionHolds()).toEqual([]);
+			expect(h.promotions.requests.map((r) => r.freightId)).toContain("f2");
+		}
 	});
 
 	it("keeps a manual hold until every target Camp has promoted, including after replay", async () => {
@@ -355,6 +446,45 @@ describe("auto-promotion holds", () => {
 			await again.tick(h.ctx);
 			expect(await again.autoPromotionHolds()).toEqual([]);
 		}
+	});
+
+	it("keeps an earlier manual fan-out hold when a later manual fan-out starts", async () => {
+		const h = harness();
+		await h.source("images");
+		await h.controller.apply(
+			pipeline("shop", [
+				node("dev", {
+					campIds: ["dev-1"],
+					fromSources: ["images"],
+					autoPromotion: AutoPromotion.NEWEST,
+				}),
+			]),
+			h.ctx,
+		);
+		h.ledger.add("f1", T0 - 3 * HOUR);
+		h.ledger.add("f2", T0 - 2 * HOUR);
+		h.ledger.add("f3", T0 - HOUR);
+		await seedManualFanout(h, "manual-fanout-f1", "f1");
+		await seedManualFanout(h, "manual-fanout-f2", "f2");
+		const replayed = h.build();
+		await replayed.tick(h.ctx);
+		expect(await replayed.autoPromotionHolds()).toMatchObject([
+			{ pipeline: "shop", node: "dev", freightId: "f1" },
+		]);
+		expect(h.promotions.requests.map((r) => r.freightId)).not.toContain("f3");
+		await seedFanoutCompleted(h, "manual-fanout-f1", "f1");
+		await replayed.tick(h.ctx);
+		expect(await replayed.autoPromotionHolds()).toMatchObject([
+			{ freightId: "f2" },
+		]);
+		expect(h.promotions.requests.map((r) => r.freightId)).not.toContain("f3");
+		await seedFanoutCompleted(h, "manual-fanout-f2", "f2");
+		await replayed.tick(h.ctx);
+		expect(await replayed.autoPromotionHolds()).toEqual([]);
+		expect(h.promotions.requests.map((r) => r.freightId)).toContain("f3");
+		const again = h.build();
+		await again.tick(h.ctx);
+		expect(await again.autoPromotionHolds()).toEqual([]);
 	});
 
 	it("does not clear a newer manual hold when an older promotion completes", async () => {

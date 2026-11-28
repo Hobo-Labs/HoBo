@@ -111,6 +111,10 @@ export function pipelineKey(
 	return `pipeline:${pipeline}:${node}:${freightId}`;
 }
 
+function legacyFailoverKey(key: string): boolean {
+	return /^failover:[^:]+:(?:promote|purge)$/.test(key);
+}
+
 const TERMINAL = new Set<PromotionState>([
 	PromotionState.PROMOTED,
 	PromotionState.ROLLED_BACK,
@@ -201,6 +205,56 @@ export function createPipelineController(
 		pending: Map<string, Set<string>>;
 	};
 	const manualPromoteByNode = new Map<string, ManualPromotion>();
+	type QueuedFanout = {
+		freightId: string;
+		heldAtMs: number;
+		fanoutId: string;
+	};
+	const queuedFanouts = new Map<string, QueuedFanout[]>();
+
+	function enqueueFanout(
+		nodeKey: string,
+		freightId: string,
+		heldAtMs: number,
+		fanoutId: string,
+	): void {
+		if (
+			fanoutId === "" ||
+			manualPromoteByNode.get(nodeKey)?.fanoutId === fanoutId
+		)
+			return;
+		const queued = queuedFanouts.get(nodeKey) ?? [];
+		if (queued.some((item) => item.fanoutId === fanoutId)) return;
+		queued.push({ freightId, heldAtMs, fanoutId });
+		queuedFanouts.set(nodeKey, queued);
+	}
+
+	function dropQueuedFanout(nodeKey: string, fanoutId: string): void {
+		const queued = queuedFanouts.get(nodeKey);
+		if (!queued) return;
+		const rest = queued.filter((item) => item.fanoutId !== fanoutId);
+		if (rest.length === 0) queuedFanouts.delete(nodeKey);
+		else queuedFanouts.set(nodeKey, rest);
+	}
+
+	function installQueuedFanout(nodeKey: string): void {
+		const queued = queuedFanouts.get(nodeKey);
+		const next = queued?.shift();
+		if (!queued || next === undefined) return;
+		if (queued.length === 0) queuedFanouts.delete(nodeKey);
+		manualPromoteByNode.set(nodeKey, {
+			freightId: next.freightId,
+			heldAtMs: next.heldAtMs,
+			fanoutId: next.fanoutId,
+			pending: new Map(),
+		});
+	}
+
+	function endManualPin(nodeKey: string): void {
+		manualPromoteByNode.delete(nodeKey);
+		holdByNode.delete(nodeKey);
+		installQueuedFanout(nodeKey);
+	}
 
 	function clearManualFanout(
 		status: FanoutStatusRecord | undefined,
@@ -216,9 +270,9 @@ export function createPipelineController(
 		)
 			return;
 		const nodeKey = `${status.pipeline}|${status.node}`;
+		dropQueuedFanout(nodeKey, status.fanoutId);
 		if (manualPromoteByNode.get(nodeKey)?.fanoutId !== status.fanoutId) return;
-		manualPromoteByNode.delete(nodeKey);
-		holdByNode.delete(nodeKey);
+		endManualPin(nodeKey);
 	}
 
 	function forgetManualPromotion(record: PromotionRecord): void {
@@ -232,10 +286,7 @@ export function createPipelineController(
 		const manual = manualPromoteByNode.get(nodeKey);
 		if (!manual || manual.fanoutId) return;
 		if (!manual.pending.delete(record.promotionId)) return;
-		if (manual.pending.size === 0) {
-			manualPromoteByNode.delete(nodeKey);
-			holdByNode.delete(nodeKey);
-		}
+		if (manual.pending.size === 0) endManualPin(nodeKey);
 	}
 
 	function releasePromotedCamps(
@@ -251,10 +302,7 @@ export function createPipelineController(
 		for (const [promotionId, remaining] of manual.pending) {
 			if (remaining.size === 0) manual.pending.delete(promotionId);
 		}
-		if (manual.pending.size === 0) {
-			manualPromoteByNode.delete(nodeKey);
-			holdByNode.delete(nodeKey);
-		}
+		if (manual.pending.size === 0) endManualPin(nodeKey);
 	}
 
 	const metric = (
@@ -304,7 +352,23 @@ export function createPipelineController(
 			)
 				return;
 			const nodeKey = `${started.pipeline}|${started.node}`;
-			holdByNode.delete(nodeKey);
+			const prior = manualPromoteByNode.get(nodeKey);
+			if (prior?.fanoutId === started.fanoutId) return;
+			if (prior) {
+				enqueueFanout(
+					nodeKey,
+					started.freightId,
+					msOf(event.ts),
+					started.fanoutId,
+				);
+				return;
+			}
+			if (
+				queuedFanouts
+					.get(nodeKey)
+					?.some((item) => item.fanoutId === started.fanoutId)
+			)
+				return;
 			manualPromoteByNode.set(nodeKey, {
 				freightId: started.freightId,
 				heldAtMs: msOf(event.ts),
@@ -350,10 +414,10 @@ export function createPipelineController(
 				(record.idempotencyKey === autoKey ||
 					record.idempotencyKey.startsWith(`${autoKey}:approval:`) ||
 					record.idempotencyKey.startsWith(`${autoKey}:match:`) ||
-					(record.fanoutId !== "" && current?.fanoutId !== record.fanoutId));
+					(record.fanoutId !== "" && current?.fanoutId !== record.fanoutId) ||
+					legacyFailoverKey(record.idempotencyKey));
 			if (mode === "automatic" || legacyAuto) return;
-			if (record.fanoutId !== "" && current?.fanoutId === record.fanoutId)
-				return;
+			if (record.fanoutId !== "" && current) return;
 			if (
 				!current ||
 				current.freightId !== record.freightId ||
