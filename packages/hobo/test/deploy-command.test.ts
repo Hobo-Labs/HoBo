@@ -36,6 +36,7 @@ const REQUIRED = [
 	"freight record",
 	"freight list",
 	"freight show",
+	"freight timeline",
 	"freight yank",
 	"freight approve",
 	"source define",
@@ -43,6 +44,7 @@ const REQUIRED = [
 	"source poll",
 	"pipeline apply",
 	"pipeline show",
+	"pipeline graph",
 	"pipeline list",
 	"window define",
 	"window list",
@@ -85,6 +87,94 @@ const REQUIRED = [
 ] as const;
 
 describe("hobo deploy CD subcommands (WP18)", () => {
+	it("pipeline graph shows each node and its available freight", async () => {
+		const calls: Call[] = [];
+		const cd = fakeCd(
+			{
+				pipelines: {
+					get: () => ({
+						nodes: [
+							{ name: "preview", fromSources: ["ci"], fromNodes: ["build"] },
+						],
+					}),
+					available: () => [FREIGHT],
+				},
+			},
+			calls,
+		);
+		const out = await runCdDeploySubcommand(
+			host(cd),
+			["pipeline", "graph", "web"],
+			{ format: "json" },
+		);
+		expect(out.ok).toBe(true);
+		expect(out.data).toMatchObject({
+			pipeline: "web",
+			nodes: [
+				{
+					name: "preview",
+					fromSources: ["ci"],
+					fromNodes: ["build"],
+					available: [{ freightId: FREIGHT.freightId }],
+				},
+			],
+		});
+		expect(calls).toContainEqual({
+			module: "pipelines",
+			method: "available",
+			args: [{ pipeline: "web", node: "preview" }],
+		});
+	});
+
+	it("freight timeline includes older promotions and sorts entries chronologically", async () => {
+		const calls: Call[] = [];
+		const target = promotion({ requestedAt: "2026-01-03T00:00:00Z" });
+		const unrelated = promotion({ freightId: `sha256:${"a".repeat(64)}` });
+		const cd = fakeCd(
+			{
+				freight: {
+					getByAlias: () => ({
+						...FREIGHT,
+						recordedAt: "2026-01-01T00:00:00Z",
+					}),
+					qualifications: () => [
+						{ qualifiedAt: "2026-01-02T00:00:00Z", campId: "yard/prod" },
+					],
+				},
+				promotions: {
+					list: (query) => {
+						const rows = [
+							...Array.from({ length: 500 }, () => unrelated),
+							target,
+						];
+						return query ? rows.slice(0, 500) : rows;
+					},
+				},
+			},
+			calls,
+		);
+		const out = await runCdDeploySubcommand(
+			host(cd),
+			["freight", "timeline", "brave-otter"],
+			{ format: "json" },
+		);
+		expect(out.ok).toBe(true);
+		expect(out.data?.timeline).toMatchObject([
+			{ kind: "recorded" },
+			{ kind: "qualified", campId: "yard/prod" },
+			{
+				kind: "promotion",
+				campId: "yard/prod",
+				detail: { promotionId: "prm-1" },
+			},
+		]);
+		expect(calls).toContainEqual({
+			module: "promotions",
+			method: "list",
+			args: [],
+		});
+	});
+
 	it("provides every subcommand the plan names, each with a usage line", () => {
 		for (const name of REQUIRED) {
 			expect(CD_DEPLOY_SUBCOMMANDS[name]?.usage, name).toMatch(/^hobo deploy /);
