@@ -1213,5 +1213,8 @@ expires with the HTTP request. A denied or revoked operation returns `unknown`
 with its operation identity because an earlier attempt may have committed.
 The official AWS Emulator test exercises this binding against the Alchemy-created
 table, including changed table names and authorization. A trusted owner
-must authorize and call the provider's `compact()` operation when needed; its
-storage reads and writes must be included in the supplied pricing model.
+must authorize and call the provider's `compact()` and `reclaimCompleted()`
+operations when needed. Reclaiming a completed message ends its message-key
+deduplication after live receipts expire. These storage reads and writes must be
+included in the supplied pricing model; exhausted messages still require a
+dead-letter or redrive capability.
