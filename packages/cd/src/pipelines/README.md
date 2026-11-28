@@ -10,7 +10,7 @@ package WP5.
 
 | Export | What it does |
 |---|---|
-| `createPipelineController` | Implements the frozen `PipelineController` port: `apply`, `get`, `list`, `available` and `tick`. |
+| `createPipelineController` | Implements the frozen `PipelineController` port: `apply`, `get`, `list`, `available`, `autoPromotionHolds`, `promoteByOrigin`, and `tick`. |
 | `validatePipeline`, `normalizePipeline` | The parse boundary for `PipelineRecord`: every problem, each with a remediation. |
 | `freightAvailability`, `quorumThreshold` | Pure availability and quorum. |
 | `pipelineKey`, `fanoutWithDefaults` | The idempotency key `pipeline:<p>:<node>:<freight>`, and the fan-out record with `CD_DEFAULTS` filled in. |
@@ -135,15 +135,26 @@ Availability is computed per Freight, newest first.
   commands.
 - Keys already in the journal (`env.PromoteRequested`) are not requested
   again, even after a restart.
+- An in-flight manual promotion of non-candidate Freight holds auto-promotion
+  on that node until every requested Camp has promoted that Freight, or the
+  promotion fails, is rejected, is superseded, or is rolled back. A manual
+  fan-out hold lasts until that fan-out completes, halts, rolls back, or is
+  superseded. Automatic requests do not create manual holds. Failed promotions
+  do not set holds. `promoteByOrigin` returns a refusal when a promotion or
+  fan-out could not be requested.
 
 ### State
 
 All state comes from one catch-up projection over these events:
 `pipeline.Applied`, `pipeline.FreightAvailable`, `source.Defined`,
-`env.PromoteRequested` and `env.Promoted`. The projection is rebuilt from
-the journal on start, so replay equals live (I8). Promotion bodies, which
-WP6 owns, are decoded as `PromotionRecord`. Their idempotency key is read
-structurally.
+`env.PromoteRequested`, `env.Promoted`, `env.PromoteRejected`,
+`env.PromoteSuperseded`, `env.PromoteRolledBack`, `fanout.Started`,
+`fanout.Halted`, `fanout.Completed`, and `fanout.RolledBack`. The projection
+is rebuilt from the journal on start, so
+replay equals live (I8). New promotion and fan-out requests persist their
+manual or automatic mode in event metadata; older requests use the documented
+pipeline-generated idempotency keys to identify automatic work. Promotion
+bodies, which WP6 owns, are decoded as `PromotionRecord`.
 
 ## Metrics
 

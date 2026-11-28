@@ -284,6 +284,12 @@ export class FakePipelines implements PipelineController {
 		);
 	}
 	async tick() {}
+	async autoPromotionHolds() {
+		return [];
+	}
+	async promoteByOrigin() {
+		return { ok: false, reasons: [] };
+	}
 }
 
 type StoredSet = { set: SetRecord; resolved: ResolvedDeploymentSet };
