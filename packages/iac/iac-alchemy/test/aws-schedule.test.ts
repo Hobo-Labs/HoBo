@@ -147,6 +147,7 @@ describe("static AWS queue schedules", () => {
 		"",
 		"\u0000",
 		"\ud800",
+		"\udc00",
 		"<aws.scheduler.scheduled-time>",
 		"a".repeat(65_537),
 	])("rejects invalid queue message bodies", (input) => {
@@ -155,6 +156,14 @@ describe("static AWS queue schedules", () => {
 				tick: { roleArn, input },
 			}),
 		).toThrow();
+	});
+
+	it("accepts a well-formed supplementary Unicode character in a queue message", () => {
+		expect(() =>
+			awsStaticScheduleMappers(awsBindleMappers(), {
+				tick: { roleArn, input: '{"kind":"repair 🔧"}' },
+			}),
+		).not.toThrow();
 	});
 
 	it("rejects accessor-backed configuration without invoking it", () => {
