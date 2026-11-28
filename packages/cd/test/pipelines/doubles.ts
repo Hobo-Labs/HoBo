@@ -24,6 +24,7 @@ import {
 	PromotionState,
 } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS, CD_STREAMS } from "../../src/events.js";
+import { fanoutIdFor } from "../../src/fanout/controller.js";
 import type {
 	CampId,
 	CampTopology,
@@ -38,7 +39,7 @@ import type {
 	PromotionService,
 	TopologyReader,
 } from "../../src/ports.js";
-import { camp, fid, type MemoryEventStore } from "./fakes.js";
+import { camp, fid, type MemoryEventStore, TENANT } from "./fakes.js";
 
 const notUsed = (): never => {
 	throw new Error("not used by the pipeline controller");
@@ -308,7 +309,12 @@ export class FakeFanout implements FanoutController {
 	): Promise<Outcome<FanoutStatusRecord>> {
 		this.started.push(input);
 		const status = create(FanoutStatusRecordSchema, {
-			fanoutId: `fanout-${this.started.length}`,
+			fanoutId: fanoutIdFor(
+				TENANT,
+				input.pipeline,
+				input.node,
+				input.idempotencyKey,
+			),
 			pipeline: input.pipeline,
 			node: input.node,
 			freightId: input.freightId,

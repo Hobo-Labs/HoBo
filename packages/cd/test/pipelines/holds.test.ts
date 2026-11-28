@@ -863,6 +863,64 @@ describe("promoteByOrigin", () => {
 		expect(result.ok).toBe(false);
 	});
 
+	it("accepts a retry of the same manual fan-out idempotency key while that fan-out is running", async () => {
+		const h = harness();
+		h.placement.add("fleet");
+		await h.controller.apply(
+			pipeline("shop", [
+				node("fleet", {
+					placement: "fleet",
+					fromSources: ["origin:manifest"],
+					autoPromotion: AutoPromotion.DISABLED,
+				}),
+			]),
+			h.ctx,
+		);
+		h.ledger.add("f1", T0 - HOUR, { origin: FreightOrigin.MANIFEST });
+		const request = {
+			pipeline: "shop",
+			node: "fleet",
+			origin: "origin:manifest",
+			idempotencyKey: "manual-same-key",
+		};
+		expect((await h.controller.promoteByOrigin(request, h.ctx)).ok).toBe(true);
+		expect(h.fanout.started).toHaveLength(1);
+		const retry = await h.controller.promoteByOrigin(request, h.ctx);
+		expect(retry.ok).toBe(true);
+		if (!retry.ok) return;
+		expect(retry.value.freightId).toBe("f1");
+		expect(h.fanout.started).toHaveLength(1);
+	});
+
+	it("refuses a manual fan-out that reuses a running automatic fan-out's idempotency key", async () => {
+		const h = harness();
+		h.placement.add("fleet");
+		await h.controller.apply(
+			pipeline("shop", [
+				node("fleet", {
+					placement: "fleet",
+					fromSources: ["origin:manifest"],
+					autoPromotion: AutoPromotion.NEWEST,
+				}),
+			]),
+			h.ctx,
+		);
+		h.ledger.add("f1", T0 - HOUR, { origin: FreightOrigin.MANIFEST });
+		await h.controller.tick(h.ctx);
+		expect(h.fanout.started).toHaveLength(1);
+		const result = await h.controller.promoteByOrigin(
+			{
+				pipeline: "shop",
+				node: "fleet",
+				origin: "origin:manifest",
+				idempotencyKey: pipelineKey("shop", "fleet", "f1"),
+			},
+			h.ctx,
+		);
+		expect(result.ok).toBe(false);
+		expect(h.fanout.started).toHaveLength(1);
+	});
+
 	it("reports a refused promotion instead of claiming it was requested", async () => {
 		const h = harness();
 		await h.controller.apply(

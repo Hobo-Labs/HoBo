@@ -24,6 +24,7 @@ import {
 	RolloutStrategy,
 } from "../_generated/cd_pb.js";
 import { CD_DEFAULTS, CD_EVENTS, CD_STREAMS } from "../events.js";
+import { fanoutIdFor } from "../fanout/controller.js";
 import { parseHalted, parseStarted, parseStatusFact } from "../fanout/facts.js";
 import type {
 	AutoPromotionHold,
@@ -205,6 +206,7 @@ export function createPipelineController(
 		pending: Map<string, Set<string>>;
 	};
 	const manualPromoteByNode = new Map<string, ManualPromotion>();
+	const fanoutModeById = new Map<string, "automatic" | "manual">();
 	type QueuedFanout = {
 		freightId: string;
 		heldAtMs: number;
@@ -248,6 +250,14 @@ export function createPipelineController(
 			fanoutId: next.fanoutId,
 			pending: new Map(),
 		});
+	}
+
+	function rememberFanoutMode(
+		fanoutId: string,
+		mode: "automatic" | "manual" | undefined,
+	): void {
+		if (fanoutId === "" || mode === undefined) return;
+		fanoutModeById.set(fanoutId, mode);
 	}
 
 	function endManualPin(nodeKey: string): void {
@@ -344,13 +354,15 @@ export function createPipelineController(
 			const started = parseStarted(event.data);
 			if (!started?.pipeline || !started.node || !started.freightId) return;
 			const mode = event.meta?.promotionRequestMode;
-			if (
-				mode === "automatic" ||
-				(mode === undefined &&
-					started.idempotencyKey ===
-						pipelineKey(started.pipeline, started.node, started.freightId))
-			)
+			const legacyAutomatic =
+				mode === undefined &&
+				started.idempotencyKey ===
+					pipelineKey(started.pipeline, started.node, started.freightId);
+			if (mode === "automatic" || legacyAutomatic) {
+				rememberFanoutMode(started.fanoutId, "automatic");
 				return;
+			}
+			if (mode === "manual") rememberFanoutMode(started.fanoutId, "manual");
 			const nodeKey = `${started.pipeline}|${started.node}`;
 			const prior = manualPromoteByNode.get(nodeKey);
 			if (prior?.fanoutId === started.fanoutId) return;
@@ -667,12 +679,25 @@ export function createPipelineController(
 		idempotencyKey = pipelineKey(pipeline.name, node.name, freightId),
 	): Promise<Outcome<void>> {
 		const attributes = { pipeline: pipeline.name, node: node.name };
+		const minted = fanoutIdFor(
+			deps.tenant,
+			pipeline.name,
+			node.name,
+			idempotencyKey,
+		);
 		const existing = await deps.fanout.list({
 			pipeline: pipeline.name,
 			node: node.name,
 		});
 		const prior = existing.find((status) => status.freightId === freightId);
 		if (prior) {
+			const priorMode = fanoutModeById.get(prior.fanoutId);
+			if (
+				prior.fanoutId === minted &&
+				prior.state === FanoutState.RUNNING &&
+				(priorMode === undefined || priorMode === requestMode)
+			)
+				return { ok: true, value: undefined };
 			if (
 				prior.state === FanoutState.HALTED ||
 				prior.state === FanoutState.ROLLED_BACK ||
@@ -735,6 +760,8 @@ export function createPipelineController(
 			ctx,
 		);
 		if (started.ok) {
+			rememberFanoutMode(minted, requestMode);
+			rememberFanoutMode(started.value.fanoutId, requestMode);
 			metric(PIPELINE_METRIC.fanoutStarted, ctx.now(), attributes);
 			return { ok: true, value: undefined };
 		}
