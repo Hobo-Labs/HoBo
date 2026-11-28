@@ -995,6 +995,7 @@ export async function materializePublishedDepsLayer(
 		}
 		return undefined;
 	};
+	let dockerMiss: { ok: false; kind: "miss"; detail: string } | undefined;
 	try {
 		if (input.docker) {
 			let useDocker = true;
@@ -1011,7 +1012,8 @@ export async function materializePublishedDepsLayer(
 			}
 			if (useDocker) {
 				const dockerResult = fromDocker();
-				if (dockerResult) return dockerResult;
+				if (dockerResult?.ok) return dockerResult;
+				dockerMiss = dockerResult;
 			}
 		}
 		await materializeFromRegistry({
@@ -1035,6 +1037,7 @@ export async function materializePublishedDepsLayer(
 			};
 		}
 		rmSync(input.payloadDir, { recursive: true, force: true });
+		if (dockerMiss) return dockerMiss;
 		const detail =
 			error instanceof Error ? error.message : "deps layer materialize failed";
 		return {

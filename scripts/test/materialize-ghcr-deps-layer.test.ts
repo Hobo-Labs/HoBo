@@ -1121,10 +1121,16 @@ describe("docker materialize", () => {
 		}
 	});
 
-	it("does not download after a definitive manifest miss", async () => {
+	it("confirms a docker manifest miss with the registry and downloads no blob on a registry miss", async () => {
 		const calls = dockerCalls();
-		let fetched = 0;
 		const token = randomBytes(12).toString("hex");
+		const bearer = randomBytes(12).toString("hex");
+		const registry = await startRegistry({
+			token,
+			bearer,
+			key,
+			manifestStatus: 404,
+		});
 		const docker: DepsDocker = {
 			localImage: () => false,
 			remoteManifest: () => {
@@ -1141,15 +1147,53 @@ describe("docker materialize", () => {
 				calls.copy += 1;
 			},
 		};
+		try {
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: join(tmpdir(), "hobo-docker-miss"),
+				actor: "ci-actor",
+				token,
+				registryBase: registry.base,
+				fetchImpl: localFetch(registry.base),
+				docker,
+			});
+			assert.equal(result.ok, false);
+			if (!result.ok) {
+				assert.equal(result.kind, "miss");
+				assert.equal(result.detail.includes(token), false);
+			}
+			assert.equal(calls.manifest, 1);
+			assert.equal(calls.pull, 0);
+			assert.equal(calls.copy, 0);
+			assert.equal(
+				registry.hits.some((hit) => hit.includes("/blobs/")),
+				false,
+			);
+		} finally {
+			await registry.close();
+		}
+	});
+
+	it("keeps a docker manifest miss a miss when the registry cannot be read", async () => {
+		const token = randomBytes(12).toString("hex");
+		let fetched = 0;
+		const docker: DepsDocker = {
+			localImage: () => false,
+			remoteManifest: () => "miss",
+			login: () => {},
+			pull: () => {},
+			copyPayload: () => {},
+		};
 		const result = await materializePublishedDepsLayer({
 			repository,
 			key,
-			payloadDir: join(tmpdir(), "hobo-docker-miss"),
+			payloadDir: join(tmpdir(), "hobo-docker-miss-unreadable"),
 			token,
 			docker,
 			fetchImpl: async () => {
 				fetched += 1;
-				throw new Error("registry fetch");
+				throw new Error(`registry fetch ${token}`);
 			},
 		});
 		assert.equal(result.ok, false);
@@ -1157,9 +1201,62 @@ describe("docker materialize", () => {
 			assert.equal(result.kind, "miss");
 			assert.equal(result.detail.includes(token), false);
 		}
-		assert.equal(calls.pull, 0);
-		assert.equal(calls.copy, 0);
-		assert.equal(fetched, 0);
+		assert.equal(fetched, 1);
+	});
+
+	it("materializes from the registry when docker reports a miss the registry does not", async () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-docker-false-miss-"));
+		const token = randomBytes(16).toString("hex");
+		const bearer = randomBytes(16).toString("hex");
+		const calls = dockerCalls();
+		let registry: Registry | undefined;
+		try {
+			const tree = join(root, "tree");
+			mkdirSync(join(tree, "opt", "hobo-deps"), { recursive: true });
+			writeFileSync(
+				join(tree, "opt", "hobo-deps", ".hobo-ci-deps-key"),
+				`${key}\n`,
+			);
+			registry = await startRegistry({
+				token,
+				bearer,
+				key,
+				layers: [{ mediaType: GZIP_LAYER, body: gnuTar(tree, ["opt"], true) }],
+			});
+			const docker: DepsDocker = {
+				localImage: () => false,
+				remoteManifest: () => {
+					calls.manifest += 1;
+					return "miss";
+				},
+				login: () => {
+					calls.login += 1;
+				},
+				pull: () => {
+					calls.pull += 1;
+				},
+				copyPayload: () => {
+					calls.copy += 1;
+				},
+			};
+			const result = await materializePublishedDepsLayer({
+				repository,
+				key,
+				payloadDir: join(root, "payload"),
+				actor: "ci-actor",
+				token,
+				registryBase: registry.base,
+				fetchImpl: localFetch(registry.base),
+				docker,
+			});
+			assert.deepEqual(result, { ok: true, source: "ghcr" });
+			assert.equal(calls.manifest, 1);
+			assert.equal(calls.pull, 0);
+			assert.equal(calls.copy, 0);
+		} finally {
+			await registry?.close();
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps a pull failure failed and redacts the token", async () => {
