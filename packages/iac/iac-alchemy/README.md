@@ -1195,8 +1195,10 @@ store requires a dedicated table with a string `pk` partition key and exclusive,
 epoch-fenced ownership. `withAwsDynamoDurableQueue` and
 `awsDynamoDurableQueueMappers` from `@hobo/iac-alchemy/aws/queue-mapper` select
 an Alchemy `AWS.DynamoDB.Table` for a HoBo queue. The mapper reports its 512-event
-and 256-KiB lifetime bounds, and the financial preview must cover that table or
-use an explicitly authorized unpriced path. A supplied model must account for
+segment and 256-KiB record bounds. Financial preview must cover that table or use
+an explicitly authorized unpriced path. A supplied model must account for
 the expected table storage, reads and writes; individual queue calls do not run
 budget admission or enforce the estimate. This is a DynamoDB queue, with no SQS
-integration, compaction, dead-lettering or automatic application binding.
+integration, dead-lettering or automatic application binding. A trusted owner
+must authorize and call the provider's `compact()` operation when needed; its
+storage reads and writes must be included in the supplied pricing model.

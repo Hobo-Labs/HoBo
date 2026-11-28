@@ -933,10 +933,12 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				now,
 				authorize: () => true,
 			};
-			const first = createDurableQueueWitHost(
-				createAtomicDurableQueue({ store: lossy, limits: bounds, now }),
-				hostOptions,
-			);
+			const firstQueue = createAtomicDurableQueue({
+				store: lossy,
+				limits: bounds,
+				now,
+			});
+			const first = createDurableQueueWitHost(firstQueue, hostOptions);
 			const operation = (n: number) => ({
 				id: `v1.10000.abcdefghijklmn${String(n).padStart(2, "0")}`,
 				expiresAtMs: 10000n,
@@ -950,10 +952,14 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 				},
 			};
 			expect(await first.enqueue(request)).toMatchObject({ tag: "unknown" });
-			const reopened = createDurableQueueWitHost(
-				createAtomicDurableQueue({ store: atomic, limits: bounds, now }),
-				hostOptions,
-			);
+			loseResponse = true;
+			expect(await firstQueue.compact()).toEqual({ status: "unknown" });
+			const reopenedQueue = createAtomicDurableQueue({
+				store: atomic,
+				limits: bounds,
+				now,
+			});
+			const reopened = createDurableQueueWitHost(reopenedQueue, hostOptions);
 			expect(await reopened.enqueue(request)).toEqual({
 				tag: "committed",
 				val: { messageId: "m1", idempotencyKey: "job" },
@@ -967,6 +973,11 @@ describe("mapped Alchemy AWS resources in emulators", () => {
 			).toMatchObject({
 				tag: "committed",
 				val: [{ messageId: "m1", leaseId: "l1", body: new Uint8Array([1, 2]) }],
+			});
+			clock = 1005;
+			expect(await reopenedQueue.compact()).toEqual({
+				status: "compacted",
+				prunedReceipts: 0,
 			});
 			clock = 1010;
 			expect(
