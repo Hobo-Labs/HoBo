@@ -18,6 +18,7 @@ import {
 	ghcrWorkerPullable,
 	materializeCiWorkerImageOnly,
 	materializeCiWorkerImageResult,
+	probeWorkerPublicationManifest,
 	pullRequestWorkerTag,
 	pullWorkerFromGhcr,
 	releaseWorkerEnsurePath,
@@ -64,6 +65,67 @@ describe("ensure-ci-worker-image", () => {
 			remoteWorkerTag("Hobo-Labs/HoBo", "vdeadbeefcafe"),
 			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:vdeadbeefcafe",
 		);
+	});
+
+	it("resolves a published worker to one immutable digest without pulling it", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-published-digest-"));
+		const calls = join(bin, "calls");
+		writeFileSync(calls, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1" = login ]; then cat >/dev/null; exit 0; fi',
+				'if [ "$1 $2" = "manifest inspect" ]; then printf "%s\\n" "$MANIFEST_OUTPUT"; exit 0; fi',
+				"exit 1",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const run = (
+			manifest:
+				| { Descriptor: { digest: string } }
+				| { Descriptor: { digest: string } }[],
+		) =>
+			spawnSync(
+				process.execPath,
+				[
+					"--no-warnings",
+					"scripts/ci/ensure-ci-worker-image.mts",
+					"--published-digest",
+				],
+				{
+					cwd: join(import.meta.dirname, "..", ".."),
+					encoding: "utf8",
+					env: {
+						...process.env,
+						PATH: `${bin}:${process.env.PATH ?? ""}`,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_TOKEN: "token-for-test",
+						MANIFEST_OUTPUT: JSON.stringify(manifest),
+					},
+				},
+			);
+		try {
+			const resolved = run({ Descriptor: { digest: workerDigest } });
+			assert.equal(resolved.status, 0, resolved.stderr);
+			assert.equal(resolved.stdout.trim(), workerRepoRef);
+			const ambiguous = run([
+				{ Descriptor: { digest: workerDigest } },
+				{ Descriptor: { digest: `sha256:${"b".repeat(64)}` } },
+			]);
+			assert.notEqual(ambiguous.status, 0);
+			assert.match(ambiguous.stderr, /expected one verbose Descriptor digest/u);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /docker pull /u);
+		} finally {
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("names a pull request's worker by its number and content key", () => {
@@ -1062,6 +1124,7 @@ describe("ensure-ci-worker-image", () => {
 			host: boolean;
 			manifest: boolean;
 			pull?: boolean;
+			minPullBudgetSec?: number;
 			unreadable?: boolean;
 			manifestStderr?: string;
 		},
@@ -1078,8 +1141,21 @@ describe("ensure-ci-worker-image", () => {
 		try {
 			writeFileSync(
 				join(bin, "timeout"),
-				["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+				[
+					"#!/bin/sh",
+					`if [ "$2 $3" = "docker pull" ] && [ "$1" -lt ${stub.minPullBudgetSec ?? 0} ]; then exit 124; fi`,
+					"shift",
+					'exec "$@"',
+					"",
+				].join("\n"),
 				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "sleep"),
+				["#!/bin/sh", "exit 0", ""].join("\n"),
+				{
+					mode: 0o755,
+				},
 			);
 			writeFileSync(
 				join(bin, "docker"),
@@ -1139,6 +1215,13 @@ describe("ensure-ci-worker-image", () => {
 					"",
 				].join("\n"),
 				{ mode: 0o755 },
+			);
+			writeFileSync(
+				join(bin, "sleep"),
+				["#!/bin/sh", "exit 0", ""].join("\n"),
+				{
+					mode: 0o755,
+				},
 			);
 			writeFileSync(
 				join(bin, "docker"),
@@ -1204,14 +1287,23 @@ describe("ensure-ci-worker-image", () => {
 	});
 
 	it("allows a slow published image to finish pulling", () => {
-		assert.match(
-			publishedStatus({
+		withWorkerPublishStub(
+			{
 				host: false,
 				manifest: true,
 				pull: true,
 				minPullBudgetSec: 500,
-			}),
-			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
+			},
+			() => {
+				assert.equal(
+					ghcrWorkerPullable(
+						"Hobo-Labs/HoBo",
+						"vdeadbeefcafe",
+						"token-for-test",
+					),
+					true,
+				);
+			},
 		);
 	});
 
@@ -1272,6 +1364,7 @@ describe("ensure-ci-worker-image", () => {
 			() => {
 				const status = ciWorkerImagePublished();
 				assert.equal(status.ghcr, true);
+				assert.equal(status.ghcrProbe, "pullable");
 			},
 		);
 		assert.match(
@@ -1285,19 +1378,81 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("refuses to infer a missing image from an incomplete pull", () => {
+	it("treats a readable manifest as published without pulling", () => {
 		withWorkerPublishStub({ host: false, manifest: true, pull: false }, () => {
 			const status = ciWorkerImagePublished();
-			assert.equal(status.ghcr, false);
-			assert.equal(status.ghcrProbe, "pull-failed");
+			assert.equal(status.ghcr, true);
+			assert.equal(status.ghcrProbe, "published");
 		});
-		assert.equal(
-			publishedStatus(
-				{ host: false, manifest: true, pull: false },
-				"pull-failed",
-			),
-			"",
+		assert.match(
+			publishedStatus({ host: false, manifest: true, pull: false }),
+			/^version=v[0-9a-f]+\nneeded=true\nghcr=true\n$/u,
 		);
+	});
+
+	it("retries transient manifest failures before staying inconclusive", () => {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-manifest-retry-"));
+		const calls = join(bin, "manifest-calls");
+		const attempts = join(bin, "attempts");
+		writeFileSync(calls, "");
+		writeFileSync(
+			join(bin, "timeout"),
+			["#!/bin/sh", "shift", 'exec "$@"', ""].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(join(bin, "sleep"), ["#!/bin/sh", "exit 0", ""].join("\n"), {
+			mode: 0o755,
+		});
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`if [ "$1 $2" = "manifest inspect" ]; then`,
+				`  echo "manifest inspect $*" >> "${calls}"`,
+				`  manifestAttempts=$(cat "${attempts}" 2>/dev/null || echo 0)`,
+				`  printf %s "$((manifestAttempts + 1))" > "${attempts}"`,
+				'  if [ "$((manifestAttempts + 1))" -lt 2 ]; then',
+				"    echo registry unavailable >&2; exit 1",
+				"  fi",
+				"  exit 0",
+				"fi",
+				'if [ "$1" = "login" ]; then cat > /dev/null; exit 0; fi',
+				"exit 0",
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		writeFileSync(attempts, "0");
+		const prev = {
+			PATH: process.env.PATH,
+			GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+			GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+		};
+		try {
+			process.env.PATH = `${bin}:${prev.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			const remote = remoteWorkerTag("Hobo-Labs/HoBo", "vdeadbeefcafe");
+			assert.equal(
+				probeWorkerPublicationManifest(remote, "token-for-test", {
+					budgetSec: 30,
+				}),
+				"present",
+			);
+			assert.ok(Number(readFileSync(join(bin, "attempts"), "utf8")) >= 2);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /docker pull/u);
+		} finally {
+			for (const key of [
+				"PATH",
+				"GITHUB_REPOSITORY",
+				"GITHUB_TOKEN",
+			] as const) {
+				const value = prev[key];
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
 
 	it("does not rebuild when the publication probe cannot authenticate", () => {
@@ -1418,7 +1573,7 @@ describe("ensure-ci-worker-image", () => {
 		);
 	});
 
-	it("shares one publication-probe budget and does not call a pull it never reached", () => {
+	it("shares one publication-probe budget and does not pull to decide publication", () => {
 		const bin = mkdtempSync(join(tmpdir(), "hobo-worker-probe-budget-"));
 		const calls = join(bin, "calls");
 		const clock = join(bin, "clock");
@@ -1508,16 +1663,16 @@ describe("ensure-ci-worker-image", () => {
 			assert.equal(shared.ghcr, true);
 			const recorded = readFileSync(calls, "utf8");
 			assert.match(recorded, /timeout 45 docker manifest inspect /u);
-			assert.match(recorded, /timeout 70 docker pull /u);
-			assert.doesNotMatch(recorded, /timeout 120 docker pull /u);
+			assert.doesNotMatch(recorded, /docker pull /u);
 
 			writeFileSync(calls, "");
 			writeFileSync(clock, "0");
 			delete process.env.PROBE_CLOCK;
 			process.env.PULL_STATUS = "1";
-			const pulled = ciWorkerImagePublished({ now });
-			assert.equal(pulled.ghcrProbe, "pull-failed");
-			assert.match(readFileSync(calls, "utf8"), /docker pull /u);
+			const published = ciWorkerImagePublished({ now });
+			assert.equal(published.ghcrProbe, "published");
+			assert.equal(published.ghcr, true);
+			assert.doesNotMatch(readFileSync(calls, "utf8"), /docker pull /u);
 		} finally {
 			for (const key of keys) {
 				const value = prev[key];

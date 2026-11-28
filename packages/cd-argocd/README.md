@@ -8,9 +8,11 @@ Consumer PACT: `contracts/pacts/cd_argocd_control.pact.json`.
 Register at compose time with `cdArgocdEngineRegistration` and wrap runbook
 execution with `createArgoCdRunbookExecutor`.
 
-The client validates and snapshots its HTTPS endpoint and credential reference.
-A successful RUNBOOK returns `syncRequested: true` when Argo CD accepts the
-request; use `observeSync` to check convergence and health.
+The client validates and snapshots its HTTPS endpoint, Application, namespace,
+and credential reference, and refuses any other Application or namespace before
+resolving credentials or calling Argo CD. A successful RUNBOOK returns
+`syncRequested: true` when Argo CD accepts the request; use `observeSync` to
+check convergence and health.
 
 ## Architecture
 
