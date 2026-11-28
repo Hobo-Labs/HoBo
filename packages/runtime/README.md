@@ -592,9 +592,18 @@ The durable messaging boundary captures its array mapping intrinsic before
 processing Bindle graphs and provider results. Later changes to
 `Array.prototype.map` cannot change the grants or mapped message data.
 
-The internal durable queue component boundary copies request bodies and
-attributes and checks operation identities, UTF-8 sizes, batches, and lease
-bounds before a future queue host dispatches them. It also checks provider
-responses against the request and copies deliveries before disclosure. These
-parsers do not bind a queue provider, authorize a component, enforce delay or
-operation-window timing, or establish durable outcomes.
+`createDurableQueueWitHost` in `@hobo/runtime/durable-queue-host` exposes the
+asynchronous queue component interface around a `DurableQueue` provider. It
+checks and copies component requests and provider responses, authorizes dispatch
+and disclosure, and reports an uncertain outcome when a call times out, access
+is denied, or a response cannot be trusted. Work that outlives a timeout keeps
+its per-host capacity slot until it settles; a repeated in-flight operation is
+not dispatched again by that host. Deadline observation and the in-flight guard
+use captured intrinsics; result variants have no inherited `then` property. The provider must durably bind operation IDs
+to exact requests, fence leases, and supply idempotent replay across hosts and
+restarts. The host creator must authenticate and scope the queue binding, attest
+the limits, supply a trusted clock and authorization callback, and bound the
+number of host instances. A synchronous blocked callback cannot be interrupted
+by the deadline. The bounded queue model describes a single-dispatch abstraction;
+it does not prove this host or the provider's replay and durability assumptions.
+The host does not itself implement or map a cloud queue.

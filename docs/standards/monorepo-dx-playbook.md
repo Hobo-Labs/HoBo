@@ -283,3 +283,5 @@ pnpm turbo run build                                             # second run = 
 ---
 
 *Derived from the HoBo and quickdeployai/monorepo reference implementations. Keep this doc's code blocks in sync with those repos' `turbo.json`, `.npmrc`, `.githooks/`, and `docs/contributing/hooks.md`.*
+
+The asynchronous queue component fixture loads WIT tooling by a computed path, so its registry entry schedules the WIT build.

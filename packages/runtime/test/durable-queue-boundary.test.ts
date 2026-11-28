@@ -156,6 +156,39 @@ describe("durable queue provider outcome boundary", () => {
 			),
 		).toThrow();
 	});
+	it("does not let changed array helpers forge a provider delivery", () => {
+		const map = Object.getOwnPropertyDescriptor(Array.prototype, "map");
+		const includes = Object.getOwnPropertyDescriptor(
+			Array.prototype,
+			"includes",
+		);
+		let parsed: ReturnType<typeof parseQueueProviderOutcome>;
+		try {
+			Object.defineProperty(Array.prototype, "map", {
+				configurable: true,
+				value: () => [],
+			});
+			Object.defineProperty(Array.prototype, "includes", {
+				configurable: true,
+				value: () => true,
+			});
+			parsed = parseQueueProviderOutcome(
+				{ status: "committed", value: [item()] },
+				expected,
+				limits,
+				{ kind: "dequeue", maxMessages: 1 },
+			);
+		} finally {
+			if (map !== undefined) Object.defineProperty(Array.prototype, "map", map);
+			if (includes !== undefined)
+				Object.defineProperty(Array.prototype, "includes", includes);
+		}
+		if (parsed.status !== "committed" || !Array.isArray(parsed.value))
+			throw Error("expected delivery");
+		expect(parsed.value).toHaveLength(1);
+		expect(parsed.value[0].messageId).toBe("msg");
+	});
+
 	it("requires known rejection codes and exactly shaped responses", () => {
 		expect(
 			parseQueueProviderOutcome(

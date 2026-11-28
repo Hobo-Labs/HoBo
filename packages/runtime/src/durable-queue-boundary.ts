@@ -25,6 +25,8 @@ const byteBuffer = descriptor(typedArrayPrototype, "buffer")?.get;
 const byteSet = Uint8Array.prototype.set;
 const utf8Length = Buffer.byteLength;
 const exec = RegExp.prototype.exec;
+const arrayIncludes = Array.prototype.includes;
+const nativeString = String;
 const invalidUnicode = /[\p{Cs}\p{Cc}]/u;
 const nativeBigInt = BigInt;
 const nativeNumber = Number;
@@ -55,7 +57,8 @@ function record(
 		const key = keys[i];
 		if (
 			typeof key !== "string" ||
-			(!required.includes(key) && !optional.includes(key))
+			(!apply(arrayIncludes, required, [key]) &&
+				!apply(arrayIncludes, optional, [key]))
 		)
 			return invalid();
 		const field = descriptor(value, key);
@@ -82,7 +85,7 @@ function array(value: unknown, max: number): unknown[] {
 		return invalid();
 	const copy: unknown[] = [];
 	for (let i = 0; i < length; i++) {
-		const field = descriptor(value, String(i));
+		const field = descriptor(value, nativeString(i));
 		if (field === undefined || !field.enumerable || !hasOwn(field, "value"))
 			return invalid();
 		copy[i] = field.value;
@@ -170,14 +173,15 @@ export function parseQueueEnqueue(
 	);
 	const attrs = array(message.attributes, limits.attributeCount);
 	let attributeBytes = 0;
-	const attributes = attrs.map((entry) => {
-		const item = record(entry, ["key", "value"]);
+	const attributes: { key: string; value: string }[] = [];
+	for (let index = 0; index < attrs.length; index++) {
+		const item = record(attrs[index], ["key", "value"]);
 		const key = text(item.key, limits.attributeBytes);
 		const val = text(item.value, limits.attributeBytes, true);
 		attributeBytes += utf8Length(key, "utf8") + utf8Length(val, "utf8");
 		if (attributeBytes > limits.attributeBytes) return invalid();
-		return { key, value: val };
-	});
+		attributes[index] = { key, value: val };
+	}
 	const availableAtMs =
 		message.availableAtMs === undefined
 			? undefined
@@ -289,14 +293,15 @@ function delivery(
 	]);
 	const attrs = array(item.attributes, limits.attributeCount);
 	let total = 0;
-	const attributes = attrs.map((entry) => {
-		const attr = record(entry, ["key", "value"]);
+	const attributes: { key: string; value: string }[] = [];
+	for (let index = 0; index < attrs.length; index++) {
+		const attr = record(attrs[index], ["key", "value"]);
 		const key = text(attr.key, limits.attributeBytes);
 		const val = text(attr.value, limits.attributeBytes, true);
 		total += utf8Length(key, "utf8") + utf8Length(val, "utf8");
 		if (total > limits.attributeBytes) return invalid();
-		return { key, value: val };
-	});
+		attributes[index] = { key, value: val };
+	}
 	return {
 		messageId: text(item.messageId, limits.nameBytes),
 		leaseId: text(item.leaseId, limits.nameBytes),
@@ -330,7 +335,10 @@ export function parseQueueProviderOutcome(
 	}
 	if (outer.status === "rejected") {
 		const result = record(value, ["status", "code"]);
-		const code = rejectionCodes.find((candidate) => candidate === result.code);
+		let code: DurableQueueRejectionCode | undefined;
+		for (let index = 0; index < rejectionCodes.length; index++) {
+			if (rejectionCodes[index] === result.code) code = rejectionCodes[index];
+		}
 		if (code === undefined) return invalid();
 		return { status: "rejected", code };
 	}
@@ -345,11 +353,15 @@ export function parseQueueProviderOutcome(
 	}
 	if (request.kind === "dequeue") {
 		if (request.maxMessages === undefined) return invalid();
-		const items = array(result.value, request.maxMessages).map((item) =>
-			delivery(item, limits),
-		);
-		const ids = new Set(items.map((item) => item.messageId));
-		if (ids.size !== items.length) return invalid();
+		const source = array(result.value, request.maxMessages);
+		const items: DurableQueueDelivery[] = [];
+		for (let index = 0; index < source.length; index++) {
+			const item = delivery(source[index], limits);
+			for (let previous = 0; previous < items.length; previous++) {
+				if (items[previous]?.messageId === item.messageId) return invalid();
+			}
+			items[index] = item;
+		}
 		return { status: "committed", value: items };
 	}
 	if (request.kind === "extension") {
