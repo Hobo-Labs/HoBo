@@ -138,6 +138,7 @@ describe("CI deps image push scope", () => {
 		expect(job.if).toContain(
 			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.steps[0].with.ref).toContain(
 			"github.event.workflow_run.head_sha",
 		);
@@ -172,13 +173,14 @@ describe("CI deps image push scope", () => {
 		expect(JSON.stringify(depsJob)).not.toContain("docker push");
 	});
 
-	it("publishes the worker image after a green main run when GHCR lacks it", () => {
+	it("publishes the worker image after a finished main run when GHCR lacks it", () => {
 		// Finding 113: a dropped main push's image change is built by no later
 		// push, and release jobs on ARC pull the worker from GHCR.
 		const job = publisher.jobs["runner-image"];
 		expect(job.if).toContain(
 			'contains(fromJSON(\'["success","failure"]\'), github.event.workflow_run.conclusion)',
 		);
+		expect(job.if).not.toContain('cancelled"');
 		expect(job.concurrency["cancel-in-progress"]).toBe(false);
 		expect(job["runs-on"]).toBe(publisher.jobs.publish["runs-on"]);
 		expect(job.permissions).toEqual({ contents: "read", packages: "write" });
